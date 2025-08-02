@@ -234,7 +234,11 @@ function _valid_config() {
         cmd="$BIN_KERNEL -d $(dirname "$1") -f $1 -t"
         msg=$(eval "$cmd") || {
             eval "$cmd"
-            echo "$msg" | grep -qs "unsupport proxy type" && _error_quit "不支持的代理协议，请安装 mihomo 内核"
+            echo "$msg" | grep -qs "unsupport proxy type" && {
+                local prefix="检测到订阅中包含不受支持的代理协议"
+                [ "$BIN_KERNEL_NAME" = "clash" ] && _error_quit "${prefix}, 推荐安装使用 mihomo 内核"
+                _error_quit "${prefix}, 请检查并升级内核版本"
+            }
         }
     }
 }
@@ -265,7 +269,7 @@ _download_clash() {
     esac
 
     _okcat '⏳' "正在下载：clash：${arch} 架构..."
-    local clash_zip="${ZIP_BASE_DIR}/$(basename $url)"
+    ZIP_CLASH="${ZIP_BASE_DIR}/$(basename $url)"
     curl \
         --progress-bar \
         --show-error \
@@ -273,9 +277,9 @@ _download_clash() {
         --insecure \
         --connect-timeout 15 \
         --retry 1 \
-        --output "$clash_zip" \
+        --output "$ZIP_CLASH" \
         "$url"
-    echo $sha256sum "$clash_zip" | sha256sum -c ||
+    echo $sha256sum "$ZIP_CLASH" | sha256sum -c ||
         _error_quit "下载失败：请自行下载对应版本至 ${ZIP_BASE_DIR} 目录下：https://downloads.clash.wiki/ClashPremium/"
 }
 
