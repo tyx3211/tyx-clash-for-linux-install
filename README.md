@@ -4,6 +4,7 @@
 > 我主要修改了以下部分：
 > 1. watch_proxy目前不做有意义的事情，使得新开shell时不会要求sudo或显示信息
 > 2. clashproxy status 目前不会使用不恰当的持久化配置（不同终端本就环境不同），而是使用各个终端本身是否设置代理来决定。
+> 3. 移除了system-proxy.enable配置的读写操作，因为已改为基于环境变量判断，避免侵入式配置和设计不一致问题。
 
 ![GitHub License](https://img.shields.io/github/license/nelvko/clash-for-linux-install)
 ![GitHub top language](https://img.shields.io/github/languages/top/nelvko/clash-for-linux-install)
@@ -28,7 +29,7 @@
 
 ```bash
 git clone --branch master --single-branch --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git \
-  && cd clash-for-linux-install \
+  && cd tyx-clash-for-linux-install \
   && sudo bash install.sh
 ```
 

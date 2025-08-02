@@ -1,7 +1,3 @@
-# 系统代理配置
-system-proxy:
-  enable: true
-
 # Web 控制台配置
 external-controller: "0.0.0.0:9090"
 external-ui: public
