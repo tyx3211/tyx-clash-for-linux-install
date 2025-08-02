@@ -1,5 +1,10 @@
 # Linux 一键安装 Clash
 
+> tyx note: 我修改了script/clashctl.sh 文件。
+> 我主要修改了以下部分：
+> 1. watch_proxy目前不做有意义的事情，使得新开shell时不会要求sudo或显示信息
+> 2. clashproxy status 目前不会使用不恰当的持久化配置（不同终端本就环境不同），而是使用各个终端本身是否设置代理来决定。
+
 ![GitHub License](https://img.shields.io/github/license/nelvko/clash-for-linux-install)
 ![GitHub top language](https://img.shields.io/github/languages/top/nelvko/clash-for-linux-install)
 ![GitHub Repo stars](https://img.shields.io/github/stars/nelvko/clash-for-linux-install)

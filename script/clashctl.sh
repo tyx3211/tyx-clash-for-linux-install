@@ -1,3 +1,14 @@
+################################# tyx note
+
+# 在这位库作者的脚本中，我修改了一些代码部分以更好的匹配我的习惯
+# 我修改的代码部分，我会在代码中添加注释，以方便我后续的维护
+# 我主要修改了以下部分：
+    # 1. watch_proxy目前不做有意义的事情，使得新开shell时不会要求sudo或显示信息
+    # 2. clashproxy status 目前不会使用不恰当的持久化配置（不同终端本就环境不同），而是使用各个终端本身是否设置代理来决定。
+
+################################# tyx note
+
+
 # shellcheck disable=SC2148
 # shellcheck disable=SC2155
 
@@ -49,11 +60,20 @@ function clashon() {
 }
 
 watch_proxy() {
-    # 新开交互式shell，且无代理变量时
-    [ -z "$http_proxy" ] && [[ $- == *i* ]] && {
-        # 为root时，自动开启代理环境（普通用户会触发sudo验证密码导致卡住）
-        _is_root || _failcat '代理环境：关闭,可执行 clashon 开启' && clashon
-    }
+    ################################## tyx add
+
+    true
+    # _get_proxy_port # 滞后到clashproxy on中执行
+
+    ################################## tyx add
+
+    ################################## tyx change
+    # # 新开交互式shell，且无代理变量时
+    # [ -z "$http_proxy" ] && [[ $- == *i* ]] && {
+    #     # 为root时，自动开启代理环境（普通用户会触发sudo验证密码导致卡住）
+    #     _is_root || _failcat '代理环境：关闭,可执行 clashon 开启' && clashon
+    # }
+    ################################## tyx change
 }
 
 function clashoff() {
@@ -73,6 +93,10 @@ function clashproxy() {
             _failcat '代理程序未运行，请执行 clashon 开启代理环境'
             return 1
         }
+        ################################## tyx add
+        _get_proxy_port
+        ################################## tyx add
+
         _set_system_proxy
         _okcat '已开启系统代理'
         ;;
@@ -81,11 +105,24 @@ function clashproxy() {
         _okcat '已关闭系统代理'
         ;;
     status)
-        local system_proxy_status=$(sudo "$BIN_YQ" '.system-proxy.enable' "$CLASH_CONFIG_MIXIN" 2>/dev/null)
-        [ "$system_proxy_status" = "false" ] && {
-            _failcat "系统代理：关闭"
+        ################################## tyx change
+        # local system_proxy_status=$(sudo "$BIN_YQ" '.system-proxy.enable' "$CLASH_CONFIG_MIXIN" 2>/dev/null)
+        # [ "$system_proxy_status" = "false" ] && {
+        #     _failcat "系统代理：关闭"
+        #     return 1
+        # }
+        ################################## tyx change
+
+        ################################## tyx add
+
+        # 若http_proxy或者all_proxy为空，则系统代理关闭
+        if [ -z "$http_proxy" ] || [ -z "$all_proxy" ]; then
+            _failcat "系统代理未开启"
             return 1
-        }
+        fi
+
+        ################################## tyx add
+
         _okcat "系统代理：开启
 http_proxy： $http_proxy
 socks_proxy：$all_proxy"
