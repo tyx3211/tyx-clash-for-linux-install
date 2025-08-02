@@ -27,7 +27,7 @@
 下述命令适用于 `x86_64` 架构，其他架构请戳：[一键安装-多架构](https://github.com/nelvko/clash-for-linux-install/wiki#%E4%B8%80%E9%94%AE%E5%AE%89%E8%A3%85-%E5%A4%9A%E6%9E%B6%E6%9E%84)
 
 ```bash
-git clone --branch master --depth 1 https://gh-proxy.com/https://github.com/nelvko/clash-for-linux-install.git \
+git clone --branch master --single-branch --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git \
   && cd clash-for-linux-install \
   && sudo bash install.sh
 ```
@@ -100,8 +100,10 @@ $ clashsecret
 
 ### 更新订阅
 
+> tyx note: 执行clashupdate时，一定要注意加上双引号`"url"`，否则url中若有`&`等符号，会被shell认定为特殊字符，行为异常。
+
 ```bash
-$ clashupdate https://example.com
+$ clashupdate "https://example.com"
 👌 正在下载：原配置已备份...
 🍃 下载成功：内核验证配置...
 🍃 订阅更新成功
