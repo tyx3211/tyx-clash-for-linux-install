@@ -9,11 +9,20 @@
 ## ✨ 功能特性
 
 - 支持一键安装 `mihomo` 与 `clash` 代理内核。
-- 兼容 `root` 与普通用户环境。
+- 面向 no-sudo 环境，默认使用 `tmux` 管理内核进程（不依赖 systemd），无tmux的用户可以自行编译安装（不依赖sudo）或者使用conda（同样用户级别，不依赖sudo）。
 - 适配主流 `Linux` 发行版，并兼容 `AutoDL` 等容器化环境。
 - 自动检测端口占用情况，在冲突时随机分配可用端口。
-- 自动识别系统架构与初始化系统，下载匹配的内核与依赖，并生成对应的服务管理配置。
+- 自动识别系统架构，下载匹配的内核与依赖。
 - 在需要时调用 [subconverter](https://github.com/tindy2013/subconverter) 进行本地订阅转换。
+- 不提供 Tun 模式（该功能需要 sudo/内核权限）。
+
+## ✅ no-sudo 使用补充
+
+- 仅支持 `INIT_TYPE=tmux`，请确保系统已安装 `tmux`。
+- `external-controller` 默认为本机 `127.0.0.1`，远程访问面板请使用 SSH 端口转发。
+- 设置 `secret` 后，TUI/Web/API 必须使用相同密钥；否则 `clashstatus` 会判定 API 不可达。
+- `clashproxy on` 只影响当前 shell 环境变量，不会修改系统级代理。
+- 多个终端互不影响，需在各自 shell 中单独开启/关闭代理变量。
 
 ## 🚀 一键安装
 
@@ -28,6 +37,17 @@ git clone --branch master --depth 1 https://gh-proxy.org/https://github.com/nelv
 - 上述命令使用了[加速前缀](https://gh-proxy.org/)，如失效可更换其他[可用链接](https://ghproxy.link/)。
 - 可通过 `.env` 文件或脚本参数自定义安装选项。
 - 没有订阅？[click me](https://次元.net/auth/register?code=oUbI)
+- 依赖：请提前安装 `tmux`。
+
+### 非交互/自动化
+
+```bash
+# 不写入 shell rc 文件
+CLASHCTL_NO_RC=1 bash install.sh
+
+# 跳过安装末尾的订阅导入交互
+CLASHCTL_NO_QUIT=1 bash install.sh
+```
 
 ## ⌨️ 命令一览
 
@@ -44,7 +64,6 @@ Commands:
     secret                Web 密钥
     sub                   订阅管理
     upgrade               升级内核
-    tun                   Tun 模式
     mixin                 Mixin 配置
 
 Global Options:
@@ -62,8 +81,9 @@ $ clashon
 $ clashoff
 😼 已关闭代理环境
 ```
-- 在启停代理内核的同时，同步设置系统代理。
-- 亦可通过 `clashproxy` 单独控制系统代理。
+- `clashproxy` 仅设置当前 shell 的环境变量，不写系统配置。
+- 不同终端环境彼此独立，可按需在各自 shell 中开启代理变量。
+ - `clashstatus` 以 `/version` 接口是否可达作为判定标准。
 
 ### Web 控制台
 
@@ -90,6 +110,27 @@ $ clashsecret
 - 可通过浏览器打开 `Web` 控制台进行可视化操作，例如切换节点、查看日志等。
 - 默认使用 [zashboard](https://github.com/Zephyruso/zashboard) 作为控制台前端，如需更换可自行配置。
 - 若需将控制台暴露到公网，建议定期更换访问密钥，或通过 `SSH` 端口转发方式进行安全访问。
+
+#### 典型 SSH 转发示例
+
+```bash
+# 将远端 23571 的控制端口映射到本地 23571
+ssh -L 23571:127.0.0.1:23571 user@remote-host
+
+# 如需访问 Web UI（默认 external-ui 在 23571/ui）
+ssh -L 23571:127.0.0.1:23571 -L 7890:127.0.0.1:7890 user@remote-host
+```
+
+#### TUI 使用说明（可选）
+
+Clash TUI 仅作为控制面客户端，不需要 sudo，常见用途是切换策略组/节点、查看连接与日志。
+
+```bash
+# 首次运行时填写：
+# API 地址：127.0.0.1:23571
+# Secret：与 clashsecret 保持一致
+clash-tui
+```
 
 ### `Mixin` 配置
 
@@ -145,20 +186,6 @@ Options:
 - 支持添加本地订阅，例如：`file:///root/clashctl/resources/config.yaml`
 - 当订阅链接解析失败或包含特殊字符时，请使用引号包裹以避免被错误解析。
 - 自动更新任务可通过 `crontab -e` 进行修改和管理。
-
-### `Tun` 模式
-
-```bash
-$ clashtun
-😾 Tun 状态：关闭
-
-$ clashtun on
-😼 Tun 模式已开启
-```
-
-- 作用：实现本机及 `Docker` 等容器的所有流量路由到 `clash` 代理、DNS 劫持等。
-- 原理：[clash-verge-rev](https://www.clashverge.dev/guide/term.html#tun)、 [clash.wiki](https://clash.wiki/premium/tun-device.html)。
-- 注意事项：[#100](https://github.com/nelvko/clash-for-linux-install/issues/100#issuecomment-2782680205)
 
 ## 🗑️ 卸载
 

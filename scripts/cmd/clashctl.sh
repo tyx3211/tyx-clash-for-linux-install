@@ -74,27 +74,21 @@ function clashon() {
         _failcat '启动失败: 执行 clashlog 查看日志'
         return 1
     }
-    clashproxy >/dev/null && _set_system_proxy
     _okcat '已开启代理环境'
 }
 
 watch_proxy() {
-    [ -z "$http_proxy" ] && {
-        # [[ "$0" == -* ]] && { # 登录式shell
-        [[ $- == *i* ]] && { # 交互式shell
-            placeholder_watch_proxy
-        }
-    }
+    return 0
 }
 
 function clashoff() {
-    clashstatus >&/dev/null && {
+    local is_active=false
+    placeholder_is_active >&/dev/null && is_active=true
+    pgrep -f "$BIN_KERNEL" >/dev/null && is_active=true
+    [ "$is_active" = true ] && {
         placeholder_stop >/dev/null
-        clashstatus >&/dev/null && _tunstatus >&/dev/null && {
-            _tunoff || _error_quit "请先关闭 Tun 模式"
-        }
         placeholder_stop >/dev/null
-        clashstatus >&/dev/null && {
+        placeholder_is_active >&/dev/null || pgrep -f "$BIN_KERNEL" >/dev/null && {
             _failcat '代理环境关闭失败'
             return 1
         }
@@ -130,33 +124,42 @@ EOF
             _failcat "$KERNEL_NAME 未运行，请先执行 clashon"
             return 1
         }
-        "$BIN_YQ" -i '._custom.system-proxy.enable = true' "$CLASH_CONFIG_MIXIN"
         _set_system_proxy
         _okcat '已开启系统代理'
         ;;
     off)
-        "$BIN_YQ" -i '._custom.system-proxy.enable = false' "$CLASH_CONFIG_MIXIN"
         _unset_system_proxy
         _okcat '已关闭系统代理'
         ;;
     *)
-        local system_proxy_enable=$("$BIN_YQ" '._custom.system-proxy.enable' "$CLASH_CONFIG_MIXIN" 2>/dev/null)
-        case $system_proxy_enable in
-        true)
+        local proxy_env
+        proxy_env=$(env | grep -i -E '^(http|https|all|no)_proxy=' || true)
+        if [ -n "$proxy_env" ]; then
             _okcat "系统代理：开启
-$(env | grep -i 'proxy=')"
-            ;;
-        *)
+$proxy_env"
+        else
             _failcat "系统代理：关闭"
-            ;;
-        esac
+        fi
         ;;
     esac
 }
 
 function clashstatus() {
-    placeholder_status "$@"
-    placeholder_is_active >&/dev/null
+    placeholder_is_active >&/dev/null || {
+        _failcat "内核未运行"
+        return 1
+    }
+    _detect_ext_addr
+    local api="http://${EXT_IP}:${EXT_PORT}/version"
+    local secret="$(_get_secret)"
+    local auth_args=()
+    [ -n "$secret" ] && auth_args=(-H "Authorization: Bearer $secret")
+    curl --silent --fail --noproxy "*" "${auth_args[@]}" "$api" >/dev/null && {
+        _okcat "内核运行中"
+        return 0
+    }
+    _failcat "内核运行中但 API 不可达：$api"
+    return 1
 }
 
 function clashlog() {
@@ -257,9 +260,6 @@ _merge_config() {
 _merge_config_restart() {
     _merge_config
     placeholder_stop >/dev/null
-    clashstatus >&/dev/null && _tunstatus >&/dev/null && {
-        _tunoff || _error_quit "请先关闭 Tun 模式"
-    }
     placeholder_stop >/dev/null
     sleep 0.1
     placeholder_start >/dev/null
@@ -302,86 +302,9 @@ EOF
     esac
 }
 
-_tunstatus() {
-    local tun_status=$("$BIN_YQ" '.tun.enable' "${CLASH_CONFIG_RUNTIME}")
-    case $tun_status in
-    true)
-        _okcat 'Tun 状态：启用'
-        ;;
-    *)
-        _failcat 'Tun 状态：关闭'
-        ;;
-    esac
-}
-_tunoff() {
-    _tunstatus >/dev/null || return 0
-    sudo placeholder_stop
-    clashstatus >&/dev/null || {
-        "$BIN_YQ" -i '.tun.enable = false' "$CLASH_CONFIG_MIXIN"
-        _merge_config
-        clashon >/dev/null
-        _okcat "Tun 模式已关闭"
-        return 0
-    }
-    _tunstatus >&/dev/null && _failcat "Tun 模式关闭失败"
-}
-_sudo_restart() {
-    sudo placeholder_stop
-    placeholder_sudo_start
-    sleep 0.5
-}
-_tunon() {
-    _tunstatus 2>/dev/null && return 0
-    sudo placeholder_stop
-    "$BIN_YQ" -i '.tun.enable = true' "$CLASH_CONFIG_MIXIN"
-    _merge_config
-    placeholder_sudo_start
-    sleep 0.5
-    clashstatus >&/dev/null || _error_quit "Tun 模式开启失败"
-    local fail_msg="Start TUN listening error|unsupported kernel version"
-    local ok_msg="Tun adapter listening at|TUN listening iface"
-    clashlog | grep -E -m1 -qs "$fail_msg" && {
-        [ "$KERNEL_NAME" = 'mihomo' ] && {
-            "$BIN_YQ" -i '.tun.auto-redirect = false' "$CLASH_CONFIG_MIXIN"
-            _merge_config
-            _sudo_restart
-        }
-        clashlog | grep -E -m1 -qs "$ok_msg" || {
-            clashlog | grep -E -m1 "$fail_msg"
-            _tunoff >&/dev/null
-            _error_quit '系统内核版本不支持 Tun 模式'
-        }
-    }
-    _okcat "Tun 模式已开启"
-}
-
 function clashtun() {
-    case "$1" in
-    -h | --help)
-        cat <<EOF
-
-- 查看 Tun 状态
-  clashtun
-
-- 开启 Tun 模式
-  clashtun on
-
-- 关闭 Tun 模式
-  clashtun off
-  
-EOF
-        return 0
-        ;;
-    on)
-        _tunon
-        ;;
-    off)
-        _tunoff
-        ;;
-    *)
-        _tunstatus
-        ;;
-    esac
+    _failcat "Tun 模式需要 sudo/内核权限，no-sudo 版已禁用"
+    return 1
 }
 
 function clashmixin() {
@@ -727,7 +650,6 @@ Commands:
   ui                    面板地址
   sub                   订阅管理
   log                   内核日志
-  tun                   Tun 模式
   mixin                 Mixin 配置
   secret                Web 密钥
   upgrade               升级内核

@@ -2,10 +2,8 @@ set fn_arr \
 clashui \
 clashstatus \
 clashsecret \
-clashtun \
 clashmixin \
 clashsub \
-clashproxy \
 clashlog \
 clashupgrade \
 clashhelp
@@ -42,20 +40,7 @@ function clashctl
 end
 
 function clashon
-    bash -i -c 'clashon; sudo tee /var/proxy >/dev/null <<EOF
-export http_proxy=$http_proxy
-export https_proxy=$http_proxy
-export HTTP_PROXY=$http_proxy
-export HTTPS_PROXY=$http_proxy
-
-export all_proxy=$all_proxy
-export ALL_PROXY=$all_proxy
-
-export no_proxy=$no_proxy
-export NO_PROXY=$no_proxy
-EOF'
-
-    source /var/proxy
+    bash -i -c 'clashon'
 end
 
 function clashoff
@@ -70,4 +55,28 @@ function clashoff
     ALL_PROXY \
     no_proxy \
     NO_PROXY
+end
+
+function clashproxy
+    switch $argv[1]
+        case on
+            set -l proxy_env (bash -i -c 'clashproxy on >/dev/null; env | grep -i -E "^(http|https|all|no)_proxy="')
+            for line in $proxy_env
+                set -l kv (string split -m1 '=' $line)
+                set -gx $kv[1] $kv[2]
+            end
+        case off
+            bash -i -c 'clashproxy off'
+            set -e \
+            http_proxy \
+            https_proxy \
+            HTTP_PROXY \
+            HTTPS_PROXY \
+            all_proxy \
+            ALL_PROXY \
+            no_proxy \
+            NO_PROXY
+        case '*'
+            bash -i -c 'clashproxy'
+    end
 end

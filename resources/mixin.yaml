@@ -1,7 +1,3 @@
-_custom:
-  system-proxy:
-    enable: true
-
 mixed-port: 7890
 
 external-controller: "0.0.0.0:9090"
@@ -31,25 +27,6 @@ proxy-groups:
   prefix:
   suffix:
   override:
-
-# tun 配置
-tun:
-  enable: false
-  stack: system
-  auto-route: true
-  auto-redir: true # clash
-  auto-redirect: true # mihomo
-  auto-detect-interface: true
-  dns-hijack:
-    - any:53
-    - tcp://any:53
-  strict-route: true
-  route-exclude-address:
-    - 1.1.1.1/32 # 用于 clashui 获取真实内网 IP
-    - 127.0.0.1/32
-  exclude-interface:
-    - docker0 # 避免无法访问容器内服务
-    - podman0 # 详见：https://github.com/nelvko/clash-for-linux-install/issues/100#issuecomment-2995667368
 
 # DNS 配置
 dns:

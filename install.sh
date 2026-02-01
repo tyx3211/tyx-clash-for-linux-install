@@ -18,8 +18,11 @@ _set_envs
 _is_regular_sudo && chown -R "$SUDO_USER" "$CLASH_BASE_DIR"
 
 _install_service
-_apply_rc
+[ -n "$CLASHCTL_NO_RC" ] || _apply_rc
 
+
+# 重新加载已替换占位符的脚本
+. "$CLASH_CMD_DIR/clashctl.sh"
 
 _merge_config
 _detect_proxy_port
@@ -31,4 +34,16 @@ _okcat '🎉' 'enjoy 🎉'
 clashctl
 
 _valid_config "$CLASH_CONFIG_BASE" && CLASH_CONFIG_URL="file://$CLASH_CONFIG_BASE"
-_quit "clashsub add $CLASH_CONFIG_URL && clashsub use 1"
+[ -n "$CLASHCTL_NO_QUIT" ] && {
+    _okcat "已跳过自动订阅导入（CLASHCTL_NO_QUIT=1）"
+    exit 0
+}
+
+# 优先导入预先给定的订阅；若未提供，则回退到交互式输入。
+if [ -n "$CLASH_CONFIG_URL" ]; then
+    printf -v quit_cmd 'clashsub add %q && clashsub use 1' "$CLASH_CONFIG_URL"
+else
+    quit_cmd='clashsub add && clashsub use 1'
+fi
+
+_quit "$quit_cmd"

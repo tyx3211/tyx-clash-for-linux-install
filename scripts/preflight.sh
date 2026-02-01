@@ -11,11 +11,11 @@ SCRIPT_CMD_FISH="${SCRIPT_CMD_DIR}/clashctl.fish"
 
 CLASH_CMD_DIR="${CLASH_BASE_DIR}/$SCRIPT_CMD_DIR"
 
-FILE_LOG="/var/log/${KERNEL_NAME}.log"
-FILE_PID="/run/${KERNEL_NAME}.pid"
+FILE_LOG="${CLASH_RESOURCES_DIR}/${KERNEL_NAME}.log"
+FILE_PID="${CLASH_RESOURCES_DIR}/${KERNEL_NAME}.pid"
 
 _valid_required() {
-    local required_cmds=("xz" "pgrep" "curl" "tar" 'unzip')
+    local required_cmds=("xz" "pgrep" "curl" "tar" 'unzip' "tmux")
     local missing=()
     for cmd in "${required_cmds[@]}"; do
         command -v "$cmd" >&/dev/null || missing+=("$cmd")
@@ -174,13 +174,7 @@ _unzip_zip() {
 
 # shellcheck disable=SC2206
 _detect_init() {
-    [ -z "$INIT_TYPE" ] && INIT_TYPE=$(readlink /proc/1/exe)
-    grep -qsE "docker|kubepods|containerd|podman|lxc" /proc/1/cgroup && INIT_TYPE='nohup'
-    _is_root || {
-        INIT_TYPE='nohup'
-        FILE_LOG="${CLASH_RESOURCES_DIR}/${KERNEL_NAME}.log"
-        FILE_PID="${CLASH_RESOURCES_DIR}/${KERNEL_NAME}.pid"
-    }
+    [ -z "$INIT_TYPE" ] && INIT_TYPE='tmux'
 
     service_log=(less '<' $FILE_LOG)
     service_follow_log=(tail -f -n 0 $FILE_LOG)
@@ -191,26 +185,12 @@ _detect_init() {
     }
 
     case "${INIT_TYPE}" in
-    *systemd)
-        service_log=($_SUDO journalctl -u "$KERNEL_NAME")
-        service_follow_log=("${service_log[@]}" -q -f -n 0)
-        _systemd
+    tmux)
+        command -v tmux >&/dev/null || _error_quit "未检测到 tmux，请先安装后再继续"
+        _tmux
         ;;
-    *init)
-        _sysvinit
-        ;;
-    *busybox)
-        command -v openrc-init >&/dev/null && _openrc
-        ;;
-    *openrc*)
-        _openrc
-        ;;
-    *runit)
-        _runit
-        ;;
-    nohup | *)
-        INIT_TYPE='nohup'
-        _nohup
+    *)
+        _error_quit "仅支持 INIT_TYPE=tmux"
         ;;
     esac
     INIT_TYPE=$(basename "$INIT_TYPE")
@@ -284,6 +264,16 @@ _systemd() {
     service_status=($_SUDO systemctl status "$KERNEL_NAME")
     service_is_active=($_SUDO systemctl is-active "$KERNEL_NAME")
 }
+_tmux() {
+    TMUX_SESSION="clash-${KERNEL_NAME}"
+    service_enable=(false)
+    service_disable=(false)
+
+    service_start=(tmux new-session -d -s "$TMUX_SESSION" "$BIN_KERNEL -d $CLASH_RESOURCES_DIR -f $CLASH_CONFIG_RUNTIME >> $FILE_LOG 2>&1")
+    service_status=(tmux has-session -t "$TMUX_SESSION")
+    service_is_active=(tmux has-session -t "$TMUX_SESSION")
+    service_stop=(tmux has-session -t "$TMUX_SESSION" "2>/dev/null" "&&" tmux kill-session -t "$TMUX_SESSION" "2>/dev/null" "||" pkill -9 -f "$BIN_KERNEL")
+}
 _nohup() {
     service_enable=(false)
     service_disable=(false)
@@ -302,6 +292,10 @@ _install_service() {
     local cmd_arg="-d ${CLASH_RESOURCES_DIR} -f ${CLASH_CONFIG_RUNTIME}"
     local cmd_full="${BIN_KERNEL} -d ${CLASH_RESOURCES_DIR} -f ${CLASH_CONFIG_RUNTIME}"
 
+    _escape_sed_repl() {
+        printf '%s' "$1" | sed -e 's/[&\\]/\\&/g'
+    }
+
     [ -n "$service_src" ] && {
         /usr/bin/install -D -m +x "$service_src" "$service_target"
         ((${#service_add[@]})) && "${service_add[@]}"
@@ -316,15 +310,24 @@ _install_service() {
             "$service_target"
     }
     [ "$INIT_TYPE" != "nohup" ] && service_sudo_start=("${service_start[@]}")
+    local sed_service_start=$(_escape_sed_repl "${service_start[*]}")
+    local sed_service_sudo_start=$(_escape_sed_repl "${service_sudo_start[*]}")
+    local sed_service_status=$(_escape_sed_repl "${service_status[*]}")
+    local sed_service_is_active=$(_escape_sed_repl "${service_is_active[*]}")
+    local sed_service_stop=$(_escape_sed_repl "${service_stop[*]}")
+    local sed_service_log=$(_escape_sed_repl "${service_log[*]}")
+    local sed_service_follow_log=$(_escape_sed_repl "${service_follow_log[*]}")
+    local sed_service_watch_proxy=$(_escape_sed_repl "${service_watch_proxy[*]}")
+
     sed -i \
-        -e "s#placeholder_start#${service_start[*]}#g" \
-        -e "s#placeholder_sudo_start#${service_sudo_start[*]}#g" \
-        -e "s#placeholder_status#${service_status[*]}#g" \
-        -e "s#placeholder_is_active#${service_is_active[*]}#g" \
-        -e "s#placeholder_stop#${service_stop[*]}#g" \
-        -e "s#placeholder_log#${service_log[*]}#g" \
-        -e "s#placeholder_follow_log#${service_follow_log[*]}#g" \
-        -e "s#placeholder_watch_proxy#${service_watch_proxy[*]}#g" \
+        -e "s#placeholder_start#${sed_service_start}#g" \
+        -e "s#placeholder_sudo_start#${sed_service_sudo_start}#g" \
+        -e "s#placeholder_status#${sed_service_status}#g" \
+        -e "s#placeholder_is_active#${sed_service_is_active}#g" \
+        -e "s#placeholder_stop#${sed_service_stop}#g" \
+        -e "s#placeholder_log#${sed_service_log}#g" \
+        -e "s#placeholder_follow_log#${sed_service_follow_log}#g" \
+        -e "s#placeholder_watch_proxy#${sed_service_watch_proxy}#g" \
         "$CLASH_CMD_DIR/clashctl.sh" "$CLASH_CMD_DIR/common.sh"
 
     "${service_enable[@]}" >&/dev/null && _okcat '🚀' '已设置开机自启'
