@@ -3,17 +3,116 @@
 THIS_SCRIPT_DIR=$(dirname "$(readlink -f "${BASH_SOURCE:-${(%):-%N}}")")
 . "$THIS_SCRIPT_DIR/common.sh"
 
+DEFAULT_HTTP_PORT=7890
+DEFAULT_SOCKS_PORT=7891
+
+_ensure_sidecar_config() {
+    [ -s "$CLASH_CONFIG_SIDECAR" ] && return 0
+
+    mkdir -p "$CLASH_RESOURCES_DIR"
+    cat >"$CLASH_CONFIG_SIDECAR" <<'EOF'
+# clashctl 自身的附加行为配置，不会传给 mihomo / clash 内核。
+system-proxy:
+  enable: true
+  # none: shell 启动时不自动写入代理变量
+  # silent: shell 启动时静默写入代理变量
+  # verbose: shell 启动时写入代理变量并打印提示
+  mode: silent
+EOF
+}
+
+_get_system_proxy_enable() {
+    _ensure_sidecar_config
+
+    local enable
+    enable=$("$BIN_YQ" '.["system-proxy"].enable' "$CLASH_CONFIG_SIDECAR" 2>/dev/null)
+    case $enable in
+    true | false)
+        echo "$enable"
+        ;;
+    *)
+        echo true
+        ;;
+    esac
+}
+
+_is_valid_system_proxy_mode() {
+    case "$1" in
+    none | silent | verbose)
+        return 0
+        ;;
+    *)
+        return 1
+        ;;
+    esac
+}
+
+_get_system_proxy_mode() {
+    _ensure_sidecar_config
+
+    local mode
+    mode=$("$BIN_YQ" '.["system-proxy"].mode // "silent"' "$CLASH_CONFIG_SIDECAR" 2>/dev/null)
+    _is_valid_system_proxy_mode "$mode" && {
+        echo "$mode"
+        return 0
+    }
+
+    echo silent
+}
+
+_set_system_proxy_enable() {
+    _ensure_sidecar_config
+    "$BIN_YQ" -i ".\"system-proxy\".enable = $1" "$CLASH_CONFIG_SIDECAR"
+}
+
+_set_system_proxy_mode() {
+    _ensure_sidecar_config
+    "$BIN_YQ" -i ".\"system-proxy\".mode = \"$1\"" "$CLASH_CONFIG_SIDECAR"
+}
+
+_get_current_proxy_env() {
+    env | grep -i -E '^(http|https|all|no)_proxy=' || true
+}
+
+_has_current_proxy_env() {
+    [ -n "$(_get_current_proxy_env)" ]
+}
+
+_show_current_proxy_status() {
+    local proxy_env
+    proxy_env=$(_get_current_proxy_env)
+    if [ -n "$proxy_env" ]; then
+        _okcat "系统代理：开启
+$proxy_env"
+    else
+        _failcat "系统代理：关闭"
+    fi
+}
+
+_get_runtime_proxy_ports() {
+    local mixed_port http_port socks_port
+    mixed_port=$("$BIN_YQ" '.mixed-port // ""' "$CLASH_CONFIG_RUNTIME")
+    http_port=$("$BIN_YQ" '.port // ""' "$CLASH_CONFIG_RUNTIME")
+    socks_port=$("$BIN_YQ" '.socks-port // ""' "$CLASH_CONFIG_RUNTIME")
+
+    [ -z "$http_port" ] && http_port=$mixed_port
+    [ -z "$socks_port" ] && socks_port=$mixed_port
+    [ -z "$http_port" ] && http_port=$DEFAULT_HTTP_PORT
+    [ -z "$socks_port" ] && socks_port=$DEFAULT_SOCKS_PORT
+
+    printf '%s %s\n' "$http_port" "$socks_port"
+}
+
 _set_system_proxy() {
-    local mixed_port=$("$BIN_YQ" '.mixed-port // ""' "$CLASH_CONFIG_RUNTIME")
-    local http_port=$("$BIN_YQ" '.port // ""' "$CLASH_CONFIG_RUNTIME")
-    local socks_port=$("$BIN_YQ" '.socks-port // ""' "$CLASH_CONFIG_RUNTIME")
+    local http_port socks_port
+    read -r http_port socks_port <<<"$(_get_runtime_proxy_ports)"
 
     local auth=$("$BIN_YQ" '.authentication[0] // ""' "$CLASH_CONFIG_RUNTIME")
     [ -n "$auth" ] && auth=$auth@
 
     local bind_addr=$(_get_bind_addr)
-    local http_proxy_addr="http://${auth}${bind_addr}:${http_port:-${mixed_port}}"
-    local socks_proxy_addr="socks5h://${auth}${bind_addr}:${socks_port:-${mixed_port}}"
+    local http_proxy_addr="http://${auth}${bind_addr}:${http_port}"
+    local socks_proxy_addr="socks5h://${auth}${bind_addr}:${socks_port}"
     local no_proxy_addr="localhost,127.0.0.1,::1"
 
     export http_proxy=$http_proxy_addr
@@ -42,14 +141,16 @@ _detect_proxy_port() {
     local mixed_port=$("$BIN_YQ" '.mixed-port // ""' "$CLASH_CONFIG_RUNTIME")
     local http_port=$("$BIN_YQ" '.port // ""' "$CLASH_CONFIG_RUNTIME")
     local socks_port=$("$BIN_YQ" '.socks-port // ""' "$CLASH_CONFIG_RUNTIME")
-    [ -z "$mixed_port" ] && [ -z "$http_port" ] && [ -z "$socks_port" ] && mixed_port=7890
+    [ -z "$mixed_port" ] && [ -z "$http_port" ] && [ -z "$socks_port" ] && {
+        http_port=$DEFAULT_HTTP_PORT
+        socks_port=$DEFAULT_SOCKS_PORT
+    }
 
     local newPort count=0
-    local port_list=(
-        "mixed_port|mixed-port"
-        "http_port|port"
-        "socks_port|socks-port"
-    )
+    local port_list=()
+    [ -n "$mixed_port" ] && port_list+=("mixed_port|mixed-port")
+    [ -n "$http_port" ] && port_list+=("http_port|port")
+    [ -n "$socks_port" ] && port_list+=("socks_port|socks-port")
     clashstatus >&/dev/null && local isActive='true'
     for entry in "${port_list[@]}"; do
         local var_name="${entry%|*}"
@@ -78,7 +179,22 @@ function clashon() {
 }
 
 watch_proxy() {
-    return 0
+    [[ $- == *i* ]] || return 0
+    _has_current_proxy_env && return 0
+    [ "$(_get_system_proxy_enable)" = true ] || return 0
+
+    case "$(_get_system_proxy_mode)" in
+    none)
+        return 0
+        ;;
+    silent)
+        _set_system_proxy
+        ;;
+    verbose)
+        _set_system_proxy
+        _okcat '已按 sidecar 配置自动开启系统代理'
+        ;;
+    esac
 }
 
 function clashoff() {
@@ -108,7 +224,7 @@ function clashproxy() {
         cat <<EOF
 
 - 查看系统代理状态
-  clashproxy
+  clashproxy status
 
 - 开启系统代理
   clashproxy on
@@ -116,30 +232,50 @@ function clashproxy() {
 - 关闭系统代理
   clashproxy off
 
+- 查看或设置新终端自动代理模式
+  clashproxy mode
+  clashproxy mode none|silent|verbose
+
 EOF
         return 0
         ;;
     on)
-        clashstatus >&/dev/null || {
-            _failcat "$KERNEL_NAME 未运行，请先执行 clashon"
+        _set_system_proxy_enable true || {
+            _failcat "自动系统代理开关更新失败"
             return 1
         }
         _set_system_proxy
         _okcat '已开启系统代理'
         ;;
     off)
+        _set_system_proxy_enable false || {
+            _failcat "自动系统代理开关更新失败"
+            return 1
+        }
         _unset_system_proxy
         _okcat '已关闭系统代理'
         ;;
-    *)
-        local proxy_env
-        proxy_env=$(env | grep -i -E '^(http|https|all|no)_proxy=' || true)
-        if [ -n "$proxy_env" ]; then
-            _okcat "系统代理：开启
-$proxy_env"
-        else
-            _failcat "系统代理：关闭"
+    mode)
+        if [ -z "$2" ]; then
+            _okcat "自动系统代理模式：$(_get_system_proxy_mode)"
+            return 0
         fi
+        _is_valid_system_proxy_mode "$2" || {
+            _failcat "无效模式：$2，可选值：none、silent、verbose"
+            return 1
+        }
+        _set_system_proxy_mode "$2" || {
+            _failcat "自动系统代理模式更新失败"
+            return 1
+        }
+        _okcat "自动系统代理模式已更新：$2"
+        ;;
+    "" | status)
+        _show_current_proxy_status
+        ;;
+    *)
+        _failcat "未知参数：$1"
+        return 1
         ;;
     esac
 }
@@ -202,7 +338,6 @@ _merge_config() {
       ########################################
       #              Deep Merge              #
       ########################################
-      $mixin |= del(._custom) |
       (($config // {}) * $mixin) as $runtime |
       $runtime |
       
@@ -258,12 +393,17 @@ _merge_config() {
 }
 
 _merge_config_restart() {
+    local had_proxy_env=false
+    _has_current_proxy_env && had_proxy_env=true
+
     _merge_config
     placeholder_stop >/dev/null
     placeholder_stop >/dev/null
     sleep 0.1
     placeholder_start >/dev/null
     sleep 0.1
+
+    [ "$had_proxy_env" = true ] && _set_system_proxy
 }
 _get_secret() {
     "$BIN_YQ" '.secret // ""' "$CLASH_CONFIG_RUNTIME"
@@ -318,6 +458,9 @@ function clashmixin() {
 - 编辑 Mixin 配置
   clashmixin -e
 
+- 显式合并 Mixin 并重启内核
+  clashmixin -m
+
 - 查看原始订阅配置：$CLASH_CONFIG_BASE
   clashmixin -c
 
@@ -327,8 +470,11 @@ function clashmixin() {
 EOF
         return 0
         ;;
+    -m | --merge)
+        _merge_config_restart && _okcat "配置已显式合并并重启生效"
+        ;;
     -e)
-        vim "$CLASH_CONFIG_MIXIN" && {
+        "${EDITOR:-vim}" "$CLASH_CONFIG_MIXIN" && {
             _merge_config_restart && _okcat "配置更新成功，已重启生效"
         }
         ;;

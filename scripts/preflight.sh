@@ -178,9 +178,7 @@ _detect_init() {
 
     service_log=(less '<' $FILE_LOG)
     service_follow_log=(tail -f -n 0 $FILE_LOG)
-    service_watch_proxy=(clashon)
     _is_regular_sudo && {
-        service_watch_proxy=(_failcat "'未检测到代理变量，可执行 clashon 开启代理环境'")
         _SUDO=sudo
     }
 
@@ -204,8 +202,6 @@ _openrc() {
 
     service_start=(rc-service "$KERNEL_NAME" start)
     service_stop=(rc-service "$KERNEL_NAME" stop)
-    service_restart=(rc-service "$KERNEL_NAME" restart)
-    service_status=(rc-service "$KERNEL_NAME" status)
     service_is_active=(rc-service "$KERNEL_NAME" status)
 }
 _runit() {
@@ -219,8 +215,6 @@ _runit() {
 
     service_start=(sv up "$KERNEL_NAME")
     service_stop=(sv down "$KERNEL_NAME")
-    service_restart=(sv restart "$KERNEL_NAME")
-    service_status=(sv status "$KERNEL_NAME")
     service_is_active=(sv status "$KERNEL_NAME" \| grep -qs '^run')
 }
 _sysvinit() {
@@ -244,8 +238,6 @@ _sysvinit() {
 
     service_start=(service "$KERNEL_NAME" start)
     service_stop=(service "$KERNEL_NAME" stop)
-    service_restart=(service "$KERNEL_NAME" restart)
-    service_status=(service "$KERNEL_NAME" status)
     service_is_active=(service "$KERNEL_NAME" status)
 }
 # shellcheck disable=SC2206
@@ -260,8 +252,6 @@ _systemd() {
 
     service_start=($_SUDO systemctl start "$KERNEL_NAME")
     service_stop=($_SUDO systemctl stop "$KERNEL_NAME")
-    service_restart=($_SUDO systemctl restart "$KERNEL_NAME")
-    service_status=($_SUDO systemctl status "$KERNEL_NAME")
     service_is_active=($_SUDO systemctl is-active "$KERNEL_NAME")
 }
 _tmux() {
@@ -270,7 +260,6 @@ _tmux() {
     service_disable=(false)
 
     service_start=(tmux new-session -d -s "$TMUX_SESSION" "$BIN_KERNEL -d $CLASH_RESOURCES_DIR -f $CLASH_CONFIG_RUNTIME >> $FILE_LOG 2>&1")
-    service_status=(tmux has-session -t "$TMUX_SESSION")
     service_is_active=(tmux has-session -t "$TMUX_SESSION")
     service_stop=(tmux has-session -t "$TMUX_SESSION" "2>/dev/null" "&&" tmux kill-session -t "$TMUX_SESSION" "2>/dev/null" "||" pkill -9 -f "$BIN_KERNEL")
 }
@@ -279,8 +268,6 @@ _nohup() {
     service_disable=(false)
 
     service_start=('(' nohup "$BIN_KERNEL" -d "$CLASH_RESOURCES_DIR" -f "$CLASH_CONFIG_RUNTIME" '>\&' "$FILE_LOG" '\&' ')')
-    service_sudo_start=(sudo nohup "$BIN_KERNEL" -d "$CLASH_RESOURCES_DIR" -f "$CLASH_CONFIG_RUNTIME" '>\&' "$FILE_LOG" '\&')
-    service_status=(pgrep -fa "$BIN_KERNEL")
     service_is_active=(pgrep -fa "$BIN_KERNEL")
     service_stop=(pkill -9 -f "$BIN_KERNEL")
 }
@@ -309,25 +296,17 @@ _install_service() {
             -e "s#placeholder_kernel_desc#$kernel_desc#g" \
             "$service_target"
     }
-    [ "$INIT_TYPE" != "nohup" ] && service_sudo_start=("${service_start[@]}")
     local sed_service_start=$(_escape_sed_repl "${service_start[*]}")
-    local sed_service_sudo_start=$(_escape_sed_repl "${service_sudo_start[*]}")
-    local sed_service_status=$(_escape_sed_repl "${service_status[*]}")
     local sed_service_is_active=$(_escape_sed_repl "${service_is_active[*]}")
     local sed_service_stop=$(_escape_sed_repl "${service_stop[*]}")
     local sed_service_log=$(_escape_sed_repl "${service_log[*]}")
     local sed_service_follow_log=$(_escape_sed_repl "${service_follow_log[*]}")
-    local sed_service_watch_proxy=$(_escape_sed_repl "${service_watch_proxy[*]}")
-
     sed -i \
         -e "s#placeholder_start#${sed_service_start}#g" \
-        -e "s#placeholder_sudo_start#${sed_service_sudo_start}#g" \
-        -e "s#placeholder_status#${sed_service_status}#g" \
         -e "s#placeholder_is_active#${sed_service_is_active}#g" \
         -e "s#placeholder_stop#${sed_service_stop}#g" \
         -e "s#placeholder_log#${sed_service_log}#g" \
         -e "s#placeholder_follow_log#${sed_service_follow_log}#g" \
-        -e "s#placeholder_watch_proxy#${sed_service_watch_proxy}#g" \
         "$CLASH_CMD_DIR/clashctl.sh" "$CLASH_CMD_DIR/common.sh"
 
     "${service_enable[@]}" >&/dev/null && _okcat '🚀' '已设置开机自启'

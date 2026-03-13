@@ -1,0 +1,7 @@
+# clashctl 自身的附加行为配置，不会传给 mihomo / clash 内核。
+system-proxy:
+  enable: true
+  # none: shell 启动时不自动写入代理变量
+  # silent: shell 启动时静默写入代理变量
+  # verbose: shell 启动时写入代理变量并打印提示
+  mode: silent

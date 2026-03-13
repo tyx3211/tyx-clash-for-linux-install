@@ -9,37 +9,60 @@
 ## ✨ 功能特性
 
 - 支持一键安装 `mihomo` 与 `clash` 代理内核。
-- 面向 no-sudo 环境，默认使用 `tmux` 管理内核进程（不依赖 systemd），无tmux的用户可以自行编译安装（不依赖sudo）或者使用conda（同样用户级别，不依赖sudo）。
-- 适配主流 `Linux` 发行版，并兼容 `AutoDL` 等容器化环境。
+- 面向 no-sudo 环境，默认使用 `tmux` 管理内核进程，不依赖 `systemd`。
+- 默认代理端口为 `port: 7890`、`socks-port: 7891`，默认控制端口为 `127.0.0.1:23571`。
+- 代理内核配置与 `clashctl` 自身行为配置分离：
+  `resources/mixin.yaml` 只放会参与 mihomo/clash 合并的配置；
+  `resources/clashctl.yaml` 只放 `clashctl` 的 sidecar 配置，不再把私有键混进运行时配置。
 - 自动检测端口占用情况，在冲突时随机分配可用端口。
-- 自动识别系统架构，下载匹配的内核与依赖。
 - 在需要时调用 [subconverter](https://github.com/tindy2013/subconverter) 进行本地订阅转换。
-- 不提供 Tun 模式（该功能需要 sudo/内核权限）。
+- 不提供 Tun 模式；该 fork 以 no-sudo 场景为目标。
 
 ## ✅ no-sudo 使用补充
 
-- 仅支持 `INIT_TYPE=tmux`，请确保系统已安装 `tmux`。
-- `external-controller` 默认为本机 `127.0.0.1`，远程访问面板请使用 SSH 端口转发。
-- 设置 `secret` 后，TUI/Web/API 必须使用相同密钥；否则 `clashstatus` 会判定 API 不可达。
-- `clashproxy on` 只影响当前 shell 环境变量，不会修改系统级代理。
-- 多个终端互不影响，需在各自 shell 中单独开启/关闭代理变量。
+- 当前 fork 以 `INIT_TYPE=tmux` 为默认配置，请先确保系统已安装 `tmux`。
+- `external-controller` 默认绑定 `127.0.0.1:23571`，远程访问面板请优先使用 SSH 端口转发。
+- `clashproxy on` / `clashproxy off` 只影响当前 shell 的环境变量，不会改系统级代理。
+- `clashproxy status` 只看当前终端实际环境变量，避免与配置状态偏离。
+- 新终端是否自动写入代理变量，由 `resources/clashctl.yaml` 里的 sidecar 配置控制。
 
-## 🚀 一键安装
+## 🚀 安装
 
-在终端中执行以下命令即可完成安装：
+这个 README 对应的是当前 fork 的 `nosudo-tmux` 分支，不是 upstream 原仓库。
 
 ```bash
-git clone --branch master --depth 1 https://gh-proxy.org/https://github.com/nelvko/clash-for-linux-install.git \
-  && cd clash-for-linux-install \
-  && bash install.sh
+git clone --branch nosudo-tmux --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git clash-for-linux-install
+cd clash-for-linux-install
+bash install.sh
 ```
 
-- 上述命令使用了[加速前缀](https://gh-proxy.org/)，如失效可更换其他[可用链接](https://ghproxy.link/)。
-- 可通过 `.env` 文件或脚本参数自定义安装选项。
-- 没有订阅？[click me](https://次元.net/auth/register?code=oUbI)
-- 依赖：请提前安装 `tmux`。
+如需 GitHub 代理前缀，也可以使用：
 
-### 非交互/自动化
+```bash
+git clone --branch nosudo-tmux --depth 1 https://gh-proxy.org/https://github.com/tyx3211/tyx-clash-for-linux-install.git clash-for-linux-install
+cd clash-for-linux-install
+bash install.sh
+```
+
+- `.env` 里的 `CLASH_CONFIG_URL` 默认留空，不再内置任何真实订阅链接。
+- 安装结束时，如果 `CLASH_CONFIG_URL` 仍为空，脚本会交互式提示输入订阅链接。
+- 也可以先编辑 `.env` 再安装，显式指定订阅链接；链接务必使用双引号包起来。
+
+```bash
+CLASH_CONFIG_URL="https://example.com/sub?clash=3&extend=1"
+```
+
+- 如果安装阶段先跳过订阅导入，后续也可以显式添加：
+
+```bash
+clashctl sub add "https://example.com/sub?clash=3&extend=1"
+# 或
+clashsub add "https://example.com/sub?clash=3&extend=1"
+```
+
+- 订阅链接里通常会带 `?`、`&` 等特殊字符，因此无论在安装前写 `.env`，还是安装后手工执行 `clashctl sub add`，都建议始终用双引号包起来。
+
+### 非交互 / 自动化
 
 ```bash
 # 不写入 shell rc 文件
@@ -52,87 +75,110 @@ CLASHCTL_NO_QUIT=1 bash install.sh
 ## ⌨️ 命令一览
 
 ```bash
-Usage: 
+Usage:
   clashctl COMMAND [OPTIONS]
 
 Commands:
-    on                    开启代理
-    off                   关闭代理
-    status                内核状况
-    proxy                 系统代理
-    ui                    Web 面板
-    secret                Web 密钥
-    sub                   订阅管理
-    upgrade               升级内核
-    mixin                 Mixin 配置
+  on                    开启代理内核
+  off                   关闭代理内核
+  status                查看内核状态
+  proxy                 管理当前终端代理变量
+  ui                    查看 Web 面板地址
+  secret                管理 Web 密钥
+  sub                   管理订阅
+  mixin                 查看或刷新 Mixin 配置
+  upgrade               升级内核
 
 Global Options:
-    -h, --help            显示帮助信息
+  -h, --help            显示帮助信息
 ```
 
-💡`clashon` 同 `clashctl on`，`Tab` 补全更方便！
+💡 `clashon`、`clashoff`、`clashproxy`、`clashsub` 等函数同样可直接使用，补全更方便。
 
-### 优雅启停
+## 🔌 代理行为
 
 ```bash
 $ clashon
 😼 已开启代理环境
 
-$ clashoff
-😼 已关闭代理环境
-```
-- `clashproxy` 仅设置当前 shell 的环境变量，不写系统配置。
-- 不同终端环境彼此独立，可按需在各自 shell 中开启代理变量。
- - `clashstatus` 以 `/version` 接口是否可达作为判定标准。
+$ clashproxy on
+😼 已开启系统代理
 
-### Web 控制台
-
-```bash
-$ clashui
-╔═══════════════════════════════════════════════╗
-║                😼 Web 控制台                  ║
-║═══════════════════════════════════════════════║
-║                                               ║
-║     🔓 注意放行端口：9090                      ║
-║     🏠 内网：http://192.168.0.1:9090/ui       ║
-║     🌏 公网：http://8.8.8.8:9090/ui          ║
-║     ☁️ 公共：http://board.zash.run.place      ║
-║                                               ║
-╚═══════════════════════════════════════════════╝
-
-$ clashsecret mysecret
-😼 密钥更新成功，已重启生效
-
-$ clashsecret
-😼 当前密钥：mysecret
+$ clashproxy status
+😼 系统代理：开启
+http_proxy=http://127.0.0.1:7890
+https_proxy=http://127.0.0.1:7890
+all_proxy=socks5h://127.0.0.1:7891
 ```
 
-- 可通过浏览器打开 `Web` 控制台进行可视化操作，例如切换节点、查看日志等。
-- 默认使用 [zashboard](https://github.com/Zephyruso/zashboard) 作为控制台前端，如需更换可自行配置。
-- 若需将控制台暴露到公网，建议定期更换访问密钥，或通过 `SSH` 端口转发方式进行安全访问。
+- `clashon` / `clashoff` 负责启动或关闭代理内核。
+- `clashproxy on` / `clashproxy off` 负责写入或清理当前 shell 的代理变量，同时更新 sidecar 中的自动代理开关。
+- `clashproxy status` 只根据当前 shell 的实际环境变量输出结果，不读 sidecar 状态。
 
-#### 典型 SSH 转发示例
+### 自动代理模式
+
+`resources/clashctl.yaml` 用来描述 `clashctl` 自身的行为。当前内置：
+
+```yaml
+system-proxy:
+  enable: true
+  mode: silent
+```
+
+其中：
+
+- `system-proxy.enable`
+  控制新开的交互式 shell 是否允许 `watch_proxy` 自动写入代理变量。
+- `system-proxy.mode`
+  控制 `watch_proxy` 的动作，可选值：
+  `none`、`silent`、`verbose`
+
+对应行为：
+
+- `none`
+  新终端启动时不自动写入代理变量。
+- `silent`
+  新终端启动时按 `runtime.yaml` 中的端口静默写入代理变量。
+- `verbose`
+  新终端启动时按 `runtime.yaml` 中的端口写入代理变量，并输出提示。
+
+可以通过命令查看或修改：
 
 ```bash
-# 将远端 23571 的控制端口映射到本地 23571
+clashproxy mode
+clashproxy mode none
+clashproxy mode silent
+clashproxy mode verbose
+```
+
+## 🌐 Web 控制台
+
+- 默认控制端口为 `127.0.0.1:23571`。
+- `clashui` 会输出控制台入口地址；默认推荐通过 SSH 端口转发访问。
+- 如需远程访问面板，请确保 `secret` 与客户端保持一致。
+- zashboard 的访问路径是 `/ui`，不是根路径；也就是说最终访问地址应类似：
+  `http://localhost:<controller_port>/ui`
+
+### 典型 SSH 转发示例
+
+```bash
+# 将远端控制口映射到本地
 ssh -L 23571:127.0.0.1:23571 user@remote-host
 
-# 如需访问 Web UI（默认 external-ui 在 23571/ui）
+# 如需把本地 HTTP 代理口一并转回来
 ssh -L 23571:127.0.0.1:23571 -L 7890:127.0.0.1:7890 user@remote-host
 ```
 
-#### TUI 使用说明（可选）
+### VS Code Remote-SSH 端口转发
 
-Clash TUI 仅作为控制面客户端，不需要 sudo，常见用途是切换策略组/节点、查看连接与日志。
+- 如果我们本身就在用 VS Code 的 `Remote - SSH` 连远端开发，也可以直接在 VS Code 里转发 `23571` 这个远端端口。
+- 这件事本质上等价于帮我们建立一条到远端控制口的 SSH 本地转发，因此不必再额外手写一条 `ssh -L`。
+- 官方文档可参考：
+  `https://code.visualstudio.com/docs/remote/ssh#_forwarding-a-port-creating-ssh-tunnel`
+- 转发完成后，同样访问：
+  `http://localhost:<controller_port>/ui`
 
-```bash
-# 首次运行时填写：
-# API 地址：127.0.0.1:23571
-# Secret：与 clashsecret 保持一致
-clash-tui
-```
-
-### `Mixin` 配置
+## 🧩 Mixin 与 Sidecar
 
 ```bash
 $ clashmixin
@@ -141,6 +187,9 @@ $ clashmixin
 $ clashmixin -e
 😼 编辑 Mixin 配置
 
+$ clashmixin -m
+😼 配置已显式合并并重启生效
+
 $ clashmixin -c
 😼 查看原始订阅配置
 
@@ -148,24 +197,16 @@ $ clashmixin -r
 😼 查看运行时配置
 ```
 
-- 通过 `Mixin` 自定义的配置内容会与原始订阅进行深度合并，且 `Mixin` 具有最高优先级，最终生成内核启动时加载的运行时配置。
-- `Mixin` 支持以前置、后置或覆盖的方式，对原始订阅中的规则、节点及策略组进行新增或修改。
+- `resources/mixin.yaml` 只用于和原始订阅做深度合并，生成 `resources/runtime.yaml`。
+- `resources/clashctl.yaml` 是 sidecar 配置，不会参与 mihomo/clash 的运行时合并。
+- 修改 `mixin.yaml` 之后，如果不想进入编辑器，直接执行 `clashmixin -m` 即可显式 merge 并刷新内核。
+- 如果当前终端已经开启了代理变量，`clashmixin -m` 在刷新后会按新的 runtime 端口重新写入当前终端环境变量，避免端口变更后变量过期。
 
-### 升级内核
-```bash
-$ clashupgrade
-😼 请求内核升级...
-{"status":"ok"}
-😼 内核升级成功
-```
-- 升级过程由代理内核自动完成；如需查看详细的升级日志，可添加 `-v` 参数。
-- 建议通过 `clashmixin` 为 `github` 配置代理规则，以避免因网络问题导致请求失败。
-
-### 管理订阅
+## 📦 订阅管理
 
 ```bash
 $ clashsub -h
-Usage: 
+Usage:
   clashsub COMMAND [OPTIONS]
 
 Commands:
@@ -176,16 +217,39 @@ Commands:
   update [id]     更新订阅
   log             订阅日志
 
-
 Options:
   update:
     --auto        配置自动更新
     --convert     使用订阅转换
 ```
 
-- 支持添加本地订阅，例如：`file:///root/clashctl/resources/config.yaml`
-- 当订阅链接解析失败或包含特殊字符时，请使用引号包裹以避免被错误解析。
+常见用法：
+
+```bash
+clashctl sub add "https://example.com/sub?clash=3&extend=1"
+clashctl sub use 1
+clashctl sub update 1
+clashctl sub ls
+```
+
+- 订阅链接请始终使用双引号包起来。
+- 支持本地订阅，例如：
+  `clashctl sub add "file:///root/clashctl/resources/config.yaml"`
+- 当原始订阅不兼容时，可以配合 `--convert` 使用本地转换链路。
 - 自动更新任务可通过 `crontab -e` 进行修改和管理。
+
+## ⬆️ 升级内核
+
+```bash
+$ clashupgrade
+😼 请求内核升级...
+{"status":"ok"}
+😼 内核升级成功
+```
+
+- 升级过程由代理内核自动完成。
+- 如需查看详细升级日志，可添加 `-v` / `--verbose`。
+- 建议通过 `clashmixin` 为 `github` 相关域名补充代理规则，避免升级请求被网络环境影响。
 
 ## 🗑️ 卸载
 
