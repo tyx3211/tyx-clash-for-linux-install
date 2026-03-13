@@ -26,24 +26,36 @@ _install_service
 
 _merge_config
 _detect_proxy_port
+
+_valid_config "$CLASH_CONFIG_BASE" && CLASH_CONFIG_URL="file://$CLASH_CONFIG_BASE"
+[ -n "$CLASHCTL_NO_QUIT" ] && {
+    _okcat "已跳过自动订阅导入（CLASHCTL_NO_QUIT=1）"
+    if [ -n "$CLASHCTL_NO_RC" ]; then
+        _okcat "已跳过写入 shell rc；如需立即使用，请执行：. $CLASH_CMD_DIR/clashctl.sh"
+    else
+        _okcat "安装已写入 shell rc；如需在当前 shell 立即使用，请执行：source ~/.bashrc"
+    fi
+    exit 0
+}
+
+if [ -n "$CLASH_CONFIG_URL" ]; then
+    clashsub add "$CLASH_CONFIG_URL" || exit $?
+else
+    clashsub add || exit $?
+fi
+clashsub use 1 || exit $?
+
+[ -z "$(_get_secret)" ] && clashsecret "$(_get_random_val)" >/dev/null
 clashui
-clashsecret "$(_get_random_val)" >/dev/null
 clashsecret
 
 _okcat '🎉' 'enjoy 🎉'
 clashctl
 
-_valid_config "$CLASH_CONFIG_BASE" && CLASH_CONFIG_URL="file://$CLASH_CONFIG_BASE"
-[ -n "$CLASHCTL_NO_QUIT" ] && {
-    _okcat "已跳过自动订阅导入（CLASHCTL_NO_QUIT=1）"
+[ -n "$CLASHCTL_NO_RC" ] && {
+    _okcat "已跳过写入 shell rc；如需立即使用，请执行：. $CLASH_CMD_DIR/clashctl.sh"
     exit 0
 }
 
-# 优先导入预先给定的订阅；若未提供，则回退到交互式输入。
-if [ -n "$CLASH_CONFIG_URL" ]; then
-    printf -v quit_cmd 'clashsub add %q && clashsub use 1' "$CLASH_CONFIG_URL"
-else
-    quit_cmd='clashsub add && clashsub use 1'
-fi
-
-_quit "$quit_cmd"
+_okcat "即将进入新的交互 shell，clashctl 已可直接使用"
+_quit

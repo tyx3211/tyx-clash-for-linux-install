@@ -82,11 +82,15 @@ _show_current_proxy_status() {
     local proxy_env
     proxy_env=$(_get_current_proxy_env)
     if [ -n "$proxy_env" ]; then
-        _okcat "系统代理：开启
+        _okcat "当前终端代理：开启
 $proxy_env"
     else
-        _failcat "系统代理：关闭"
+        _failcat "当前终端代理：关闭"
     fi
+}
+
+_show_system_proxy_mode_status() {
+    _okcat "全局自动代理：enable=$(_get_system_proxy_enable) mode=$(_get_system_proxy_mode)"
 }
 
 _get_runtime_proxy_ports() {
@@ -170,12 +174,21 @@ _detect_proxy_port() {
 
 function clashon() {
     _detect_proxy_port
-    clashstatus >&/dev/null || placeholder_start
-    clashstatus >&/dev/null || {
+    clashstatus >&/dev/null || placeholder_start >/dev/null 2>&1
+
+    local deadline=$((SECONDS + 5))
+    while [ "$SECONDS" -le "$deadline" ]; do
+        clashstatus >&/dev/null && {
+            _okcat '已开启代理环境'
+            return 0
+        }
+        sleep 0.2
+    done
+
+    {
         _failcat '启动失败: 执行 clashlog 查看日志'
         return 1
     }
-    _okcat '已开启代理环境'
 }
 
 watch_proxy() {
@@ -218,63 +231,126 @@ clashrestart() {
     clashon
 }
 
+_proxy_set_global_enable() {
+    _set_system_proxy_enable "$1" || {
+        _failcat "全局自动代理开关更新失败"
+        return 1
+    }
+}
+
 function clashproxy() {
-    case "$1" in
+    local global=false
+    local args=()
+    while (($#)); do
+        case "$1" in
+        -g | --global)
+            global=true
+            ;;
+        *)
+            args+=("$1")
+            ;;
+        esac
+        shift
+    done
+
+    local action="${args[0]}"
+    local action_arg="${args[1]}"
+
+    case "$action" in
     -h | --help)
         cat <<EOF
 
-- 查看系统代理状态
+- 查看当前终端代理状态
   clashproxy status
 
-- 开启系统代理
+- 仅为当前终端开启代理
   clashproxy on
 
-- 关闭系统代理
+- 仅为当前终端关闭代理
   clashproxy off
+
+- 为当前终端开启代理，并开启全局自动代理
+  clashproxy on -g
+  clashproxy -g on
+
+- 为当前终端关闭代理，并关闭全局自动代理
+  clashproxy off -g
+  clashproxy -g off
 
 - 查看或设置新终端自动代理模式
   clashproxy mode
+  clashproxy mode status
   clashproxy mode none|silent|verbose
+  clashproxy mode --help
 
 EOF
         return 0
         ;;
     on)
-        _set_system_proxy_enable true || {
-            _failcat "自动系统代理开关更新失败"
-            return 1
-        }
+        if [ "$global" = true ]; then
+            _proxy_set_global_enable true || return 1
+        fi
         _set_system_proxy
-        _okcat '已开启系统代理'
+        if [ "$global" = true ]; then
+            _okcat '已为当前终端开启代理，并开启全局自动代理'
+        else
+            _okcat '已为当前终端开启代理'
+        fi
         ;;
     off)
-        _set_system_proxy_enable false || {
-            _failcat "自动系统代理开关更新失败"
-            return 1
-        }
+        if [ "$global" = true ]; then
+            _proxy_set_global_enable false || return 1
+        fi
         _unset_system_proxy
-        _okcat '已关闭系统代理'
+        if [ "$global" = true ]; then
+            _okcat '已为当前终端关闭代理，并关闭全局自动代理'
+        else
+            _okcat '已为当前终端关闭代理'
+        fi
         ;;
     mode)
-        if [ -z "$2" ]; then
-            _okcat "自动系统代理模式：$(_get_system_proxy_mode)"
-            return 0
-        fi
-        _is_valid_system_proxy_mode "$2" || {
-            _failcat "无效模式：$2，可选值：none、silent、verbose"
+        [ "$global" = true ] && {
+            _failcat "mode 子命令不支持 -g/--global"
             return 1
         }
-        _set_system_proxy_mode "$2" || {
-            _failcat "自动系统代理模式更新失败"
-            return 1
-        }
-        _okcat "自动系统代理模式已更新：$2"
+        case "$action_arg" in
+        "" | status)
+            _show_system_proxy_mode_status
+            ;;
+        -h | --help)
+            cat <<EOF
+
+- 查看新终端自动代理模式
+  clashproxy mode
+  clashproxy mode status
+
+- 设置新终端自动代理模式
+  clashproxy mode none|silent|verbose
+
+EOF
+            ;;
+        *)
+            _is_valid_system_proxy_mode "$action_arg" || {
+                _failcat "无效模式：$action_arg，可选值：none、silent、verbose"
+                return 1
+            }
+            _set_system_proxy_mode "$action_arg" || {
+                _failcat "自动系统代理模式更新失败"
+                return 1
+            }
+            _okcat "全局自动代理模式已更新：$action_arg"
+            ;;
+        esac
         ;;
     "" | status)
+        [ "$global" = true ] && {
+            _failcat "status 子命令不支持 -g/--global；查看全局状态请用 clashproxy mode status"
+            return 1
+        }
         _show_current_proxy_status
         ;;
     *)
-        _failcat "未知参数：$1"
+        _failcat "未知参数：${action:-<empty>}"
         return 1
         ;;
     esac
@@ -803,6 +879,6 @@ Commands:
 Global Options:
   -h, --help            显示帮助信息
 
-For more help on how to use clashctl, head to https://github.com/nelvko/clash-for-linux-install
+For more help on how to use clashctl, head to https://github.com/tyx3211/tyx-clash-for-linux-install/tree/nosudo-tmux
 EOF
 }

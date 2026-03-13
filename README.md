@@ -47,6 +47,7 @@ bash install.sh
 - `.env` 里的 `CLASH_CONFIG_URL` 默认留空，不再内置任何真实订阅链接。
 - 安装结束时，如果 `CLASH_CONFIG_URL` 仍为空，脚本会交互式提示输入订阅链接。
 - 也可以先编辑 `.env` 再安装，显式指定订阅链接；链接务必使用双引号包起来。
+- 默认安装会把 `clashctl` 初始化片段写入 `~/.bashrc` / `~/.zshrc`，并在安装完成后进入一个新的交互 shell，使 `clashctl` 能立即使用。
 
 ```bash
 CLASH_CONFIG_URL="https://example.com/sub?clash=3&extend=1"
@@ -71,6 +72,11 @@ CLASHCTL_NO_RC=1 bash install.sh
 # 跳过安装末尾的订阅导入交互
 CLASHCTL_NO_QUIT=1 bash install.sh
 ```
+
+- 如果显式设置了 `CLASHCTL_NO_RC=1` 或 `CLASHCTL_NO_QUIT=1`，安装脚本不会帮当前终端切入新 shell；此时请自行执行：
+  `source ~/.bashrc`
+  或
+  `. ~/clashctl/scripts/cmd/clashctl.sh`
 
 ## ⌨️ 命令一览
 
@@ -102,18 +108,23 @@ $ clashon
 😼 已开启代理环境
 
 $ clashproxy on
-😼 已开启系统代理
+😼 已为当前终端开启代理
 
 $ clashproxy status
-😼 系统代理：开启
+😼 当前终端代理：开启
 http_proxy=http://127.0.0.1:7890
 https_proxy=http://127.0.0.1:7890
 all_proxy=socks5h://127.0.0.1:7891
+
+$ clashproxy on -g
+😼 已为当前终端开启代理，并开启全局自动代理
 ```
 
 - `clashon` / `clashoff` 负责启动或关闭代理内核。
-- `clashproxy on` / `clashproxy off` 负责写入或清理当前 shell 的代理变量，同时更新 sidecar 中的自动代理开关。
+- `clashproxy on` / `clashproxy off` 只负责写入或清理当前 shell 的代理变量，不改 sidecar 全局状态。
+- `clashproxy on -g` / `clashproxy off -g` 会在处理当前 shell 的同时，更新 sidecar 中的全局自动代理开关。
 - `clashproxy status` 只根据当前 shell 的实际环境变量输出结果，不读 sidecar 状态。
+- `clashproxy mode status` 用于查看 sidecar 中记录的全局自动代理状态与模式。
 
 ### 自动代理模式
 
@@ -146,10 +157,17 @@ system-proxy:
 
 ```bash
 clashproxy mode
+clashproxy mode status
 clashproxy mode none
 clashproxy mode silent
 clashproxy mode verbose
+clashproxy mode --help
 ```
+
+如果需要临时与全局两种开关并存，推荐记法如下：
+
+- 临时只改当前终端：`clashproxy on` / `clashproxy off`
+- 同时改当前终端和全局自动代理：`clashproxy on -g` / `clashproxy off -g`
 
 ## 🌐 Web 控制台
 
@@ -199,7 +217,7 @@ $ clashmixin -r
 
 - `resources/mixin.yaml` 只用于和原始订阅做深度合并，生成 `resources/runtime.yaml`。
 - `resources/clashctl.yaml` 是 sidecar 配置，不会参与 mihomo/clash 的运行时合并。
-- 修改 `mixin.yaml` 之后，如果不想进入编辑器，直接执行 `clashmixin -m` 即可显式 merge 并刷新内核。
+- 修改 `mixin.yaml` 之后，如果不想进入编辑器，直接执行 `clashmixin -m` 即可显式 merge 并刷新内核；该命令不会打开 `less` 或其他查看器。
 - 如果当前终端已经开启了代理变量，`clashmixin -m` 在刷新后会按新的 runtime 端口重新写入当前终端环境变量，避免端口变更后变量过期。
 
 ## 📦 订阅管理
@@ -254,8 +272,10 @@ $ clashupgrade
 ## 🗑️ 卸载
 
 ```bash
-bash uninstall.sh
+bash ~/clashctl/uninstall.sh
 ```
+
+- 请执行安装目录里的卸载脚本，而不是源码仓库里的同名脚本，避免把安装副本和源码目录混淆。
 
 ## 📖 常见问题
 

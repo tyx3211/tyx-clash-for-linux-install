@@ -56,16 +56,32 @@ function clashoff
 end
 
 function clashproxy
-    switch $argv[1]
+    set -l global false
+    set -l action ""
+    for arg in $argv
+        if test "$arg" = "-g" -o "$arg" = "--global"
+            set global true
+            continue
+        end
+        if test -z "$action"
+            set action $arg
+        end
+    end
+
+    switch $action
         case on
-            set -l proxy_env (bash -i -c 'clashproxy on >/dev/null; env' 2>/dev/null | grep -i -E '^(http|https|all|no)_proxy=')
+            set -l proxy_env (bash -i -c 'clashproxy "$@" >/dev/null; env' -- $argv 2>/dev/null | grep -i -E '^(http|https|all|no)_proxy=')
             for line in $proxy_env
                 set -l kv (string split -m1 '=' $line)
                 set -gx $kv[1] $kv[2]
             end
-            echo "😼 已开启系统代理"
+            if test "$global" = true
+                echo "😼 已为当前终端开启代理，并开启全局自动代理"
+            else
+                echo "😼 已为当前终端开启代理"
+            end
         case off
-            bash -i -c 'clashproxy off >/dev/null' >/dev/null 2>&1
+            bash -i -c 'clashproxy "$@" >/dev/null' -- $argv >/dev/null 2>&1
             set -e \
             http_proxy \
             https_proxy \
@@ -75,21 +91,25 @@ function clashproxy
             ALL_PROXY \
             no_proxy \
             NO_PROXY
-            echo "😼 已关闭系统代理"
-        case '' status
-            set -l proxy_env (env | grep -i -E '^(http|https|all|no)_proxy=')
-            if test -n "$proxy_env"
-                echo "😼 系统代理：开启"
-                printf '%s\n' $proxy_env
+            if test "$global" = true
+                echo "😼 已为当前终端关闭代理，并关闭全局自动代理"
             else
-                echo "😾 系统代理：关闭"
+                echo "😼 已为当前终端关闭代理"
+            end
+        case '' status
+            if test "$global" = true
+                bash -i -c 'clashproxy "$@"' -- $argv
+            else
+                set -l proxy_env (env | grep -i -E '^(http|https|all|no)_proxy=')
+                if test -n "$proxy_env"
+                    echo "😼 当前终端代理：开启"
+                    printf '%s\n' $proxy_env
+                else
+                    echo "😾 当前终端代理：关闭"
+                end
             end
         case mode
-            if test (count $argv) -gt 1
-                bash -i -c 'clashproxy mode "$1"' -- "$argv[2]"
-            else
-                bash -i -c 'clashproxy mode'
-            end
+            bash -i -c 'clashproxy "$@"' -- $argv
         case '*'
             bash -i -c 'clashproxy "$@"' -- $argv
     end

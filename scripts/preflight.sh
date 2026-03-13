@@ -378,5 +378,5 @@ _is_root() {
 
 _quit() {
     _is_regular_sudo && exec su "$SUDO_USER"
-    exec "$SHELL" -i -c "$*"
+    exec "$SHELL" -i
 }
