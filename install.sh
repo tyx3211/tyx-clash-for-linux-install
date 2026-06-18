@@ -3,8 +3,8 @@
 . scripts/cmd/clashctl.sh
 . scripts/preflight.sh
 
-_valid
 _parse_args "$@"
+_valid
 
 _prepare_zip
 _detect_init

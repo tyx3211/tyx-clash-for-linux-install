@@ -15,13 +15,13 @@ BIN_YQ="${BIN_BASE_DIR}/yq"
 BIN_SUBCONVERTER_DIR="${BIN_BASE_DIR}/subconverter"
 BIN_SUBCONVERTER="${BIN_SUBCONVERTER_DIR}/subconverter"
 BIN_SUBCONVERTER_START="$BIN_SUBCONVERTER"
-BIN_SUBCONVERTER_STOP="pkill -9 -f $BIN_SUBCONVERTER"
 BIN_SUBCONVERTER_CONFIG="$BIN_SUBCONVERTER_DIR/pref.yml"
 BIN_SUBCONVERTER_LOG="${BIN_SUBCONVERTER_DIR}/latest.log"
 
 CLASH_PROFILES_DIR="${CLASH_RESOURCES_DIR}/profiles"
 CLASH_PROFILES_META="${CLASH_RESOURCES_DIR}/profiles.yaml"
 CLASH_PROFILES_LOG="${CLASH_RESOURCES_DIR}/profiles.log"
+CLASHCTL_CRON_TAG="# clashctl-auto-update"
 
 _is_port_used() {
     local port=$1
@@ -29,9 +29,20 @@ _is_port_used() {
 }
 
 _get_random_port() {
-    local randomPort=$(shuf -i 1024-65535 -n 1)
-    ! _is_port_used "$randomPort" && { echo "$randomPort" && return; }
-    _get_random_port
+    local fail_count=0
+    local randomPort
+
+    while [ "$fail_count" -lt 100 ]; do
+        randomPort=$(shuf -i 1024-65535 -n 1)
+        ! _is_port_used "$randomPort" && {
+            echo "$randomPort"
+            return 0
+        }
+        fail_count=$((fail_count + 1))
+    done
+
+    _failcat "未找到可用的代理端口"
+    return 1
 }
 
 _get_bind_addr() {
@@ -140,11 +151,83 @@ function _download_config() {
     local url=$2
     [ "${url:0:4}" = 'file' ] || _okcat '⏳' '正在下载...'
     _download_raw_config "$dest" "$url" || return 1
-    _okcat '🍃' '验证订阅配置...'
-    _valid_config "$dest" || {
-        _failcat '🍂' "验证失败：尝试订阅转换..."
+
+    _normalize_sub_config "$dest" || return 1
+
+    _is_html_response "$dest" && {
+        _failcat "订阅响应疑似 HTML 页面，请检查订阅链接或 User-Agent"
+        return 1
+    }
+
+    _is_native_yaml_config "$dest" && {
+        _okcat '🍃' '检测到原生 Clash/Mihomo 配置'
+        _valid_config "$dest" && _valid_sub_nodes "$dest" && return
+        _failcat '🍂' "原生配置验证失败：尝试订阅转换..."
         cat "$dest" >"${dest}.raw"
-        _download_convert_config "$dest" "$url"
+        _download_convert_config "$dest" "$url" || return
+        _normalize_sub_config "$dest" || return
+        _valid_sub_nodes "$dest"
+        return
+    }
+
+    _okcat '🍃' '验证订阅配置...'
+    _valid_config "$dest" && _valid_sub_nodes "$dest" && return
+
+    _failcat '🍂' "验证失败：尝试订阅转换..."
+    cat "$dest" >"${dest}.raw"
+    _download_convert_config "$dest" "$url" || return
+    _normalize_sub_config "$dest" || return
+    _valid_sub_nodes "$dest"
+}
+
+_normalize_sub_config() {
+    local dest=$1
+
+    [ -s "$dest" ] || {
+        _failcat "订阅响应为空，请检查订阅链接"
+        return 1
+    }
+
+    LC_ALL=C sed -i '1s/^\xEF\xBB\xBF//' "$dest" 2>/dev/null || true
+    sed -i 's/\r$//' "$dest" 2>/dev/null || true
+
+    command -v iconv >/dev/null || return 0
+    iconv -f UTF-8 -t UTF-8 "$dest" >/dev/null 2>&1 && return 0
+
+    local charset
+    for charset in GB18030 GBK BIG5; do
+        iconv -f "$charset" -t UTF-8 "$dest" -o "${dest}.utf8" 2>/dev/null && {
+            /bin/mv -f "${dest}.utf8" "$dest"
+            _okcat '🔤' "订阅已从 $charset 转为 UTF-8"
+            return 0
+        }
+    done
+
+    /usr/bin/rm -f "${dest}.utf8" 2>/dev/null
+    return 0
+}
+
+_is_html_response() {
+    LC_ALL=C grep -qiE '<[[:space:]]*(!doctype|html|head|body|title)([[:space:]>]|$)' "$1"
+}
+
+_is_native_yaml_config() {
+    "$BIN_YQ" -e '
+      ((.proxies // []) | type == "!!seq" and length > 0) or
+      ((.proxy-providers // {}) | type == "!!map" and length > 0)
+    ' "$1" >/dev/null 2>&1
+}
+
+_valid_sub_nodes() {
+    local config=$1 count
+    count=$("$BIN_YQ" '
+      ((.proxies // []) | length) +
+      ((.proxy-providers // {}) | length)
+    ' "$config" 2>/dev/null) || return 0
+
+    [ "${count:-0}" -gt 0 ] || {
+        _failcat "订阅未解析出任何节点，请检查订阅内容或转换器版本"
+        return 1
     }
 }
 _download_raw_config() {
@@ -220,7 +303,10 @@ _start_convert() {
     done
 }
 _stop_convert() {
-    $BIN_SUBCONVERTER_STOP >/dev/null
+    pkill -TERM -x subconverter 2>/dev/null
+    sleep 0.2
+    pkill -KILL -x subconverter 2>/dev/null
+    return 0
 }
 
 _set_env() {

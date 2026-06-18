@@ -10,17 +10,20 @@
 
 - 支持一键安装 `mihomo` 与 `clash` 代理内核。
 - 面向 no-sudo 环境，默认使用 `tmux` 管理内核进程，不依赖 `systemd`。
+- 支持显式切换启动方式：`tmux`、`nohup`、`systemd`。其中 `systemd` 需要 root 或 sudo，并支持 Tun。
 - 默认代理端口为 `port: 7890`、`socks-port: 7891`，默认控制端口为 `127.0.0.1:23571`。
 - 代理内核配置与 `clashctl` 自身行为配置分离：
   `resources/mixin.yaml` 只放会参与 mihomo/clash 合并的配置；
   `resources/clashctl.yaml` 只放 `clashctl` 的 sidecar 配置，不再把私有键混进运行时配置。
 - 自动检测端口占用情况，在冲突时随机分配可用端口。
 - 在需要时调用 [subconverter](https://github.com/tindy2013/subconverter) 进行本地订阅转换。
-- 不提供 Tun 模式；该 fork 以 no-sudo 场景为目标。
+- 默认 no-sudo / tmux 模式不提供 Tun；显式选择 `systemd` 模式时支持 Tun。
 
 ## ✅ no-sudo 使用补充
 
 - 当前 fork 以 `INIT_TYPE=tmux` 为默认配置，请先确保系统已安装 `tmux`。
+- 如需纯用户态但不想依赖 `tmux`，可以使用 `--init nohup`；该模式可运行内核，但可观测性弱于 `tmux`。
+- 如需 Tun，请使用 `sudo bash install.sh --init systemd` 或 root 执行 `bash install.sh --init systemd`。
 - `external-controller` 默认绑定 `127.0.0.1:23571`，远程访问面板请优先使用 SSH 端口转发。
 - `clashproxy on` / `clashproxy off` 只影响当前 shell 的环境变量，不会改系统级代理。
 - `clashproxy status` 只看当前终端实际环境变量，避免与配置状态偏离。
@@ -43,6 +46,38 @@ git clone --branch nosudo-tmux --depth 1 https://gh-proxy.org/https://github.com
 cd clash-for-linux-install
 bash install.sh
 ```
+
+### 启动方式
+
+默认安装使用 `tmux`：
+
+```bash
+bash install.sh
+```
+
+显式指定 `nohup`：
+
+```bash
+bash install.sh --init nohup
+```
+
+显式指定 `systemd` 并启用 sudo 能力：
+
+```bash
+sudo bash install.sh --init systemd
+```
+
+也可以使用等价形式：
+
+```bash
+bash install.sh --init=tmux
+bash install.sh --init=nohup
+sudo bash install.sh --init=systemd
+```
+
+- `tmux`：默认模式，适合共享机普通用户，便于查看会话和日志。
+- `nohup`：普通用户备用模式，不依赖 `tmux`，但进程托管能力较弱。
+- `systemd`：需要 root 或 sudo，会注册系统服务，支持 `clashtun on/off`。
 
 - `.env` 里的 `CLASH_CONFIG_URL` 默认留空，不再内置任何真实订阅链接。
 - 安装结束时，如果 `CLASH_CONFIG_URL` 仍为空，脚本会交互式提示输入订阅链接。
@@ -92,6 +127,7 @@ Commands:
   ui                    查看 Web 面板地址
   secret                管理 Web 密钥
   sub                   管理订阅
+  tun                   管理 Tun 模式（仅 systemd）
   mixin                 查看或刷新 Mixin 配置
   upgrade               升级内核
 
@@ -255,6 +291,27 @@ clashctl sub ls
   `clashctl sub add "file:///root/clashctl/resources/config.yaml"`
 - 当原始订阅不兼容时，可以配合 `--convert` 使用本地转换链路。
 - 自动更新任务可通过 `crontab -e` 进行修改和管理。
+
+## 🧭 Tun 模式
+
+Tun 需要内核权限，因此默认 `tmux` / `nohup` 模式会拒绝执行：
+
+```bash
+$ clashtun
+😾 当前 INIT_TYPE=tmux 不支持 Tun；如需 Tun，请使用 --init systemd 重新安装
+```
+
+使用 `systemd` 模式安装后，可以执行：
+
+```bash
+$ clashtun
+$ clashtun on
+$ clashtun off
+```
+
+- `systemd` 模式会使用 root 或 sudo 注册服务。
+- 开启 Tun 时会修改 `resources/mixin.yaml` 中的 `tun.enable`，重新合并运行时配置并重启内核。
+- 共享机默认不建议启用 Tun，除非我们明确知道该机器允许普通用户通过 sudo 管理这个服务。
 
 ## ⬆️ 升级内核
 

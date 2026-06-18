@@ -152,18 +152,16 @@ _detect_proxy_port() {
 
     local newPort count=0
     local port_list=()
-    [ -n "$mixed_port" ] && port_list+=("mixed_port|mixed-port")
-    [ -n "$http_port" ] && port_list+=("http_port|port")
-    [ -n "$socks_port" ] && port_list+=("socks_port|socks-port")
+    [ -n "$mixed_port" ] && port_list+=("mixed-port|$mixed_port")
+    [ -n "$http_port" ] && port_list+=("port|$http_port")
+    [ -n "$socks_port" ] && port_list+=("socks-port|$socks_port")
     clashstatus >&/dev/null && local isActive='true'
     for entry in "${port_list[@]}"; do
-        local var_name="${entry%|*}"
-        local yaml_key="${entry#*|}"
-
-        eval "local var_val=\${$var_name}"
+        local yaml_key="${entry%|*}"
+        local var_val="${entry#*|}"
 
         [ -n "$var_val" ] && _is_port_used "$var_val" && [ "$isActive" != "true" ] && {
-            newPort=$(_get_random_port)
+            newPort=$(_get_random_port) || return
             ((count++))
             _failcat '🎯' "端口冲突：[$yaml_key] $var_val 🎲 随机分配 $newPort"
             "$BIN_YQ" -i ".${yaml_key} = $newPort" "$CLASH_CONFIG_MIXIN"
@@ -460,6 +458,16 @@ _merge_config() {
           )
         ) +
         ($mixin.proxy-groups.suffix // [])
+      ) |
+
+      ########################################
+      #         ProxyGroups Inject           #
+      ########################################
+      ($mixin.proxy-groups.inject // {}) as $inj |
+      .proxy-groups[] |= (
+        . as $g |
+        ($inj | .[$g.name] // []) as $extra |
+        .proxies = (.proxies + $extra | unique)
       )
     ' "$CLASH_CONFIG_BASE" "$CLASH_CONFIG_MIXIN" >"$CLASH_CONFIG_RUNTIME"
     _valid_config "$CLASH_CONFIG_RUNTIME" || {
@@ -518,9 +526,116 @@ EOF
     esac
 }
 
-function clashtun() {
-    _failcat "Tun 模式需要 sudo/内核权限，no-sudo 版已禁用"
+_tun_supported() {
+    [ "$INIT_TYPE" = "systemd" ]
+}
+
+tunstatus() {
+    _tun_supported || {
+        _failcat "当前 INIT_TYPE=${INIT_TYPE:-tmux} 不支持 Tun；如需 Tun，请使用 --init systemd 重新安装"
+        return 1
+    }
+
+    command -v ip >/dev/null || {
+        _failcat "未检测到 ip 命令，无法判断 Tun 状态"
+        return 1
+    }
+
+    local device
+    device=$("$BIN_YQ" '.tun.device // ""' "$CLASH_CONFIG_RUNTIME")
+    [ -z "$device" ] && device="Meta"
+    ip link show | grep -qs "$device" && {
+        _okcat 'Tun 状态：启用'
+        return 0
+    }
+    _failcat 'Tun 状态：关闭'
     return 1
+}
+
+_is_tun_enabled() {
+    "$BIN_YQ" -e '.tun.enable == true' "$CLASH_CONFIG_RUNTIME" >&/dev/null
+}
+
+tunon() {
+    _tun_supported || {
+        _failcat "当前 INIT_TYPE=${INIT_TYPE:-tmux} 不支持 Tun；如需 Tun，请使用 --init systemd 重新安装"
+        return 1
+    }
+
+    tunstatus 2>/dev/null && return 0
+    placeholder_stop >/dev/null
+    "$BIN_YQ" -i '.tun.enable = true' "$CLASH_CONFIG_MIXIN"
+    _merge_config
+    placeholder_start >/dev/null || {
+        _failcat 'Tun 模式开启失败'
+        return 1
+    }
+    sleep 1
+    tunstatus >&/dev/null || {
+        [ "$KERNEL_NAME" = 'mihomo' ] && {
+            "$BIN_YQ" -i '.tun.auto-redirect = false' "$CLASH_CONFIG_MIXIN"
+            _merge_config
+            placeholder_stop >/dev/null
+            placeholder_start >/dev/null
+            sleep 1
+            tunstatus >&/dev/null || {
+                _failcat 'Tun 模式开启失败，请检查代理内核日志'
+                return 1
+            }
+            _okcat "Tun 模式已开启"
+            return 0
+        }
+        _failcat 'Tun 模式开启失败，请检查代理内核日志'
+        return 1
+    }
+    _okcat "Tun 模式已开启"
+}
+
+tunoff() {
+    _tun_supported || {
+        _failcat "当前 INIT_TYPE=${INIT_TYPE:-tmux} 不支持 Tun；如需 Tun，请使用 --init systemd 重新安装"
+        return 1
+    }
+
+    tunstatus >/dev/null || return 0
+    placeholder_stop >/dev/null
+    "$BIN_YQ" -i '.tun.enable = false' "$CLASH_CONFIG_MIXIN"
+    _merge_config
+    placeholder_start >/dev/null
+    tunstatus >&/dev/null && {
+        _failcat "Tun 模式关闭失败"
+        return 1
+    }
+    _okcat "Tun 模式已关闭"
+}
+
+function clashtun() {
+    case "$1" in
+    -h | --help)
+        cat <<EOF
+
+- 查看 Tun 状态
+  clashtun
+
+- 开启 Tun 模式（仅 INIT_TYPE=systemd）
+  clashtun on
+
+- 关闭 Tun 模式（仅 INIT_TYPE=systemd）
+  clashtun off
+
+EOF
+        return 0
+        ;;
+    on)
+        tunon
+        ;;
+    off)
+        tunoff
+        ;;
+    *)
+        tunstatus
+        ;;
+    esac
 }
 
 function clashmixin() {
@@ -601,10 +716,10 @@ EOF
     _detect_ext_addr
     clashstatus >&/dev/null || clashon >/dev/null
     _okcat '⏳' "请求内核升级..."
+    local follow_pid=
     [ "$log_flag" = true ] && {
-        log_cmd=(placeholder_follow_log)
-        ("${log_cmd[@]}" &)
-
+        placeholder_follow_log &
+        follow_pid=$!
     }
     local res=$(
         curl -X POST \
@@ -614,7 +729,7 @@ EOF
             -H "Authorization: Bearer $(_get_secret)" \
             "http://${EXT_IP}:${EXT_PORT}/upgrade?channel=$channel"
     )
-    [ "$log_flag" = true ] && pkill -9 -f "${log_cmd[*]}"
+    [ -n "$follow_pid" ] && kill "$follow_pid" >/dev/null 2>&1
 
     grep '"status":"ok"' <<<"$res" && {
         _okcat "内核升级成功"
@@ -683,7 +798,8 @@ _sub_add() {
         read -r url
         [ -z "$url" ] && _error_quit "订阅链接不能为空"
     }
-    _get_url_by_id "$id" >/dev/null && _error_quit "该订阅链接已存在"
+    local existing_id
+    existing_id=$(_get_id_by_url "$url") && _error_quit "该订阅链接已存在：[$existing_id] $url"
 
     _download_config "$CLASH_CONFIG_TEMP" "$url"
     _valid_config "$CLASH_CONFIG_TEMP" || _error_quit "订阅无效，请检查：
@@ -695,14 +811,15 @@ _sub_add() {
     local profile_path="${CLASH_PROFILES_DIR}/${id}.yaml"
     mv "$CLASH_CONFIG_TEMP" "$profile_path"
 
-    "$BIN_YQ" -i "
-         .profiles = (.profiles // []) + 
-         [{
-           \"id\": $id,
-           \"path\": \"$profile_path\",
-           \"url\": \"$url\"
-         }]
-    " "$CLASH_PROFILES_META"
+    PROFILE_ID=$id PROFILE_PATH=$profile_path PROFILE_URL=$url \
+        "$BIN_YQ" -i '
+            .profiles = (.profiles // []) +
+            [{
+              "id": (env(PROFILE_ID) | tonumber),
+              "path": env(PROFILE_PATH),
+              "url": env(PROFILE_URL)
+            }]
+        ' "$CLASH_PROFILES_META"
     _logging_sub "➕ 已添加订阅：[$id] $url"
     _okcat '🎉' "订阅已添加：[$id] $url"
 }
@@ -719,7 +836,7 @@ _sub_del() {
     use=$("$BIN_YQ" '.use // ""' "$CLASH_PROFILES_META")
     [ "$use" = "$id" ] && _error_quit "删除失败：订阅 $id 正在使用中，请先切换订阅"
     /usr/bin/rm -f "$profile_path"
-    "$BIN_YQ" -i "del(.profiles[] | select(.id == \"$id\"))" "$CLASH_PROFILES_META"
+    PROFILE_ID=$id "$BIN_YQ" -i 'del(.profiles[] | select((.id | tostring) == env(PROFILE_ID)))' "$CLASH_PROFILES_META"
     _logging_sub "➖ 已删除订阅：[$id] $url"
     _okcat '🎉' "订阅已删除：[$id] $url"
 }
@@ -746,10 +863,13 @@ _sub_use() {
     _okcat '🔥' '订阅已生效'
 }
 _get_path_by_id() {
-    "$BIN_YQ" -e ".profiles[] | select(.id == \"$1\") | .path" "$CLASH_PROFILES_META" 2>/dev/null
+    PROFILE_ID=$1 "$BIN_YQ" -e '.profiles[] | select((.id | tostring) == env(PROFILE_ID)) | .path' "$CLASH_PROFILES_META" 2>/dev/null
 }
 _get_url_by_id() {
-    "$BIN_YQ" -e ".profiles[] | select(.id == \"$1\") | .url" "$CLASH_PROFILES_META" 2>/dev/null
+    PROFILE_ID=$1 "$BIN_YQ" -e '.profiles[] | select((.id | tostring) == env(PROFILE_ID)) | .url' "$CLASH_PROFILES_META" 2>/dev/null
+}
+_get_id_by_url() {
+    PROFILE_URL=$1 "$BIN_YQ" -e '.profiles[] | select(.url == env(PROFILE_URL)) | (.id | tostring)' "$CLASH_PROFILES_META" 2>/dev/null
 }
 _sub_update() {
     local arg is_convert
@@ -757,10 +877,10 @@ _sub_update() {
         case $arg in
         --auto)
             command -v crontab >/dev/null || _error_quit "未检测到 crontab 命令，请先安装 cron 服务"
-            crontab -l | grep -qs 'clashsub update' || {
+            crontab -l 2>/dev/null | grep -Fqs "$CLASHCTL_CRON_TAG" || {
                 (
-                    crontab -l 2>/dev/null
-                    echo "0 0 */2 * * $SHELL -i -c 'clashsub update'"
+                    crontab -l 2>/dev/null | grep -Fv "$CLASHCTL_CRON_TAG"
+                    printf "0 0 */2 * * %s -i -c 'clashsub update' %s\n" "$SHELL" "$CLASHCTL_CRON_TAG"
                 ) | crontab -
             }
             _okcat "已设置定时更新订阅"

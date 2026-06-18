@@ -13,6 +13,7 @@ authentication:
 # prefix：前置插入
 # suffix：后置插入
 # override：根据 name 匹配并替换原项
+# inject：向指定 proxy-group 的 proxies 列表注入节点，仅适用于 proxy-groups
 rules:
   prefix:
     - DOMAIN,api64.ipify.org,DIRECT # 用于 clashui 获取真实公网 IP
@@ -28,6 +29,24 @@ proxy-groups:
   prefix:
   suffix:
   override:
+  inject:
+
+# Tun 配置仅在 INIT_TYPE=systemd 且显式执行 clashtun on 时生效。
+tun:
+  enable: false
+  stack: system
+  auto-route: true
+  auto-redir: true # clash
+  auto-redirect: true # mihomo
+  auto-detect-interface: true
+  dns-hijack:
+    - any:53
+    - tcp://any:53
+  strict-route: true
+  route-exclude-address:
+    - 1.1.1.1/32 # 用于 clashui 获取真实公网 IP
+  exclude-src-port:
+    # - 80
 
 # DNS 配置
 dns:

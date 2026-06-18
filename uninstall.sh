@@ -9,12 +9,21 @@ clashoff 2>/dev/null
 _uninstall_service
 _revoke_rc
 
-command -v crontab >&/dev/null && crontab -l | grep -v "clashsub" | crontab -
+CLASHCTL_CRON_TAG=${CLASHCTL_CRON_TAG:-"# clashctl-auto-update"}
+command -v crontab >&/dev/null && {
+    crontab -l 2>/dev/null | grep -Fv "$CLASHCTL_CRON_TAG" | crontab -
+}
 
 current_dir=$(pwd -P 2>/dev/null || pwd 2>/dev/null || true)
 case "$current_dir" in
 "$CLASH_BASE_DIR" | "$CLASH_BASE_DIR"/*)
     cd "$HOME" 2>/dev/null || cd /
+    ;;
+esac
+
+case "$CLASH_BASE_DIR" in
+"" | "/" | "$HOME" | "$HOME/")
+    _error_quit "拒绝删除异常安装路径：${CLASH_BASE_DIR:-<empty>}"
     ;;
 esac
 

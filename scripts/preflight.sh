@@ -15,8 +15,18 @@ FILE_LOG="${CLASH_RESOURCES_DIR}/${KERNEL_NAME}.log"
 FILE_PID="${CLASH_RESOURCES_DIR}/${KERNEL_NAME}.pid"
 
 _valid_required() {
-    local required_cmds=("xz" "pgrep" "curl" "tar" 'unzip' "tmux")
+    local required_cmds=("xz" "pgrep" "pkill" "curl" "tar" 'unzip' "shuf")
     local missing=()
+
+    case "${INIT_TYPE:-tmux}" in
+    tmux)
+        required_cmds+=("tmux")
+        ;;
+    systemd)
+        required_cmds+=("systemctl")
+        ;;
+    esac
+
     for cmd in "${required_cmds[@]}"; do
         command -v "$cmd" >&/dev/null || missing+=("$cmd")
     done
@@ -36,7 +46,8 @@ _valid() {
 }
 
 _parse_args() {
-    for arg in "$@"; do
+    while [ "$#" -gt 0 ]; do
+        local arg=$1
         case $arg in
         mihomo)
             KERNEL_NAME=mihomo
@@ -47,7 +58,16 @@ _parse_args() {
         http*)
             CLASH_CONFIG_URL=$arg
             ;;
+        --init=*)
+            INIT_TYPE=${arg#--init=}
+            ;;
+        --init)
+            shift
+            [ "$#" -gt 0 ] || _error_quit "--init 需要指定模式：tmux、nohup、systemd"
+            INIT_TYPE=$1
+            ;;
         esac
+        shift
     done
 }
 
@@ -187,8 +207,16 @@ _detect_init() {
         command -v tmux >&/dev/null || _error_quit "未检测到 tmux，请先安装后再继续"
         _tmux
         ;;
+    nohup)
+        _nohup
+        ;;
+    systemd)
+        command -v systemctl >&/dev/null || _error_quit "未检测到 systemctl，请改用 INIT_TYPE=tmux 或 INIT_TYPE=nohup"
+        _is_root || _is_regular_sudo || _error_quit "INIT_TYPE=systemd 需要 root 或 sudo 执行"
+        _systemd
+        ;;
     *)
-        _error_quit "仅支持 INIT_TYPE=tmux"
+        _error_quit "仅支持 INIT_TYPE=tmux、nohup、systemd"
         ;;
     esac
     INIT_TYPE=$(basename "$INIT_TYPE")
@@ -261,15 +289,15 @@ _tmux() {
 
     service_start=(tmux new-session -d -s "$TMUX_SESSION" "$BIN_KERNEL -d $CLASH_RESOURCES_DIR -f $CLASH_CONFIG_RUNTIME >> $FILE_LOG 2>&1")
     service_is_active=(tmux has-session -t "$TMUX_SESSION")
-    service_stop=(tmux has-session -t "$TMUX_SESSION" "2>/dev/null" "&&" tmux kill-session -t "$TMUX_SESSION" "2>/dev/null" "||" pkill -9 -f "$BIN_KERNEL")
+    service_stop=(tmux has-session -t "$TMUX_SESSION" "2>/dev/null" "&&" tmux kill-session -t "$TMUX_SESSION" "2>/dev/null" "||" pkill -TERM -f "^${BIN_KERNEL}( |$)")
 }
 _nohup() {
     service_enable=(false)
     service_disable=(false)
 
-    service_start=('(' nohup "$BIN_KERNEL" -d "$CLASH_RESOURCES_DIR" -f "$CLASH_CONFIG_RUNTIME" '>\&' "$FILE_LOG" '\&' ')')
-    service_is_active=(pgrep -fa "$BIN_KERNEL")
-    service_stop=(pkill -9 -f "$BIN_KERNEL")
+    service_start=(nohup "$BIN_KERNEL" -d "$CLASH_RESOURCES_DIR" -f "$CLASH_CONFIG_RUNTIME" ">>" "$FILE_LOG" "2>&1" "&")
+    service_is_active=(pgrep -fa "^${BIN_KERNEL}( |$)")
+    service_stop=(pkill -TERM -f "^${BIN_KERNEL}( |$)")
 }
 
 _install_service() {
