@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
 
 THIS_INSTALL_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 1
+cd "$THIS_INSTALL_DIR" || exit 1
 
 . "$THIS_INSTALL_DIR/scripts/cmd/clashctl.sh"
 . "$THIS_INSTALL_DIR/scripts/preflight.sh"
+
+CLASHCTL_ERROR_EXIT=1
 
 _parse_args "$@"
 _normalize_sudo_install_path
@@ -24,9 +27,8 @@ touch "$CLASH_CONFIG_BASE"
 _set_envs
 _is_regular_sudo && chown -R "$SUDO_USER" "$CLASH_BASE_DIR"
 
-_install_service
+_install_service || _error_quit "服务安装失败，请检查启动方式和权限"
 [ -n "$CLASHCTL_NO_RC" ] || _apply_rc
-_mark_install_complete
 
 
 # 重新加载已替换占位符的脚本
@@ -43,6 +45,7 @@ _valid_config "$CLASH_CONFIG_BASE" && CLASH_CONFIG_URL="file://$CLASH_CONFIG_BAS
     else
         _okcat "安装已写入 shell rc；如需在当前 shell 立即使用，请执行：source ~/.bashrc"
     fi
+    _mark_install_complete
     exit 0
 }
 
@@ -57,6 +60,7 @@ clashsub use 1 || exit $?
 clashui
 clashsecret
 
+_mark_install_complete
 _okcat '🎉' 'enjoy 🎉'
 clashctl
 

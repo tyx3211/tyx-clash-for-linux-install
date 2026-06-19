@@ -78,6 +78,25 @@ _validate_init_mode() {
     esac
 }
 
+_validate_install_path() {
+    case "$CLASH_BASE_DIR" in
+    "" | "/" | "$HOME" | "$HOME/" | . | .. | ./* | ../*)
+        _error_quit "安装路径不安全，请在 .env 中更换 CLASH_BASE_DIR：${CLASH_BASE_DIR:-<empty>}"
+        ;;
+    /*)
+        ;;
+    *)
+        _error_quit "安装路径必须是绝对路径：$CLASH_BASE_DIR"
+        ;;
+    esac
+
+    case "$CLASH_BASE_DIR" in
+    *[[:space:]]* | *[\#\&]*)
+        _error_quit "安装路径包含 shell 模板不支持的字符，请避免空白、#、&：$CLASH_BASE_DIR"
+        ;;
+    esac
+}
+
 _register_install_cleanup() {
     [ -e "$CLASH_BASE_DIR" ] || CLASH_INSTALL_CREATED_DIR=$CLASH_BASE_DIR
     trap _cleanup_incomplete_install EXIT
@@ -124,6 +143,7 @@ _valid_required() {
 }
 
 _valid() {
+    _validate_install_path
     _valid_required
 
     [ -d "$CLASH_BASE_DIR" ] && _error_quit "请先执行卸载脚本,以清除安装路径：$CLASH_BASE_DIR"
@@ -454,24 +474,34 @@ _install_service() {
     local cmd_full="${BIN_KERNEL} -d ${CLASH_RESOURCES_DIR} -f ${CLASH_CONFIG_RUNTIME}"
 
     _escape_sed_repl() {
-        printf '%s' "$1" | sed -e 's/[&\\]/\\&/g'
+        printf '%s' "$1" | sed -e 's/[#&\\]/\\&/g'
     }
 
     [ -n "$service_src" ] && {
-        local sed_run_as_user
+        local sed_cmd_path sed_cmd_arg sed_cmd_full sed_log_file sed_pid_file
+        local sed_kernel_name sed_kernel_desc sed_run_as_user
+        sed_cmd_path=$(_escape_sed_repl "$cmd_path")
+        sed_cmd_arg=$(_escape_sed_repl "$cmd_arg")
+        sed_cmd_full=$(_escape_sed_repl "$cmd_full")
+        sed_log_file=$(_escape_sed_repl "$FILE_LOG")
+        sed_pid_file=$(_escape_sed_repl "$FILE_PID")
+        sed_kernel_name=$(_escape_sed_repl "$KERNEL_NAME")
+        sed_kernel_desc=$(_escape_sed_repl "$kernel_desc")
         sed_run_as_user=$(_escape_sed_repl "${service_run_as_user:-}")
-        /usr/bin/install -D -m 755 "$service_src" "$service_target"
-        ((${#service_add[@]})) && "${service_add[@]}"
+        /usr/bin/install -D -m 755 "$service_src" "$service_target" || return 1
+        if ((${#service_add[@]})); then
+            "${service_add[@]}" || return 1
+        fi
         sed -i \
-            -e "s#placeholder_cmd_path#$cmd_path#g" \
-            -e "s#placeholder_cmd_args#$cmd_arg#g" \
-            -e "s#placeholder_cmd_full#$cmd_full#g" \
-            -e "s#placeholder_log_file#$FILE_LOG#g" \
-            -e "s#placeholder_pid_file#$FILE_PID#g" \
-            -e "s#placeholder_kernel_name#$KERNEL_NAME#g" \
-            -e "s#placeholder_kernel_desc#$kernel_desc#g" \
+            -e "s#placeholder_cmd_path#$sed_cmd_path#g" \
+            -e "s#placeholder_cmd_args#$sed_cmd_arg#g" \
+            -e "s#placeholder_cmd_full#$sed_cmd_full#g" \
+            -e "s#placeholder_log_file#$sed_log_file#g" \
+            -e "s#placeholder_pid_file#$sed_pid_file#g" \
+            -e "s#placeholder_kernel_name#$sed_kernel_name#g" \
+            -e "s#placeholder_kernel_desc#$sed_kernel_desc#g" \
             -e "s#placeholder_run_as_user#$sed_run_as_user#g" \
-            "$service_target"
+            "$service_target" || return 1
     }
     local sed_installed_init
     sed_installed_init=$(_escape_sed_repl "CLASH_INSTALLED_INIT_TYPE=\${CLASH_INSTALLED_INIT_TYPE:-${INIT_TYPE}}")
@@ -486,7 +516,9 @@ _install_service() {
     _append_service_functions
 
     "${service_enable[@]}" >&/dev/null && _okcat '🚀' '已设置开机自启'
-    ((${#service_reload[@]})) && "${service_reload[@]}"
+    if ((${#service_reload[@]})); then
+        "${service_reload[@]}" || return 1
+    fi
     return 0
 }
 _uninstall_service() {

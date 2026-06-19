@@ -501,10 +501,13 @@ _merge_config_restart() {
     placeholder_stop >/dev/null
     placeholder_stop >/dev/null
     sleep 0.1
-    placeholder_start >/dev/null
+    placeholder_start >/dev/null || return 1
     sleep 0.1
 
-    [ "$had_proxy_env" = true ] && _set_system_proxy
+    if [ "$had_proxy_env" = true ]; then
+        _set_system_proxy || return 1
+    fi
+    return 0
 }
 _get_secret() {
     "$BIN_YQ" '.secret // ""' "$CLASH_CONFIG_RUNTIME"
@@ -530,11 +533,20 @@ EOF
         _okcat "当前密钥：$(_get_secret)"
         ;;
     1)
-        "$BIN_YQ" -i ".secret = \"$1\"" "$CLASH_CONFIG_MIXIN" || {
+        local backup="${CLASH_CONFIG_MIXIN}.secret.bak.$$"
+        cat "$CLASH_CONFIG_MIXIN" >"$backup" || return 1
+        CLASHCTL_SECRET=$1 "$BIN_YQ" -i '.secret = strenv(CLASHCTL_SECRET)' "$CLASH_CONFIG_MIXIN" || {
+            /bin/mv -f "$backup" "$CLASH_CONFIG_MIXIN"
             _failcat "密钥更新失败，请重新输入"
             return 1
         }
-        _merge_config_restart
+        _merge_config_restart || {
+            /bin/mv -f "$backup" "$CLASH_CONFIG_MIXIN"
+            _merge_config >/dev/null 2>&1 || true
+            _failcat "密钥未生效，请检查配置或内核状态"
+            return 1
+        }
+        /usr/bin/rm -f "$backup"
         _okcat "密钥更新成功，已重启生效"
         ;;
     *)
@@ -655,17 +667,24 @@ tunoff() {
     local was_active=false backup="${CLASH_CONFIG_TEMP}.tun.bak"
     placeholder_is_active >&/dev/null && was_active=true
     cat "$CLASH_CONFIG_MIXIN" >"$backup" || return 1
-    placeholder_stop >/dev/null
+    [ "$was_active" = true ] && placeholder_stop >/dev/null
     "$BIN_YQ" -i '.tun.enable = false' "$CLASH_CONFIG_MIXIN"
     _merge_config || {
         _restore_tun_mixin "$backup" "$was_active"
         return 1
     }
-    placeholder_start >/dev/null
-    tunstatus >&/dev/null && {
-        _failcat "Tun 模式关闭失败"
-        return 1
-    }
+    if [ "$was_active" = true ]; then
+        placeholder_start >/dev/null || {
+            _restore_tun_mixin "$backup" "$was_active"
+            _failcat "Tun 模式关闭失败，内核未能恢复启动"
+            return 1
+        }
+        tunstatus >&/dev/null && {
+            _restore_tun_mixin "$backup" "$was_active"
+            _failcat "Tun 模式关闭失败"
+            return 1
+        }
+    fi
     /usr/bin/rm -f "$backup"
     _okcat "Tun 模式已关闭"
 }
@@ -928,8 +947,22 @@ _sub_use() {
     local profile_path url
     profile_path=$(_get_path_by_id "$id") || _error_quit "订阅 id 不存在，请检查"
     url=$(_get_url_by_id "$id")
-    cat "$profile_path" >"$CLASH_CONFIG_BASE"
-    _merge_config_restart || return 1
+    local base_backup="${CLASH_CONFIG_BASE}.sub-use.bak.$$" had_base=false
+    [ -f "$CLASH_CONFIG_BASE" ] && {
+        cat "$CLASH_CONFIG_BASE" >"$base_backup" || return 1
+        had_base=true
+    }
+    cat "$profile_path" >"$CLASH_CONFIG_BASE" || return 1
+    _merge_config_restart || {
+        if [ "$had_base" = true ]; then
+            /bin/mv -f "$base_backup" "$CLASH_CONFIG_BASE"
+        else
+            /usr/bin/rm -f "$CLASH_CONFIG_BASE" "$base_backup"
+        fi
+        _merge_config >/dev/null 2>&1 || true
+        return 1
+    }
+    /usr/bin/rm -f "$base_backup"
     "$BIN_YQ" -i ".use = $id" "$CLASH_PROFILES_META"
     _logging_sub "🔥 订阅已切换为：[$id] $url"
     _okcat '🔥' '订阅已生效'
@@ -948,7 +981,7 @@ _get_id_by_url() {
     PROFILE_URL=$1 "$BIN_YQ" -e '.profiles[] | select(.url == env(PROFILE_URL)) | (.id | tostring)' "$CLASH_PROFILES_META" 2>/dev/null
 }
 _sub_update() {
-    local arg is_convert
+    local arg is_convert=false
     for arg in "$@"; do
         case $arg in
         --auto)
@@ -1007,10 +1040,28 @@ _sub_update() {
     转换日志：$BIN_SUBCONVERTER_LOG"
         return 1
     }
-    _logging_sub "✅ 订阅更新成功：[$id] $url"
-    cat "$CLASH_CONFIG_TEMP" >"$profile_path"
+    local profile_backup="${profile_path}.update.bak.$$" had_profile=false
+    [ -f "$profile_path" ] && {
+        cat "$profile_path" >"$profile_backup" || return 1
+        had_profile=true
+    }
+    cat "$CLASH_CONFIG_TEMP" >"$profile_path" || return 1
     use=$("$BIN_YQ" '.use // ""' "$CLASH_PROFILES_META")
-    [ "$use" = "$id" ] && clashsub use "$use" && return
+    [ "$use" = "$id" ] && {
+        clashsub use "$use" && {
+            /usr/bin/rm -f "$profile_backup"
+            _logging_sub "✅ 订阅更新成功：[$id] $url"
+            return 0
+        }
+        if [ "$had_profile" = true ]; then
+            /bin/mv -f "$profile_backup" "$profile_path"
+        else
+            /usr/bin/rm -f "$profile_path" "$profile_backup"
+        fi
+        return 1
+    }
+    /usr/bin/rm -f "$profile_backup"
+    _logging_sub "✅ 订阅更新成功：[$id] $url"
     _okcat '订阅已更新'
 }
 _logging_sub() {

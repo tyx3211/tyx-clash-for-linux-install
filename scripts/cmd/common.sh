@@ -130,7 +130,8 @@ function _error_quit() {
         local msg="${emoji} $1"
         _color_log "$color" "$msg"
     }
-    exec $SHELL -i
+    [ -n "${CLASHCTL_ERROR_EXIT:-}" ] && exit 1
+    exec "${SHELL:-/bin/sh}" -i
 }
 
 function _valid_config() {
