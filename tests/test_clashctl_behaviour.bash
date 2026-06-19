@@ -7,6 +7,7 @@ set -euo pipefail
 CLASHCTL_SH="$TEST_ROOT/scripts/cmd/clashctl.sh"
 PREFLIGHT_SH="$TEST_ROOT/scripts/preflight.sh"
 UNINSTALL_SH="$TEST_ROOT/uninstall.sh"
+FISH_SH="$TEST_ROOT/scripts/cmd/clashctl.fish"
 
 detect_proxy_port_body=$(extract_function "_detect_proxy_port" "$CLASHCTL_SH")
 grep -q 'eval ' <<<"$detect_proxy_port_body" &&
@@ -41,5 +42,8 @@ assert_file_contains "$CLASHCTL_SH" 'PROFILE_ID=\$id' \
 
 assert_file_contains "$CLASHCTL_SH" 'clashtun\(\)' \
     "clashctl should keep a tun command entry point"
+
+assert_file_not_contains "$FISH_SH" 'eval ' \
+    "fish wrapper should not use eval to generate fixed command wrappers"
 
 pass "clashctl safety checks"

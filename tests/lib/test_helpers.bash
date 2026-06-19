@@ -48,3 +48,11 @@ extract_function() {
         }
     ' "$file"
 }
+
+make_test_tmpdir() {
+    local name=$1
+    local base=${TEST_TMP_BASE:-/tmp/tyx}
+
+    mkdir -p "$base"
+    mktemp -d "${base}/${name}.XXXXXX"
+}

@@ -14,6 +14,8 @@ CLASH_CMD_DIR="${CLASH_BASE_DIR}/$SCRIPT_CMD_DIR"
 FILE_LOG="${CLASH_RESOURCES_DIR}/${KERNEL_NAME}.log"
 FILE_PID="${CLASH_RESOURCES_DIR}/${KERNEL_NAME}.pid"
 INSTALL_MARKER="${CLASH_BASE_DIR}/.clashctl-install-root"
+CLASH_INSTALL_CREATED_DIR=
+CLASH_INSTALL_COMPLETE=false
 
 _refresh_install_paths() {
     CLASH_RESOURCES_DIR="${CLASH_BASE_DIR}/resources"
@@ -74,6 +76,32 @@ _validate_init_mode() {
         _error_quit "仅支持 INIT_TYPE=tmux、nohup、systemd"
         ;;
     esac
+}
+
+_register_install_cleanup() {
+    [ -e "$CLASH_BASE_DIR" ] || CLASH_INSTALL_CREATED_DIR=$CLASH_BASE_DIR
+    trap _cleanup_incomplete_install EXIT
+}
+
+_mark_install_complete() {
+    CLASH_INSTALL_COMPLETE=true
+    trap - EXIT
+}
+
+_cleanup_incomplete_install() {
+    local status=$?
+
+    [ "$CLASH_INSTALL_COMPLETE" = true ] && return "$status"
+    [ -n "$CLASH_INSTALL_CREATED_DIR" ] || return "$status"
+
+    case "$CLASH_INSTALL_CREATED_DIR" in
+    "" | "/" | "$HOME" | "$HOME/" | . | .. | ./* | ../*)
+        return "$status"
+        ;;
+    esac
+
+    /usr/bin/rm -rf "$CLASH_INSTALL_CREATED_DIR" 2>/dev/null || true
+    return "$status"
 }
 
 _valid_required() {
@@ -170,6 +198,8 @@ _load_zip() {
 _download_zip() {
     (($#)) || return 0
     local url_clash url_mihomo url_yq url_subconverter
+    local subconverter_repo=${SUBCONVERTER_REPO:-tindy2013/subconverter}
+    local download_timeout=${CLASHCTL_DOWNLOAD_TIMEOUT:-60}
     local arch=$(uname -m)
     case "$arch" in
     x86_64)
@@ -182,25 +212,25 @@ _download_zip() {
         url_clash=https://downloads.clash.wiki/ClashPremium/clash-linux-amd64-2023.08.17.gz
         url_mihomo=https://github.com/MetaCubeX/mihomo/releases/download/${VERSION_MIHOMO##*-}/mihomo-linux-amd64-${VERSION_MIHOMO}.gz
         url_yq=https://github.com/mikefarah/yq/releases/download/${VERSION_YQ}/yq_linux_amd64.tar.gz
-        url_subconverter=https://github.com/tindy2013/subconverter/releases/download/${VERSION_SUBCONVERTER}/subconverter_linux64.tar.gz
+        url_subconverter=https://github.com/${subconverter_repo}/releases/download/${VERSION_SUBCONVERTER}/subconverter_linux64.tar.gz
         ;;
     *86*)
         url_clash=https://downloads.clash.wiki/ClashPremium/clash-linux-386-2023.08.17.gz
         url_mihomo=https://github.com/MetaCubeX/mihomo/releases/download/${VERSION_MIHOMO##*-}/mihomo-linux-386-${VERSION_MIHOMO}.gz
         url_yq=https://github.com/mikefarah/yq/releases/download/${VERSION_YQ}/yq_linux_386.tar.gz
-        url_subconverter=https://github.com/tindy2013/subconverter/releases/download/${VERSION_SUBCONVERTER}/subconverter_linux32.tar.gz
+        url_subconverter=https://github.com/${subconverter_repo}/releases/download/${VERSION_SUBCONVERTER}/subconverter_linux32.tar.gz
         ;;
     armv*)
         url_clash=https://downloads.clash.wiki/ClashPremium/clash-linux-armv5-2023.08.17.gz
         url_mihomo=https://github.com/MetaCubeX/mihomo/releases/download/${VERSION_MIHOMO##*-}/mihomo-linux-armv7-${VERSION_MIHOMO}.gz
         url_yq=https://github.com/mikefarah/yq/releases/download/${VERSION_YQ}/yq_linux_arm.tar.gz
-        url_subconverter=https://github.com/tindy2013/subconverter/releases/download/${VERSION_SUBCONVERTER}/subconverter_armv7.tar.gz
+        url_subconverter=https://github.com/${subconverter_repo}/releases/download/${VERSION_SUBCONVERTER}/subconverter_armv7.tar.gz
         ;;
     aarch64)
         url_clash=https://downloads.clash.wiki/ClashPremium/clash-linux-arm64-2023.08.17.gz
         url_mihomo=https://github.com/MetaCubeX/mihomo/releases/download/${VERSION_MIHOMO##*-}/mihomo-linux-arm64-${VERSION_MIHOMO}.gz
         url_yq=https://github.com/mikefarah/yq/releases/download/${VERSION_YQ}/yq_linux_arm64.tar.gz
-        url_subconverter=https://github.com/tindy2013/subconverter/releases/download/${VERSION_SUBCONVERTER}/subconverter_aarch64.tar.gz
+        url_subconverter=https://github.com/${subconverter_repo}/releases/download/${VERSION_SUBCONVERTER}/subconverter_aarch64.tar.gz
         ;;
     *)
         _error_quit "未知的架构版本：$arch，请自行下载对应版本至 ${ZIP_BASE_DIR} 目录"
@@ -228,6 +258,7 @@ _download_zip() {
             --fail \
             --insecure \
             --location \
+            --max-time "$download_timeout" \
             --retry 1 \
             --output "$target" \
             "$url"
@@ -259,8 +290,8 @@ _unzip_zip() {
 _detect_init() {
     _validate_init_mode
 
-    service_log=(less '<' $FILE_LOG)
-    service_follow_log=(tail -f -n 0 $FILE_LOG)
+    service_log_body="less < $(_shell_quote "$FILE_LOG") \"\$@\""
+    service_follow_log_body="tail -f -n 0 $(_shell_quote "$FILE_LOG") \"\$@\""
     _is_regular_sudo && {
         _SUDO=sudo
     }
@@ -342,6 +373,12 @@ _systemd() {
     service_start=($_SUDO systemctl start "$KERNEL_NAME")
     service_stop=($_SUDO systemctl stop "$KERNEL_NAME")
     service_is_active=($_SUDO systemctl is-active "$KERNEL_NAME")
+
+    service_run_as_user=
+    _is_regular_sudo && service_run_as_user="User=$SUDO_USER"
+    service_start_body="$(_quote_command "${service_start[@]}")"
+    service_stop_body="$(_quote_command "${service_stop[@]}")"
+    service_is_active_body="$(_quote_command "${service_is_active[@]}")"
 }
 _tmux() {
     TMUX_SESSION="clash-${KERNEL_NAME}"
@@ -351,6 +388,11 @@ _tmux() {
     service_start=(tmux new-session -d -s "$TMUX_SESSION" "$BIN_KERNEL -d $CLASH_RESOURCES_DIR -f $CLASH_CONFIG_RUNTIME >> $FILE_LOG 2>&1")
     service_is_active=(tmux has-session -t "$TMUX_SESSION")
     service_stop=(tmux has-session -t "$TMUX_SESSION" "2>/dev/null" "&&" tmux kill-session -t "$TMUX_SESSION" "2>/dev/null" "||" pkill -TERM -f "^${BIN_KERNEL}( |$)")
+
+    local kernel_cmd="$BIN_KERNEL -d $CLASH_RESOURCES_DIR -f $CLASH_CONFIG_RUNTIME >> $FILE_LOG 2>&1"
+    service_start_body="tmux new-session -d -s $(_shell_quote "$TMUX_SESSION") $(_shell_quote "$kernel_cmd")"
+    service_is_active_body="tmux has-session -t $(_shell_quote "$TMUX_SESSION")"
+    service_stop_body="if tmux has-session -t $(_shell_quote "$TMUX_SESSION") 2>/dev/null; then tmux kill-session -t $(_shell_quote "$TMUX_SESSION") 2>/dev/null; else pkill -TERM -f $(_shell_quote "^${BIN_KERNEL}( |$)"); fi"
 }
 _nohup() {
     service_enable=(false)
@@ -359,6 +401,49 @@ _nohup() {
     service_start=(nohup "$BIN_KERNEL" -d "$CLASH_RESOURCES_DIR" -f "$CLASH_CONFIG_RUNTIME" ">>" "$FILE_LOG" "2>&1" "&")
     service_is_active=(pgrep -fa "^${BIN_KERNEL}( |$)")
     service_stop=(pkill -TERM -f "^${BIN_KERNEL}( |$)")
+
+    service_start_body="nohup $(_shell_quote "$BIN_KERNEL") -d $(_shell_quote "$CLASH_RESOURCES_DIR") -f $(_shell_quote "$CLASH_CONFIG_RUNTIME") >> $(_shell_quote "$FILE_LOG") 2>&1 &"
+    service_is_active_body="pgrep -fa $(_shell_quote "^${BIN_KERNEL}( |$)")"
+    service_stop_body="pkill -TERM -f $(_shell_quote "^${BIN_KERNEL}( |$)")"
+}
+
+_shell_quote() {
+    printf '%q' "$1"
+}
+
+_quote_command() {
+    local out= item quoted
+
+    for item in "$@"; do
+        quoted=$(_shell_quote "$item")
+        out="${out:+$out }$quoted"
+    done
+    printf '%s' "$out"
+}
+
+_append_service_functions() {
+    cat >>"$CLASH_CMD_DIR/clashctl.sh" <<EOF
+
+_clash_service_start() {
+    ${service_start_body:-return 1}
+}
+
+_clash_service_is_active() {
+    ${service_is_active_body:-return 1}
+}
+
+_clash_service_stop() {
+    ${service_stop_body:-return 1}
+}
+
+_clash_service_log() {
+    ${service_log_body:-return 1}
+}
+
+_clash_service_follow_log() {
+    ${service_follow_log_body:-return 1}
+}
+EOF
 }
 
 _install_service() {
@@ -373,7 +458,9 @@ _install_service() {
     }
 
     [ -n "$service_src" ] && {
-        /usr/bin/install -D -m +x "$service_src" "$service_target"
+        local sed_run_as_user
+        sed_run_as_user=$(_escape_sed_repl "${service_run_as_user:-}")
+        /usr/bin/install -D -m 755 "$service_src" "$service_target"
         ((${#service_add[@]})) && "${service_add[@]}"
         sed -i \
             -e "s#placeholder_cmd_path#$cmd_path#g" \
@@ -383,24 +470,24 @@ _install_service() {
             -e "s#placeholder_pid_file#$FILE_PID#g" \
             -e "s#placeholder_kernel_name#$KERNEL_NAME#g" \
             -e "s#placeholder_kernel_desc#$kernel_desc#g" \
+            -e "s#placeholder_run_as_user#$sed_run_as_user#g" \
             "$service_target"
     }
-    local sed_service_start=$(_escape_sed_repl "${service_start[*]}")
-    local sed_service_is_active=$(_escape_sed_repl "${service_is_active[*]}")
-    local sed_service_stop=$(_escape_sed_repl "${service_stop[*]}")
-    local sed_service_log=$(_escape_sed_repl "${service_log[*]}")
-    local sed_service_follow_log=$(_escape_sed_repl "${service_follow_log[*]}")
+    local sed_installed_init
+    sed_installed_init=$(_escape_sed_repl "CLASH_INSTALLED_INIT_TYPE=\${CLASH_INSTALLED_INIT_TYPE:-${INIT_TYPE}}")
     sed -i \
-        -e "s#placeholder_start#${sed_service_start}#g" \
-        -e "s#placeholder_is_active#${sed_service_is_active}#g" \
-        -e "s#placeholder_stop#${sed_service_stop}#g" \
-        -e "s#placeholder_log#${sed_service_log}#g" \
-        -e "s#placeholder_follow_log#${sed_service_follow_log}#g" \
-        -e "s#placeholder_init_type#${INIT_TYPE}#g" \
+        -e "s#placeholder_start#_clash_service_start#g" \
+        -e "s#placeholder_is_active#_clash_service_is_active#g" \
+        -e "s#placeholder_stop#_clash_service_stop#g" \
+        -e "s#placeholder_log#_clash_service_log#g" \
+        -e "s#placeholder_follow_log#_clash_service_follow_log#g" \
+        -e "s#^CLASH_INSTALLED_INIT_TYPE=.*#${sed_installed_init}#g" \
         "$CLASH_CMD_DIR/clashctl.sh" "$CLASH_CMD_DIR/common.sh"
+    _append_service_functions
 
     "${service_enable[@]}" >&/dev/null && _okcat '🚀' '已设置开机自启'
     ((${#service_reload[@]})) && "${service_reload[@]}"
+    return 0
 }
 _uninstall_service() {
     _detect_init

@@ -1,22 +1,44 @@
-set fn_arr \
-clashui \
-clashstatus \
-clashsecret \
-clashmixin \
-clashsub \
-clashtun \
-clashlog \
-clashupgrade \
-clashhelp
-
-for fn in $fn_arr
-    eval "
-    function $fn
-        bash -i -c '$fn \"\$@\"' -- \$argv
-    end
-    "
+function _clashctl_bash_call
+    set -l fn $argv[1]
+    set -e argv[1]
+    bash -i -c "$fn \"\$@\"" -- $argv
 end
 
+function clashui
+    _clashctl_bash_call clashui $argv
+end
+
+function clashstatus
+    _clashctl_bash_call clashstatus $argv
+end
+
+function clashsecret
+    _clashctl_bash_call clashsecret $argv
+end
+
+function clashmixin
+    _clashctl_bash_call clashmixin $argv
+end
+
+function clashsub
+    _clashctl_bash_call clashsub $argv
+end
+
+function clashtun
+    _clashctl_bash_call clashtun $argv
+end
+
+function clashlog
+    _clashctl_bash_call clashlog $argv
+end
+
+function clashupgrade
+    _clashctl_bash_call clashupgrade $argv
+end
+
+function clashhelp
+    _clashctl_bash_call clashhelp $argv
+end
 
 function clashctl
     if test -z "$argv"

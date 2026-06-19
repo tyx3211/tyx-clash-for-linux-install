@@ -35,8 +35,10 @@ grep -qx 'tyx-clash-for-linux-install' "$INSTALL_MARKER" || _uninstall_die "安�
 
 . "$THIS_UNINSTALL_DIR/scripts/preflight.sh"
 . "$CLASH_BASE_REAL/scripts/cmd/clashctl.sh" 2>/dev/null
+_refresh_install_paths
+INIT_TYPE=$(_get_installed_init_type)
 
-pgrep -f "$BIN_KERNEL" -u 0 >/dev/null && ! _is_root && _error_quit "请先关闭 Tun 模式"
+[ "$INIT_TYPE" = systemd ] && ! _is_root && _error_quit "systemd 模式需要使用 sudo 执行卸载"
 clashoff 2>/dev/null
 _uninstall_service
 _revoke_rc

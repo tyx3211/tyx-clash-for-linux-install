@@ -288,7 +288,7 @@ clashctl sub ls
 
 - 订阅链接请始终使用双引号包起来。
 - 支持本地订阅，例如：
-  `clashctl sub add "file:///root/clashctl/resources/config.yaml"`
+  `clashctl sub add "file://$HOME/clashctl/resources/config.yaml"`
 - 当原始订阅不兼容时，可以配合 `--convert` 使用本地转换链路。
 - 自动更新任务可通过 `crontab -e` 进行修改和管理。
 
@@ -309,7 +309,7 @@ $ clashtun on
 $ clashtun off
 ```
 
-- `systemd` 模式会使用 root 或 sudo 注册服务。
+- `systemd` 模式会使用 root 或 sudo 注册系统服务；通过 sudo 安装时，服务进程会以 sudo 调用用户身份运行，并由 systemd 授予 Tun 所需网络能力。
 - 开启 Tun 时会修改 `resources/mixin.yaml` 中的 `tun.enable`，重新合并运行时配置并重启内核。
 - 共享机默认不建议启用 Tun，除非我们明确知道该机器允许普通用户通过 sudo 管理这个服务。
 
@@ -330,6 +330,12 @@ $ clashupgrade
 
 ```bash
 bash ~/clashctl/uninstall.sh
+```
+
+- 如果使用 `sudo bash install.sh --init systemd` 安装，则卸载也需要执行：
+
+```bash
+sudo bash ~/clashctl/uninstall.sh
 ```
 
 - 请执行安装目录里的卸载脚本，而不是源码仓库里的同名脚本，避免把安装副本和源码目录混淆。

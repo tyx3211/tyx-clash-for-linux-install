@@ -5,7 +5,7 @@ THIS_SCRIPT_DIR=$(dirname "$(readlink -f "${BASH_SOURCE:-${(%):-%N}}")")
 
 DEFAULT_HTTP_PORT=7890
 DEFAULT_SOCKS_PORT=7891
-CLASH_INSTALLED_INIT_TYPE=${CLASH_INSTALLED_INIT_TYPE:-placeholder_init_type}
+CLASH_INSTALLED_INIT_TYPE=${CLASH_INSTALLED_INIT_TYPE:-__CLASH_INIT_TYPE_UNSET__}
 
 _ensure_sidecar_config() {
     [ -s "$CLASH_CONFIG_SIDECAR" ] && return 0
@@ -401,7 +401,9 @@ function clashui() {
 }
 
 _merge_config() {
-    cat "$CLASH_CONFIG_RUNTIME" >"$CLASH_CONFIG_TEMP" 2>/dev/null
+    local runtime_backup="${CLASH_CONFIG_RUNTIME}.merge.bak.$$"
+    [ -f "$CLASH_CONFIG_RUNTIME" ] && cat "$CLASH_CONFIG_RUNTIME" >"$runtime_backup"
+
     # shellcheck disable=SC2016
     "$BIN_YQ" eval-all '
       ########################################
@@ -470,18 +472,32 @@ _merge_config() {
         ($inj | .[$g.name] // []) as $extra |
         .proxies = (.proxies + $extra | unique)
       )
-    ' "$CLASH_CONFIG_BASE" "$CLASH_CONFIG_MIXIN" >"$CLASH_CONFIG_RUNTIME"
-    _valid_config "$CLASH_CONFIG_RUNTIME" || {
-        cat "$CLASH_CONFIG_TEMP" >"$CLASH_CONFIG_RUNTIME"
-        _error_quit "验证失败：请检查 Mixin 配置"
+    ' "$CLASH_CONFIG_BASE" "$CLASH_CONFIG_MIXIN" >"$CLASH_CONFIG_RUNTIME" || {
+        if [ -f "$runtime_backup" ]; then
+            /bin/mv -f "$runtime_backup" "$CLASH_CONFIG_RUNTIME"
+        else
+            /usr/bin/rm -f "$CLASH_CONFIG_RUNTIME"
+        fi
+        _failcat "验证失败：请检查 Mixin 配置"
+        return 1
     }
+    _valid_config "$CLASH_CONFIG_RUNTIME" || {
+        if [ -f "$runtime_backup" ]; then
+            /bin/mv -f "$runtime_backup" "$CLASH_CONFIG_RUNTIME"
+        else
+            /usr/bin/rm -f "$CLASH_CONFIG_RUNTIME"
+        fi
+        _failcat "验证失败：请检查 Mixin 配置"
+        return 1
+    }
+    /usr/bin/rm -f "$runtime_backup"
 }
 
 _merge_config_restart() {
     local had_proxy_env=false
     _has_current_proxy_env && had_proxy_env=true
 
-    _merge_config
+    _merge_config || return 1
     placeholder_stop >/dev/null
     placeholder_stop >/dev/null
     sleep 0.1
@@ -529,7 +545,7 @@ EOF
 
 _get_installed_init_type() {
     case "$CLASH_INSTALLED_INIT_TYPE" in
-    "" | placeholder_init_type)
+    "" | __CLASH_INIT_TYPE_UNSET__)
         echo "${INIT_TYPE:-tmux}"
         ;;
     *)
@@ -548,7 +564,7 @@ _restore_tun_mixin() {
 
     [ -f "$backup" ] || return 0
     /bin/mv -f "$backup" "$CLASH_CONFIG_MIXIN"
-    _merge_config
+    _merge_config || return 1
     [ "$restart_after_restore" = true ] && placeholder_start >/dev/null
 }
 
@@ -590,7 +606,10 @@ tunon() {
     cat "$CLASH_CONFIG_MIXIN" >"$backup" || return 1
     placeholder_stop >/dev/null
     "$BIN_YQ" -i '.tun.enable = true' "$CLASH_CONFIG_MIXIN"
-    _merge_config
+    _merge_config || {
+        _restore_tun_mixin "$backup" "$was_active"
+        return 1
+    }
     placeholder_start >/dev/null || {
         _restore_tun_mixin "$backup" "$was_active"
         _failcat 'Tun 模式开启失败'
@@ -600,7 +619,10 @@ tunon() {
     tunstatus >&/dev/null || {
         [ "$KERNEL_NAME" = 'mihomo' ] && {
             "$BIN_YQ" -i '.tun.auto-redirect = false' "$CLASH_CONFIG_MIXIN"
-            _merge_config
+            _merge_config || {
+                _restore_tun_mixin "$backup" "$was_active"
+                return 1
+            }
             placeholder_stop >/dev/null
             placeholder_start >/dev/null
             sleep 1
@@ -630,14 +652,21 @@ tunoff() {
     _is_tun_enabled || {
         tunstatus >/dev/null 2>&1 || return 0
     }
+    local was_active=false backup="${CLASH_CONFIG_TEMP}.tun.bak"
+    placeholder_is_active >&/dev/null && was_active=true
+    cat "$CLASH_CONFIG_MIXIN" >"$backup" || return 1
     placeholder_stop >/dev/null
     "$BIN_YQ" -i '.tun.enable = false' "$CLASH_CONFIG_MIXIN"
-    _merge_config
+    _merge_config || {
+        _restore_tun_mixin "$backup" "$was_active"
+        return 1
+    }
     placeholder_start >/dev/null
     tunstatus >&/dev/null && {
         _failcat "Tun 模式关闭失败"
         return 1
     }
+    /usr/bin/rm -f "$backup"
     _okcat "Tun 模式已关闭"
 }
 
@@ -833,11 +862,22 @@ _sub_add() {
     local existing_id
     existing_id=$(_get_id_by_url "$url") && _error_quit "该订阅链接已存在：[$existing_id] $url"
 
-    _download_config "$CLASH_CONFIG_TEMP" "$url"
-    _valid_config "$CLASH_CONFIG_TEMP" || _error_quit "订阅无效，请检查：
+    local CLASH_CONFIG_TEMP
+    CLASH_CONFIG_TEMP=$(_make_config_temp) || {
+        _error_quit "无法创建订阅临时文件"
+        return 1
+    }
+    _download_config "$CLASH_CONFIG_TEMP" "$url" || {
+        _error_quit "订阅下载失败：$url"
+        return 1
+    }
+    _valid_config "$CLASH_CONFIG_TEMP" || {
+        _error_quit "订阅无效，请检查：
     原始订阅：${CLASH_CONFIG_TEMP}.raw
     转换订阅：$CLASH_CONFIG_TEMP
     转换日志：$BIN_SUBCONVERTER_LOG"
+        return 1
+    }
 
     local id=$("$BIN_YQ" '.profiles // [] | (map(.id) | max) // 0 | . + 1' "$CLASH_PROFILES_META")
     local profile_path="${CLASH_PROFILES_DIR}/${id}.yaml"
@@ -889,7 +929,7 @@ _sub_use() {
     profile_path=$(_get_path_by_id "$id") || _error_quit "订阅 id 不存在，请检查"
     url=$(_get_url_by_id "$id")
     cat "$profile_path" >"$CLASH_CONFIG_BASE"
-    _merge_config_restart
+    _merge_config_restart || return 1
     "$BIN_YQ" -i ".use = $id" "$CLASH_PROFILES_META"
     _logging_sub "🔥 订阅已切换为：[$id] $url"
     _okcat '🔥' '订阅已生效'
@@ -899,6 +939,10 @@ _get_path_by_id() {
 }
 _get_url_by_id() {
     PROFILE_ID=$1 "$BIN_YQ" -e '.profiles[] | select((.id | tostring) == env(PROFILE_ID)) | .url' "$CLASH_PROFILES_META" 2>/dev/null
+}
+_make_config_temp() {
+    mkdir -p "$CLASH_RESOURCES_DIR"
+    mktemp "${CLASH_RESOURCES_DIR}/temp.XXXXXX.yaml"
 }
 _get_id_by_url() {
     PROFILE_URL=$1 "$BIN_YQ" -e '.profiles[] | select(.url == env(PROFILE_URL)) | (.id | tostring)' "$CLASH_PROFILES_META" 2>/dev/null
@@ -931,12 +975,29 @@ _sub_update() {
     profile_path=$(_get_path_by_id "$id")
     _okcat "✈️ " "更新订阅：[$id] $url"
 
+    local CLASH_CONFIG_TEMP
+    CLASH_CONFIG_TEMP=$(_make_config_temp) || {
+        _error_quit "无法创建订阅临时文件"
+        return 1
+    }
     [ "$is_convert" = true ] && {
-        _download_convert_config "$CLASH_CONFIG_TEMP" "$url" &&
-            _validate_downloaded_config "$CLASH_CONFIG_TEMP"
+        _download_convert_config "$CLASH_CONFIG_TEMP" "$url" || {
+            _logging_sub "❌ 订阅更新失败：[$id] $url"
+            _error_quit "订阅转换失败：$url"
+            return 1
+        }
+        _validate_downloaded_config "$CLASH_CONFIG_TEMP" || {
+            _logging_sub "❌ 订阅更新失败：[$id] $url"
+            _error_quit "订阅转换结果无效：$CLASH_CONFIG_TEMP"
+            return 1
+        }
     }
     [ "$is_convert" != true ] && {
-        _download_config "$CLASH_CONFIG_TEMP" "$url"
+        _download_config "$CLASH_CONFIG_TEMP" "$url" || {
+            _logging_sub "❌ 订阅更新失败：[$id] $url"
+            _error_quit "订阅下载失败：$url"
+            return 1
+        }
     }
     _valid_config "$CLASH_CONFIG_TEMP" || {
         _logging_sub "❌ 订阅更新失败：[$id] $url"
@@ -944,6 +1005,7 @@ _sub_update() {
     原始订阅：${CLASH_CONFIG_TEMP}.raw
     转换订阅：$CLASH_CONFIG_TEMP
     转换日志：$BIN_SUBCONVERTER_LOG"
+        return 1
     }
     _logging_sub "✅ 订阅更新成功：[$id] $url"
     cat "$CLASH_CONFIG_TEMP" >"$profile_path"
@@ -1025,6 +1087,7 @@ Commands:
   ui                    面板地址
   sub                   订阅管理
   log                   内核日志
+  tun                   管理 Tun 模式
   mixin                 Mixin 配置
   secret                Web 密钥
   upgrade               升级内核

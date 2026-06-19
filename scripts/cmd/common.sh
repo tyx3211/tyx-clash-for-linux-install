@@ -246,6 +246,7 @@ _validate_downloaded_config() {
 _download_raw_config() {
     local dest=$1
     local url=$2
+    local sub_timeout=${CLASHCTL_SUB_TIMEOUT:-5}
 
     curl \
         --silent \
@@ -253,7 +254,7 @@ _download_raw_config() {
         --fail \
         --insecure \
         --location \
-        --max-time 5 \
+        --max-time "$sub_timeout" \
         --retry 1 \
         --user-agent "$CLASH_SUB_UA" \
         --output "$dest" \
@@ -261,7 +262,7 @@ _download_raw_config() {
         wget \
             --no-verbose \
             --no-check-certificate \
-            --timeout 5 \
+            --timeout "$sub_timeout" \
             --tries 1 \
             --user-agent "$CLASH_SUB_UA" \
             --output-document "$dest" \
@@ -271,7 +272,11 @@ _download_convert_config() {
     local dest=$1
     local url=$2
     local flag
-    [ "${url:0:4}" = 'file' ] && return 0
+    local sub_timeout=${CLASHCTL_SUB_TIMEOUT:-5}
+    [ "${url:0:4}" = 'file' ] && {
+        _download_raw_config "$dest" "$url"
+        return $?
+    }
     _start_convert || return 1
     local convert_url=$(
         target='clash'
@@ -287,7 +292,7 @@ _download_convert_config() {
             --write-out '%{url_effective}' \
             "$base_url"
     )
-    curl --user-agent "$CLASH_SUB_UA" --silent --output "$dest" "$convert_url"
+    curl --user-agent "$CLASH_SUB_UA" --silent --max-time "$sub_timeout" --output "$dest" "$convert_url"
     flag=$?
     _stop_convert
     return $flag
@@ -316,7 +321,8 @@ _start_convert() {
         local now=$(date +%s)
         [ $((now - start)) -gt 2 ] && {
             _stop_convert
-            _error_quit "订阅转换服务未启动，请检查日志：$BIN_SUBCONVERTER_LOG"
+            _failcat "订阅转换服务未启动，请检查日志：$BIN_SUBCONVERTER_LOG"
+            return 1
         }
     done
 }
