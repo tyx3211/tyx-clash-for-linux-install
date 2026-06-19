@@ -134,5 +134,6 @@ Project Update:
 
 Docs:
   https://github.com/tyx3211/tyx-clash-for-linux-install/blob/main/docs/quickstart.md
+  https://github.com/tyx3211/tyx-clash-for-linux-install/blob/main/docs/config-versioning.md
 EOF
 }

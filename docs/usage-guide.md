@@ -28,7 +28,7 @@ sudo bash install.sh --init systemd
 
 ## 安装前配置
 
-可以先编辑 `.env`：
+安装前可以先编辑源码目录里的 `.env`。它只表示这次安装的默认值，不是安装后的主配置中心：
 
 ```bash
 CLASH_BASE_DIR="$HOME/clashctl"
@@ -45,6 +45,8 @@ CLASH_CONFIG_URL=""
 - `SUBCONVERTER_REPO`：subconverter 下载来源。
 - `CLASHCTL_DOWNLOAD_TIMEOUT`：依赖下载超时。
 - `CLASHCTL_SUB_TIMEOUT`：订阅下载超时。
+
+安装完成后，本机安装状态会写入 `resources/install-state.yaml`。新版 `clashctl`、`update.sh` 和 `uninstall.sh` 都优先读取这个状态文件；`.env` 仍会保留，用于旧版本兼容和安装前默认值。适合长期维护和版本管理的配置在 `config/mixin.yaml`、`config/clashctl.yaml` 和 `config/subscriptions.yaml`。
 
 订阅链接请始终使用双引号包起来：
 
@@ -91,6 +93,8 @@ sudo bash install.sh --init systemd
 ```
 
 适合需要 Tun 的机器。通过 sudo 安装时，服务文件由 root 写入系统目录，实际服务进程以 sudo 调用用户身份运行。
+
+运行时启动、停止和重启 systemd 服务会走 `sudo -n systemctl`。这意味着执行命令的用户需要是 root，或者已经拥有免密 sudo 权限；脚本不会停下来等待输入 sudo 密码。
 
 注册完成后，运行时切到 systemd：
 
@@ -206,19 +210,44 @@ bash update.sh --target "$HOME/clashctl"
 clashctl update-self --source "$HOME/src/clash-shell/tyx-clash-for-linux-install"
 ```
 
-项目脚本更新会保留 `.env`、`resources/mixin.yaml`、`resources/clashctl.yaml`、`resources/config.yaml`、`resources/runtime.yaml`、`resources/profiles.yaml`、`resources/profiles/`、日志和 pid 状态。
+项目脚本更新会保留 `config/`、`resources/install-state.yaml`、`resources/config.yaml`、`resources/runtime.yaml`、`resources/profiles/`、日志和 pid 状态。旧安装目录如果已有 `.env`，会继续保留；旧安装目录如果还在使用 `resources/mixin.yaml`、`resources/clashctl.yaml`、`resources/profiles.yaml`，这些文件也会原样保留。
 
-## 安装目录与 git
+## 配置目录与 git
 
 `git clone` 得到的是源码目录，用来执行初装或本地 `--source` 更新。默认安装目录 `~/clashctl` 是运行时目录，不是项目 git 仓库；初装不会复制源码目录里的 `.git`，`clashctl update-self` 也不依赖安装目录中的 git 状态。
 
-旧版本安装目录如果已经带有 `.git`，它通常是历史全量复制遗留。为了避免误删用户手工创建的配置仓库，`update-self` 不会自动删除已有 `.git`。确认没有自定义用途后，可以手工删除：
+适合人工维护的源配置集中在：
+
+```text
+~/clashctl/config/
+  mixin.yaml
+  clashctl.yaml
+  subscriptions.yaml
+```
+
+安装时可以直接初始化这个配置仓库：
+
+```bash
+bash install.sh --config-git
+# 或
+CLASHCTL_CONFIG_GIT=1 bash install.sh
+```
+
+如果已经通过环境变量打开，但本次想关闭：
+
+```bash
+CLASHCTL_CONFIG_GIT=1 bash install.sh --no-config-git
+```
+
+该选项只会在 `~/clashctl/config` 下执行 `git init`，不会自动提交，也不会把 `~/clashctl` 根目录变成 git 仓库。更多说明见 [配置版本管理](config-versioning.md)。
+
+旧版本安装目录如果已经在根目录带有 `.git`，它通常是历史全量复制遗留。为了避免误删用户手工创建的仓库，`update-self` 不会自动删除已有 `.git`。确认没有自定义用途后，可以手工删除：
 
 ```bash
 rm -rf "$HOME/clashctl/.git"
 ```
 
-不建议在安装目录根启用 git 管理配置。该目录包含脚本、二进制、订阅展开结果、运行时配置、日志和 pid 状态，其中 `.env`、`resources/profiles.yaml`、`resources/profiles/`、`resources/config.yaml`、`resources/runtime.yaml`、`resources/mixin.yaml` 都可能含有订阅链接、节点凭据或 Web 密钥。如需版本管理偏好配置，建议另建私有仓库，只保存脱敏后的源配置，例如 `resources/mixin.yaml` 和 `resources/clashctl.yaml`。
+不建议在安装目录根启用 git 管理配置。该目录包含脚本、二进制、订阅展开结果、运行时配置、日志和 pid 状态。真正适合版本管理的是 `config/` 下的源配置；`resources/` 下的 `config.yaml`、`runtime.yaml`、`profiles/`、日志和 pid 都是运行时文件。
 
 ## 自动化安装
 
@@ -265,23 +294,25 @@ CLASH_BASE_DIR="$HOME/experiment/clashctl-new" bash install.sh --init tmux
 迁移时需要注意：
 
 - 默认仍然是 tmux 用户态，不需要 sudo。
-- `resources/clashctl.yaml` 是新增的 sidecar 配置。
-- `resources/mixin.yaml` 只放会参与内核运行时合并的配置。
+- `config/clashctl.yaml` 是新增的 sidecar 配置。
+- `config/mixin.yaml` 只放会参与内核运行时合并的配置。
 - Tun 不再是 no-sudo 路线的一部分，需要注册 systemd 服务并执行 `clashrestart --mode systemd`。
 - 安装路径限制比旧版本更明确，不建议使用带空格或特殊字符的目录。
 
 ## 远程访问 Web 面板
 
-默认控制口绑定 `127.0.0.1:23571`，共享机上推荐用 SSH 端口转发：
+新安装默认控制口绑定 `127.0.0.1:9090`，共享机上推荐用 SSH 端口转发：
 
 ```bash
-ssh -L 23571:127.0.0.1:23571 user@remote-host
+ssh -L 9090:127.0.0.1:9090 user@remote-host
 ```
 
 然后访问：
 
 ```text
-http://localhost:23571/ui
+http://localhost:9090/ui
 ```
 
-如果使用 VS Code Remote-SSH，也可以直接在 VS Code 里转发远端 `23571` 端口。
+如果使用 VS Code Remote-SSH，也可以直接在 VS Code 里转发远端 `9090` 端口。
+
+旧安装执行 `clashctl update-self` 后不会自动改已有 `mixin.yaml`，因此旧安装可能仍在使用 `127.0.0.1:23571` 或其他自定义端口。实际地址以 `clashui` 输出或当前 `mixin.yaml` 为准。如需迁移到 9090，手工修改 `external-controller` 后执行 `clashmixin -m`。

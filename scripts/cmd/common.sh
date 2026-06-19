@@ -1,38 +1,196 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
+_CLASHCTL_INSTALL_STATE_LIB="$THIS_SCRIPT_DIR/../lib/install-state.sh"
+[ -r "$_CLASHCTL_INSTALL_STATE_LIB" ] || {
+    printf 'clashctl: missing required library: %s\n' "$_CLASHCTL_INSTALL_STATE_LIB" >&2
+    return 1 2>/dev/null || exit 1
+}
+. "$_CLASHCTL_INSTALL_STATE_LIB" || {
+    printf 'clashctl: failed to source library: %s\n' "$_CLASHCTL_INSTALL_STATE_LIB" >&2
+    return 1 2>/dev/null || exit 1
+}
+unset _CLASHCTL_INSTALL_STATE_LIB
+
+_clashctl_expand_env_path() {
+    local path=$1
+
+    case "$path" in
+    "~")
+        printf '%s\n' "$HOME"
+        ;;
+    "~/"*)
+        printf '%s/%s\n' "$HOME" "${path#~/}"
+        ;;
+    '$HOME')
+        printf '%s\n' "$HOME"
+        ;;
+    '$HOME/'*)
+        printf '%s/%s\n' "$HOME" "${path#\$HOME/}"
+        ;;
+    '${HOME}')
+        printf '%s\n' "$HOME"
+        ;;
+    '${HOME}/'*)
+        printf '%s/%s\n' "$HOME" "${path#\$\{HOME\}/}"
+        ;;
+    *)
+        printf '%s\n' "$path"
+        ;;
+    esac
+}
+
+_clashctl_parse_env_file() {
+    local env_file=$1 line key value
+
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+        "" | "#"*)
+            continue
+            ;;
+        export[[:space:]]*)
+            line=${line#export}
+            line=${line#"${line%%[![:space:]]*}"}
+            ;;
+        esac
+
+        case "$line" in
+        *=*)
+            key=${line%%=*}
+            value=${line#*=}
+            ;;
+        *)
+            continue
+            ;;
+        esac
+
+        [[ $key =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+        case "$key" in
+        KERNEL_NAME | CLASH_BASE_DIR | CLASH_CONFIG_URL | INIT_TYPE | CLASH_INSTALLED_INIT_TYPE | CLASHCTL_CONFIG_GIT | CLASHCTL_DOWNLOAD_TIMEOUT | CLASHCTL_SUB_TIMEOUT | CLASH_SUB_UA | ZIP_UI | URL_GH_PROXY | URL_CLASH_UI | VERSION_MIHOMO | VERSION_YQ | VERSION_SUBCONVERTER | SUBCONVERTER_REPO)
+            ;;
+        *)
+            continue
+            ;;
+        esac
+        case "$value" in
+        \"*\")
+            value=${value#\"}
+            value=${value%\"}
+            ;;
+        \'*\')
+            value=${value#\'}
+            value=${value%\'}
+            ;;
+        esac
+
+        [ "$key" = CLASH_BASE_DIR ] && value=$(_clashctl_expand_env_path "$value")
+        printf -v "$key" '%s' "$value"
+    done <"$env_file"
+}
+
 _clashctl_source_env() {
-    local env_file
-    env_file="$(dirname "$(dirname "$THIS_SCRIPT_DIR")")/.env"
+    local install_root env_file state_file has_env=false has_state=false
+    local install_root_real state_root_real
+    install_root="$(dirname "$(dirname "$THIS_SCRIPT_DIR")")"
+    env_file="$install_root/.env"
+    state_file="$install_root/resources/install-state.yaml"
 
     local kernel_name_set=${KERNEL_NAME+x} kernel_name_value=${KERNEL_NAME-}
     local base_dir_set=${CLASH_BASE_DIR+x} base_dir_value=${CLASH_BASE_DIR-}
     local config_url_set=${CLASH_CONFIG_URL+x} config_url_value=${CLASH_CONFIG_URL-}
     local init_type_set=${INIT_TYPE+x} init_type_value=${INIT_TYPE-}
     local installed_init_set=${CLASH_INSTALLED_INIT_TYPE+x} installed_init_value=${CLASH_INSTALLED_INIT_TYPE-}
+    local config_git_set=${CLASHCTL_CONFIG_GIT+x} config_git_value=${CLASHCTL_CONFIG_GIT-}
+    local download_timeout_set=${CLASHCTL_DOWNLOAD_TIMEOUT+x} download_timeout_value=${CLASHCTL_DOWNLOAD_TIMEOUT-}
+    local sub_timeout_set=${CLASHCTL_SUB_TIMEOUT+x} sub_timeout_value=${CLASHCTL_SUB_TIMEOUT-}
+    local sub_ua_set=${CLASH_SUB_UA+x} sub_ua_value=${CLASH_SUB_UA-}
+    local zip_ui_set=${ZIP_UI+x} zip_ui_value=${ZIP_UI-}
+    local gh_proxy_set=${URL_GH_PROXY+x} gh_proxy_value=${URL_GH_PROXY-}
+    local clash_ui_set=${URL_CLASH_UI+x} clash_ui_value=${URL_CLASH_UI-}
+    local version_mihomo_set=${VERSION_MIHOMO+x} version_mihomo_value=${VERSION_MIHOMO-}
+    local version_yq_set=${VERSION_YQ+x} version_yq_value=${VERSION_YQ-}
+    local version_subconverter_set=${VERSION_SUBCONVERTER+x} version_subconverter_value=${VERSION_SUBCONVERTER-}
+    local subconverter_repo_set=${SUBCONVERTER_REPO+x} subconverter_repo_value=${SUBCONVERTER_REPO-}
 
-    [ -r "$env_file" ] || {
-        printf 'clashctl: missing required env file: %s\n' "$env_file" >&2
+    if [ -r "$env_file" ]; then
+        has_env=true
+        _clashctl_parse_env_file "$env_file" || {
+            printf 'clashctl: failed to parse env file: %s\n' "$env_file" >&2
+            return 1
+        }
+    fi
+
+    if [ -r "$state_file" ]; then
+        has_state=true
+        _install_state_read_into_vars "$state_file" || {
+            printf 'clashctl: failed to parse install state file: %s\n' "$state_file" >&2
+            return 1
+        }
+        install_root_real=$(cd "$install_root" 2>/dev/null && pwd -P) || {
+            printf 'clashctl: failed to resolve install root: %s\n' "$install_root" >&2
+            return 1
+        }
+        state_root_real=$(cd "$CLASH_BASE_DIR" 2>/dev/null && pwd -P) || {
+            printf 'clashctl: failed to resolve install-state.yaml install_dir: %s\n' "$CLASH_BASE_DIR" >&2
+            return 1
+        }
+        [ "$install_root_real" = "$state_root_real" ] || {
+            printf 'clashctl: install-state.yaml install_dir mismatch: %s != %s\n' "$state_root_real" "$install_root_real" >&2
+            return 1
+        }
+    fi
+
+    [ "$has_env" = true ] || [ "$has_state" = true ] || {
+        printf 'clashctl: missing required install state or env file: %s or %s\n' "$state_file" "$env_file" >&2
         return 1
     }
-    . "$env_file" || {
-        printf 'clashctl: failed to source env file: %s\n' "$env_file" >&2
-        return 1
-    }
 
-    [ "$kernel_name_set" = x ] && KERNEL_NAME=$kernel_name_value
-    [ "$base_dir_set" = x ] && CLASH_BASE_DIR=$base_dir_value
+    if [ "$has_state" != true ]; then
+        [ "$kernel_name_set" = x ] && KERNEL_NAME=$kernel_name_value
+        [ "$base_dir_set" = x ] && CLASH_BASE_DIR=$base_dir_value
+        [ "$init_type_set" = x ] && INIT_TYPE=$init_type_value
+        [ "$installed_init_set" = x ] && CLASH_INSTALLED_INIT_TYPE=$installed_init_value
+    fi
     [ "$config_url_set" = x ] && CLASH_CONFIG_URL=$config_url_value
-    [ "$init_type_set" = x ] && INIT_TYPE=$init_type_value
-    [ "$installed_init_set" = x ] && CLASH_INSTALLED_INIT_TYPE=$installed_init_value
+    [ "$config_git_set" = x ] && CLASHCTL_CONFIG_GIT=$config_git_value
+    [ "$download_timeout_set" = x ] && CLASHCTL_DOWNLOAD_TIMEOUT=$download_timeout_value
+    [ "$sub_timeout_set" = x ] && CLASHCTL_SUB_TIMEOUT=$sub_timeout_value
+    [ "$sub_ua_set" = x ] && CLASH_SUB_UA=$sub_ua_value
+    [ "$zip_ui_set" = x ] && ZIP_UI=$zip_ui_value
+    [ "$gh_proxy_set" = x ] && URL_GH_PROXY=$gh_proxy_value
+    [ "$clash_ui_set" = x ] && URL_CLASH_UI=$clash_ui_value
+    [ "$version_mihomo_set" = x ] && VERSION_MIHOMO=$version_mihomo_value
+    [ "$version_yq_set" = x ] && VERSION_YQ=$version_yq_value
+    [ "$version_subconverter_set" = x ] && VERSION_SUBCONVERTER=$version_subconverter_value
+    [ "$subconverter_repo_set" = x ] && SUBCONVERTER_REPO=$subconverter_repo_value
+    _install_state_validate_kernel_name "$KERNEL_NAME" || {
+        printf 'clashctl: invalid kernel name in install metadata: %s\n' "$KERNEL_NAME" >&2
+        return 1
+    }
     return 0
 }
 
 _clashctl_source_env || { return 1 2>/dev/null || exit 1; }
 
+_clashctl_first_existing_path() {
+    local preferred=$1 legacy=$2
+
+    [ -e "$preferred" ] && {
+        printf '%s\n' "$preferred"
+        return 0
+    }
+    [ -e "$legacy" ] && {
+        printf '%s\n' "$legacy"
+        return 0
+    }
+    printf '%s\n' "$preferred"
+}
+
 CLASH_RESOURCES_DIR="${CLASH_BASE_DIR}/resources"
+CLASH_CONFIG_DIR="${CLASH_BASE_DIR}/config"
+CLASH_INSTALL_STATE="${CLASH_RESOURCES_DIR}/install-state.yaml"
 CLASH_CONFIG_BASE="${CLASH_RESOURCES_DIR}/config.yaml"
-CLASH_CONFIG_MIXIN="${CLASH_RESOURCES_DIR}/mixin.yaml"
-CLASH_CONFIG_SIDECAR="${CLASH_RESOURCES_DIR}/clashctl.yaml"
+CLASH_CONFIG_MIXIN=$(_clashctl_first_existing_path "${CLASH_CONFIG_DIR}/mixin.yaml" "${CLASH_RESOURCES_DIR}/mixin.yaml")
+CLASH_CONFIG_SIDECAR=$(_clashctl_first_existing_path "${CLASH_CONFIG_DIR}/clashctl.yaml" "${CLASH_RESOURCES_DIR}/clashctl.yaml")
 CLASH_CONFIG_RUNTIME="${CLASH_RESOURCES_DIR}/runtime.yaml"
 CLASH_CONFIG_TEMP="${CLASH_RESOURCES_DIR}/temp.yaml"
 CLASH_SERVICE_STATE="${CLASH_RESOURCES_DIR}/service-state.yaml"
@@ -48,7 +206,7 @@ BIN_SUBCONVERTER_LOG="${BIN_SUBCONVERTER_DIR}/latest.log"
 BIN_SUBCONVERTER_PID="${BIN_SUBCONVERTER_DIR}/subconverter.pid"
 
 CLASH_PROFILES_DIR="${CLASH_RESOURCES_DIR}/profiles"
-CLASH_PROFILES_META="${CLASH_RESOURCES_DIR}/profiles.yaml"
+CLASH_PROFILES_META=$(_clashctl_first_existing_path "${CLASH_CONFIG_DIR}/subscriptions.yaml" "${CLASH_RESOURCES_DIR}/profiles.yaml")
 CLASH_PROFILES_LOG="${CLASH_RESOURCES_DIR}/profiles.log"
 INSTALL_MARKER="${CLASH_BASE_DIR}/.clashctl-install-root"
 CLASHCTL_CRON_TAG="# clashctl-auto-update"
@@ -112,9 +270,13 @@ function _detect_ext_addr() {
         newPort=$(_get_random_port) || return 1
         _failcat '🎯' "端口冲突：[external-controller] ${EXT_PORT} 🎲 随机分配 $newPort"
         EXT_PORT=$newPort
-        "$BIN_YQ" -i ".external-controller = \"$ext_ip:$newPort\"" "$CLASH_CONFIG_MIXIN"
-        _merge_config
+        "$BIN_YQ" -i ".external-controller = \"$ext_ip:$newPort\"" "$CLASH_CONFIG_MIXIN" || {
+            _failcat "external-controller 端口写入失败：$CLASH_CONFIG_MIXIN"
+            return 1
+        }
+        _merge_config || return 1
     }
+    return 0
 }
 
 _color_log() {

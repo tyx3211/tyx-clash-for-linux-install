@@ -31,6 +31,16 @@ printf 'user-mixin\n' >"$install_dir/resources/mixin.yaml"
 printf 'user-sidecar\n' >"$install_dir/resources/clashctl.yaml"
 printf 'user-base\n' >"$install_dir/resources/config.yaml"
 printf 'user-runtime\n' >"$install_dir/resources/runtime.yaml"
+cat >"$install_dir/resources/install-state.yaml" <<EOF
+install_dir: "$install_dir"
+kernel_name: "mihomo"
+default_mode: "tmux"
+installed_systemd_service: false
+versions:
+  mihomo: "v-state"
+  yq: "v-state"
+  subconverter: "v-state"
+EOF
 printf 'user-profiles\n' >"$install_dir/resources/profiles.yaml"
 printf 'user-profile-one\n' >"$install_dir/resources/profiles/1.yaml"
 printf 'user-log\n' >"$install_dir/resources/mihomo.log"
@@ -49,6 +59,8 @@ printf 'old-script\n' >"$install_dir/scripts/cmd/clashctl.sh"
     fail "update should preserve config.yaml"
 [ "$(cat "$install_dir/resources/runtime.yaml")" = "user-runtime" ] ||
     fail "update should preserve runtime.yaml"
+grep -qx 'install_dir: "'$install_dir'"' "$install_dir/resources/install-state.yaml" ||
+    fail "update should preserve an existing install-state.yaml"
 [ "$(cat "$install_dir/resources/profiles.yaml")" = "user-profiles" ] ||
     fail "update should preserve profiles.yaml"
 [ "$(cat "$install_dir/resources/profiles/1.yaml")" = "user-profile-one" ] ||
@@ -64,6 +76,68 @@ grep -q 'function clashctl' "$install_dir/scripts/cmd/clashctl.sh" ||
 
 grep -q '^CLASH_BASE_DIR=' "$install_dir/.env" ||
     fail "update should preserve installed .env"
+
+state_install_dir="$update_tmp/state-install"
+mkdir -p "$state_install_dir/resources" "$state_install_dir/scripts/cmd"
+printf 'tyx-clash-for-linux-install\n' >"$state_install_dir/.clashctl-install-root"
+printf 'mixin\n' >"$state_install_dir/resources/mixin.yaml"
+printf 'script\n' >"$state_install_dir/scripts/cmd/clashctl.sh"
+rm -f "$state_install_dir/.env"
+(
+    cd "$source_dir"
+    CLASHCTL_NO_RC=1 bash update.sh --target "$state_install_dir" >/dev/null
+)
+[ -f "$state_install_dir/resources/install-state.yaml" ] ||
+    fail "update should create install-state.yaml when .env is absent"
+grep -qx 'install_dir: "'$state_install_dir'"' "$state_install_dir/resources/install-state.yaml" ||
+    fail "generated install-state.yaml should record update target"
+[ ! -e "$state_install_dir/.env" ] ||
+    fail "update should not recreate .env when the target already uses install-state.yaml"
+
+state_mismatch_install_dir="$update_tmp/state-mismatch-install"
+state_mismatch_other_dir="$update_tmp/state-mismatch-other"
+mkdir -p "$state_mismatch_install_dir/resources" "$state_mismatch_install_dir/scripts/cmd" "$state_mismatch_other_dir"
+printf 'tyx-clash-for-linux-install\n' >"$state_mismatch_install_dir/.clashctl-install-root"
+printf 'mixin\n' >"$state_mismatch_install_dir/resources/mixin.yaml"
+printf 'script\n' >"$state_mismatch_install_dir/scripts/cmd/clashctl.sh"
+cat >"$state_mismatch_install_dir/resources/install-state.yaml" <<EOF
+install_dir: "$state_mismatch_other_dir"
+kernel_name: "mihomo"
+default_mode: "tmux"
+installed_systemd_service: false
+versions:
+  mihomo: "v-state"
+  yq: "v-state"
+  subconverter: "v-state"
+EOF
+(
+    cd "$source_dir"
+    CLASHCTL_NO_RC=1 bash update.sh --target "$state_mismatch_install_dir"
+) >/dev/null 2>&1 && fail "update should reject install-state.yaml that points at another directory"
+grep -qx 'script' "$state_mismatch_install_dir/scripts/cmd/clashctl.sh" ||
+    fail "rejected install-state mismatch should not refresh target scripts"
+
+state_bad_kernel_install_dir="$update_tmp/state-bad-kernel-install"
+mkdir -p "$state_bad_kernel_install_dir/resources" "$state_bad_kernel_install_dir/scripts/cmd"
+printf 'tyx-clash-for-linux-install\n' >"$state_bad_kernel_install_dir/.clashctl-install-root"
+printf 'mixin\n' >"$state_bad_kernel_install_dir/resources/mixin.yaml"
+printf 'script\n' >"$state_bad_kernel_install_dir/scripts/cmd/clashctl.sh"
+cat >"$state_bad_kernel_install_dir/resources/install-state.yaml" <<EOF
+install_dir: "$state_bad_kernel_install_dir"
+kernel_name: "../../tmp/evil"
+default_mode: "tmux"
+installed_systemd_service: false
+versions:
+  mihomo: "v-state"
+  yq: "v-state"
+  subconverter: "v-state"
+EOF
+(
+    cd "$source_dir"
+    CLASHCTL_NO_RC=1 bash update.sh --target "$state_bad_kernel_install_dir"
+) >/dev/null 2>&1 && fail "update should reject an existing install-state.yaml with invalid kernel_name"
+grep -qx 'script' "$state_bad_kernel_install_dir/scripts/cmd/clashctl.sh" ||
+    fail "rejected invalid kernel state should not refresh target scripts"
 
 (
     cd "$source_dir"
@@ -127,8 +201,14 @@ printf 'legacy-script\n' >"$legacy_env_dir/scripts/cmd/clashctl.sh"
     cd "$source_dir"
     CLASHCTL_NO_RC=1 bash update.sh --target "$legacy_env_dir" >/dev/null
 )
-grep -qx "CLASH_BASE_DIR=$legacy_env_dir" "$legacy_env_dir/.env" ||
-    fail "legacy migration should write .env CLASH_BASE_DIR to the requested target"
+[ -f "$legacy_env_dir/resources/install-state.yaml" ] ||
+    fail "legacy migration should write install-state.yaml"
+grep -qx 'install_dir: "'$legacy_env_dir'"' "$legacy_env_dir/resources/install-state.yaml" ||
+    fail "legacy migration should write install-state.yaml install_dir to the requested target"
+grep -qx 'default_mode: "tmux"' "$legacy_env_dir/resources/install-state.yaml" ||
+    fail "legacy migration should keep tmux as the default mode"
+[ ! -e "$legacy_env_dir/.env" ] ||
+    fail "legacy migration should not create .env when the target did not already have one"
 
 legacy_fail_dir="$update_tmp/legacy-fail"
 legacy_other_dir="$update_tmp/legacy-other"
@@ -161,6 +241,46 @@ bash "$explicit_install_dir/update.sh" --target "$explicit_install_dir" --source
     fail "installed update.sh should accept an explicit source directory"
 grep -q 'explicit-source-marker' "$explicit_install_dir/scripts/cmd/clashctl.sh" ||
     fail "update --source should refresh files from the explicit source directory"
+
+implicit_installed_source_dir="$update_tmp/implicit-installed-source"
+implicit_current_install_dir="$update_tmp/implicit-current-install"
+implicit_other_install_dir="$update_tmp/implicit-other-install"
+cp -a "$TEST_ROOT/." "$implicit_installed_source_dir"
+mkdir -p "$implicit_current_install_dir/resources" "$implicit_current_install_dir/scripts/cmd" "$implicit_other_install_dir/resources" "$implicit_other_install_dir/scripts/cmd"
+printf 'tyx-clash-for-linux-install\n' >"$implicit_current_install_dir/.clashctl-install-root"
+printf 'tyx-clash-for-linux-install\n' >"$implicit_other_install_dir/.clashctl-install-root"
+printf 'current-script\n' >"$implicit_current_install_dir/scripts/cmd/clashctl.sh"
+printf 'other-script\n' >"$implicit_other_install_dir/scripts/cmd/clashctl.sh"
+printf 'mixin\n' >"$implicit_current_install_dir/resources/mixin.yaml"
+printf 'mixin\n' >"$implicit_other_install_dir/resources/mixin.yaml"
+cp "$TEST_ROOT/update.sh" "$implicit_current_install_dir/update.sh"
+cat >"$implicit_current_install_dir/resources/install-state.yaml" <<EOF
+install_dir: "$implicit_current_install_dir"
+kernel_name: "mihomo"
+default_mode: "tmux"
+installed_systemd_service: false
+versions:
+  mihomo: "v-state"
+  yq: "v-state"
+  subconverter: "v-state"
+EOF
+cat >"$implicit_installed_source_dir/resources/install-state.yaml" <<EOF
+install_dir: "$implicit_other_install_dir"
+kernel_name: "mihomo"
+default_mode: "tmux"
+installed_systemd_service: false
+versions:
+  mihomo: "v-state"
+  yq: "v-state"
+  subconverter: "v-state"
+EOF
+printf '\n# implicit-installed-source-marker\n' >>"$implicit_installed_source_dir/scripts/cmd/clashctl.sh"
+bash "$implicit_current_install_dir/update.sh" --source "$implicit_installed_source_dir" >/dev/null 2>&1 ||
+    fail "installed update.sh --source should default target to the current install dir"
+grep -q 'implicit-installed-source-marker' "$implicit_current_install_dir/scripts/cmd/clashctl.sh" ||
+    fail "installed update.sh --source should refresh the current install dir"
+grep -qx 'other-script' "$implicit_other_install_dir/scripts/cmd/clashctl.sh" ||
+    fail "installed update.sh --source should not update the source directory recorded target"
 
 backup_fail_source_dir="$update_tmp/backup-fail-source"
 backup_fail_install_dir="$update_tmp/backup-fail-install"
@@ -206,10 +326,10 @@ printf 'tyx-clash-for-linux-install\n' >"$source_missing_env_install_dir/.clashc
 printf 'mixin\n' >"$source_missing_env_install_dir/resources/mixin.yaml"
 printf 'script\n' >"$source_missing_env_install_dir/scripts/cmd/clashctl.sh"
 rm -f "$source_missing_env_dir/.env"
-bash "$TEST_ROOT/update.sh" --target "$source_missing_env_install_dir" --source "$source_missing_env_dir" >/dev/null 2>&1 &&
-    fail "update should reject source directories without .env before replacing target files"
-grep -qx 'script' "$source_missing_env_install_dir/scripts/cmd/clashctl.sh" ||
-    fail "rejected source without .env should leave target files unchanged"
+bash "$TEST_ROOT/update.sh" --target "$source_missing_env_install_dir" --source "$source_missing_env_dir" >/dev/null 2>&1 ||
+    fail "update should accept source directories without .env"
+grep -q 'function clashctl' "$source_missing_env_install_dir/scripts/cmd/clashctl.sh" ||
+    fail "source without .env should still refresh managed scripts"
 
 git_preserve_source_dir="$update_tmp/git-preserve-source"
 git_preserve_install_dir="$update_tmp/git-preserve-install"

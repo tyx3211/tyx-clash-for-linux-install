@@ -45,10 +45,10 @@ clashui
 共享机远程访问面板时，推荐先做 SSH 端口转发：
 
 ```bash
-ssh -L 23571:127.0.0.1:23571 user@remote-host
+ssh -L 9090:127.0.0.1:9090 user@remote-host
 ```
 
-然后在本机浏览器访问 `http://localhost:23571/ui`。
+然后在本机浏览器访问 `http://localhost:9090/ui`。
 
 ### 3. 关闭与切换托管模式
 
@@ -69,11 +69,11 @@ clashrestart --mode tmux
 clashctl update-self
 ```
 
-这个命令会从当前 fork 的 GitHub `main` 分支下载最新源码，并无损刷新安装目录。它不会停止内核、不会启动内核、不会覆盖订阅、`mixin.yaml`、`clashctl.yaml`、profiles、日志和 pid 状态。
+这个命令会从当前 fork 的 GitHub `main` 分支下载最新源码，并无损刷新安装目录。它不会停止内核、不会启动内核、不会覆盖 `config/`、订阅、运行时配置、日志和 pid 状态。
 
-`git clone` 得到的是安装源目录；默认安装目录 `~/clashctl` 不是项目 git 仓库，也不需要 `.git`。历史版本安装目录里如果已有 `.git`，那通常是旧安装复制策略遗留，`clashctl update-self` 不依赖它。
+`git clone` 得到的是安装源目录；默认安装目录 `~/clashctl` 不是项目 git 仓库，也不需要 `.git`。如果希望版本管理个人配置，推荐只在 `~/clashctl/config` 下建立 git 仓库。安装时可以使用 `bash install.sh --config-git` 或 `CLASHCTL_CONFIG_GIT=1 bash install.sh` 自动执行 `git init`。
 
-更多新手说明见 [快速上手教程](docs/quickstart.md)。运行托管模式、订阅、项目更新和迁移细节见 [当前版本使用指南](docs/usage-guide.md)。
+更多新手说明见 [快速上手教程](docs/quickstart.md)。运行托管模式、订阅、项目更新和迁移细节见 [当前版本使用指南](docs/usage-guide.md)。配置 Git 管理见 [配置版本管理](docs/config-versioning.md)。
 
 ## ✨ 功能特性
 
@@ -81,10 +81,11 @@ clashctl update-self
 - 面向 no-sudo 环境，默认使用 `tmux` 管理内核进程，不依赖 `systemd`。
 - 支持运行时选择托管模式：`clashon --mode tmux|nohup|systemd`。其中 `systemd` 需要 root 或 sudo，并支持 Tun。
 - 当前维护入口统一为 `main`。历史 `nosudo-tmux` 分支已经退役；新的 no-sudo / tmux 能力直接在 `main` 维护。
-- 默认代理端口为 `port: 7890`、`socks-port: 7891`，默认控制端口为 `127.0.0.1:23571`。
+- 默认代理端口为 `port: 7890`、`socks-port: 7891`；新安装默认控制端口为 `127.0.0.1:9090`。
 - 代理内核配置与 `clashctl` 自身行为配置分离：
-  `resources/mixin.yaml` 只放会参与 mihomo/clash 合并的配置；
-  `resources/clashctl.yaml` 只放 `clashctl` 的 sidecar 配置，不再把私有键混进运行时配置。
+  `config/mixin.yaml` 只放会参与 mihomo/clash 合并的配置；
+  `config/clashctl.yaml` 只放 `clashctl` 的 sidecar 配置，不再把私有键混进运行时配置。
+- 适合人工维护的配置集中在 `config/`，可选用 git 管理；运行时生成物继续放在 `resources/`。
 - 自动检测端口占用情况，在冲突时随机分配可用端口。
 - 在需要时调用 [subconverter](https://github.com/tindy2013/subconverter) 进行本地订阅转换。
 - 默认 no-sudo / tmux 模式不提供 Tun；显式选择 `systemd` 模式时支持 Tun。
@@ -110,11 +111,11 @@ clashctl update-self
 
 - 当前 fork 以 `INIT_TYPE=tmux` 为默认运行托管模式，请先确保系统已安装 `tmux`。
 - 如需纯用户态但不想依赖 `tmux`，可以在运行时使用 `clashon --mode nohup`。
-- 如需 Tun，请先使用 `sudo bash install.sh --init systemd` 注册 systemd 服务，再执行 `clashrestart --mode systemd` 和 `clashtun on`。
-- `external-controller` 默认绑定 `127.0.0.1:23571`，远程访问面板请优先使用 SSH 端口转发。
+- 如需 Tun，请先使用 `sudo bash install.sh --init systemd` 注册 systemd 服务，再执行 `clashrestart --mode systemd` 和 `clashtun on`。运行时启动/停止 systemd 服务使用 `sudo -n systemctl`，因此需要 root 或免密 sudo；脚本不会停下来等待输入 sudo 密码。
+- 新安装的 `external-controller` 默认绑定 `127.0.0.1:9090`，远程访问面板请优先使用 SSH 端口转发。旧安装无损更新后不会自动改已有端口，实际地址以 `clashui` 输出为准。
 - `clashproxy on` / `clashproxy off` 只影响当前 shell 的环境变量，不会改系统级代理。
 - `clashproxy status` 只看当前终端实际环境变量，避免与配置状态偏离。
-- 新终端是否自动写入代理变量，由 `resources/clashctl.yaml` 里的 sidecar 配置控制。
+- 新终端是否自动写入代理变量，由 `config/clashctl.yaml` 里的 sidecar 配置控制。
 
 ## 🚀 安装
 
@@ -142,6 +143,16 @@ bash install.sh
 bash install.sh
 ```
 
+如果希望安装时直接在配置目录建立 git 仓库：
+
+```bash
+bash install.sh --config-git
+# 或
+CLASHCTL_CONFIG_GIT=1 bash install.sh
+```
+
+该选项只会在安装目录的 `config/` 子目录执行 `git init`，不会把 `~/clashctl` 根目录变成 git 仓库，也不会自动提交。
+
 安装时也可以修改默认托管模式：
 
 ```bash
@@ -164,10 +175,10 @@ sudo bash install.sh --init=systemd
 
 - `tmux`：默认托管模式，适合共享机普通用户，便于查看会话和日志。
 - `nohup`：普通用户备用模式，不依赖 `tmux`，但进程托管能力较弱。
-- `systemd`：需要 root 或 sudo，会注册系统服务，支持 `clashtun on/off`。
+- `systemd`：需要 root 或 sudo，会注册系统服务，支持 `clashtun on/off`。运行时管理服务要求 root 或免密 sudo。
 - 安装后也可以用 `clashon --mode ...` / `clashrestart --mode ...` 在运行时选择本次托管模式。
+- `.env` 现在只作为安装前默认值和旧版本兼容入口。安装完成后，本机安装状态以 `resources/install-state.yaml` 为主；普通使用者通常不需要修改它。
 - `.env` 里的 `VERSION_MIHOMO`、`VERSION_YQ`、`VERSION_SUBCONVERTER` 默认固定版本；如果留空，安装脚本会通过 GitHub `releases/latest` 自动解析最新 tag。共享机或网络受限环境建议固定版本，便于复现和排错。
-
 - `.env` 里的 `CLASH_CONFIG_URL` 默认留空，不再内置任何真实订阅链接。
 - 安装结束时，如果 `CLASH_CONFIG_URL` 仍为空，脚本会交互式提示输入订阅链接。
 - 也可以先编辑 `.env` 再安装，显式指定订阅链接；链接务必使用双引号包起来。
@@ -259,7 +270,7 @@ $ clashproxy on -g
 
 ### 自动代理模式
 
-`resources/clashctl.yaml` 用来描述 `clashctl` 自身的行为。当前内置：
+`config/clashctl.yaml` 用来描述 `clashctl` 自身的行为。当前内置：
 
 ```yaml
 system-proxy:
@@ -302,8 +313,9 @@ clashproxy mode --help
 
 ## 🌐 Web 控制台
 
-- 默认控制端口为 `127.0.0.1:23571`。
+- 新安装默认控制端口为 `127.0.0.1:9090`。旧安装执行 `clashctl update-self` 后不会自动改已有 `mixin.yaml`，实际端口以 `clashui` 输出或当前 `mixin.yaml` 为准。
 - `clashui` 会输出控制台入口地址；默认推荐通过 SSH 端口转发访问。
+- 当控制口绑定 `127.0.0.1` / `localhost` 时，`clashui` 只输出本机地址和 SSH 转发示例，不提示公网地址或开放防火墙端口。
 - 如需远程访问面板，请确保 `secret` 与客户端保持一致。
 - zashboard 的访问路径是 `/ui`，不是根路径；也就是说最终访问地址应类似：
   `http://localhost:<controller_port>/ui`
@@ -312,15 +324,15 @@ clashproxy mode --help
 
 ```bash
 # 将远端控制口映射到本地
-ssh -L 23571:127.0.0.1:23571 user@remote-host
+ssh -L 9090:127.0.0.1:9090 user@remote-host
 
 # 如需把本地 HTTP 代理口一并转回来
-ssh -L 23571:127.0.0.1:23571 -L 7890:127.0.0.1:7890 user@remote-host
+ssh -L 9090:127.0.0.1:9090 -L 7890:127.0.0.1:7890 user@remote-host
 ```
 
 ### VS Code Remote-SSH 端口转发
 
-- 如果我们本身就在用 VS Code 的 `Remote - SSH` 连远端开发，也可以直接在 VS Code 里转发 `23571` 这个远端端口。
+- 如果我们本身就在用 VS Code 的 `Remote - SSH` 连远端开发，也可以直接在 VS Code 里转发 `9090` 这个远端端口。
 - 这件事本质上等价于帮我们建立一条到远端控制口的 SSH 本地转发，因此不必再额外手写一条 `ssh -L`。
 - 官方文档可参考：
   `https://code.visualstudio.com/docs/remote/ssh#_forwarding-a-port-creating-ssh-tunnel`
@@ -346,8 +358,8 @@ $ clashmixin -r
 😼 查看运行时配置
 ```
 
-- `resources/mixin.yaml` 只用于和原始订阅做深度合并，生成 `resources/runtime.yaml`。
-- `resources/clashctl.yaml` 是 sidecar 配置，不会参与 mihomo/clash 的运行时合并。
+- `config/mixin.yaml` 只用于和原始订阅做深度合并，生成 `resources/runtime.yaml`。
+- `config/clashctl.yaml` 是 sidecar 配置，不会参与 mihomo/clash 的运行时合并。
 - 修改 `mixin.yaml` 之后，如果不想进入编辑器，直接执行 `clashmixin -m` 即可显式 merge 并刷新内核；该命令不会打开 `less` 或其他查看器。
 - 如果当前终端已经开启了代理变量，`clashmixin -m` 在刷新后会按新的 runtime 端口重新写入当前终端环境变量，避免端口变更后变量过期。
 
@@ -409,7 +421,8 @@ $ clashtun off
 ```
 
 - `systemd` 注册会使用 root 或 sudo 写入系统服务；通过 sudo 安装时，服务进程会以 sudo 调用用户身份运行，并由 systemd 授予 Tun 所需网络能力。
-- 开启 Tun 时会修改 `resources/mixin.yaml` 中的 `tun.enable`，重新合并运行时配置并重启内核。
+- 运行时的 `clashrestart --mode systemd`、`clashoff --mode systemd` 和 `clashtun on/off` 会使用非交互 sudo；如果当前用户执行 `sudo -n systemctl status mihomo` 会要求密码，这条路线也会失败。
+- 开启 Tun 时会修改 `config/mixin.yaml` 中的 `tun.enable`，重新合并运行时配置并重启内核。旧安装目录如果还没有 `config/`，会继续使用兼容路径 `resources/mixin.yaml`。
 - 共享机默认不建议启用 Tun，除非我们明确知道该机器允许普通用户通过 sudo 管理这个服务。
 
 ## 🔄 更新项目脚本
@@ -438,7 +451,7 @@ bash update.sh --target "$HOME/clashctl"
 clashctl update-self --source "$HOME/src/clash-shell/tyx-clash-for-linux-install"
 ```
 
-该操作只刷新脚本、service 模板和文档资产，不覆盖 `.env`、`resources/mixin.yaml`、`resources/clashctl.yaml`、订阅 profiles、日志和运行状态。
+该操作只刷新脚本、service 模板和文档资产，不覆盖 `config/`、`resources/install-state.yaml`、`resources/config.yaml`、`resources/runtime.yaml`、订阅 profiles、日志和运行状态。旧安装目录如果已有 `.env`，会继续保留并只做兼容性更新；旧安装目录如果还在使用 `resources/mixin.yaml`、`resources/clashctl.yaml`、`resources/profiles.yaml`，这些文件也会原样保留。
 
 安装目录默认不携带 `.git`，`update-self` 也不会使用安装目录里的 git 仓库。旧安装目录如果已经带有 `.git`，可以在确认没有把它当作个人配置仓库后手工删除：
 
@@ -446,7 +459,7 @@ clashctl update-self --source "$HOME/src/clash-shell/tyx-clash-for-linux-install
 rm -rf "$HOME/clashctl/.git"
 ```
 
-不建议直接在安装目录根启用 git 来管理配置，因为 `.env`、订阅 profiles、运行时配置和日志可能包含订阅链接、节点凭据或 Web 密钥。如需版本管理偏好配置，建议另建私有仓库，只保存脱敏后的 `resources/mixin.yaml`、`resources/clashctl.yaml` 等少量源配置。
+不建议直接在安装目录根启用 git 来管理配置，因为 `.env`、`resources/install-state.yaml`、订阅 profiles、运行时配置和日志都属于本机状态或运行时数据。如需版本管理偏好配置，建议只在 `config/` 下建立私有仓库。细节见 [配置版本管理](docs/config-versioning.md)。
 
 ## ⬆️ 升级内核
 

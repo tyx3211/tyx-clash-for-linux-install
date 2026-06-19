@@ -8,7 +8,7 @@
 
 - 静态检查：确认脚本里没有残留运行时替换占位符、危险的宽泛进程匹配、无损更新覆盖清单偏移。
 - 假环境行为测试：通过临时目录、桩函数和假命令验证 `clashon --mode ...`、`clashrestart --mode ...`、`clashoff`、`clashstatus --all`、`clashtun on/off` 的分支逻辑。
-- 无损更新测试：确认 `update.sh` 只刷新脚本和项目资产，不覆盖 `.env`、`resources/mixin.yaml`、`resources/clashctl.yaml`、订阅 profiles、日志和 pid 状态。
+- 无损更新测试：确认 `update.sh` 只刷新脚本和项目资产，不覆盖 `config/`、`resources/install-state.yaml`、订阅 profiles、日志和 pid 状态。
 
 这些测试不会：
 
@@ -27,7 +27,7 @@ env | grep -i -E '^(http|https|all|no)_proxy=' || true
 tmux ls 2>/dev/null | grep clash || true
 pgrep -af '[/](mihomo|clash)( |$)' || true
 systemctl cat mihomo clash 2>/dev/null || true
-ss -ltnp 2>/dev/null | grep -E ':(7890|7891|23571)\b' || true
+ss -ltnp 2>/dev/null | grep -E ':(7890|7891|9090|23571)\b' || true
 ```
 
 如果当前安装目录正在承担日常代理，请另选一个临时安装目录。共享机上默认只做 `tmux` / `nohup` 用户态 E2E，不做 systemd/Tun E2E。这样可以验证新代码路径，同时不碰日常使用中的 `~/clashctl` 和当前正在运行的 mihomo / clash。
@@ -99,14 +99,7 @@ test ! -s "$E2E_DIR/resources/mihomo.pid"
 - `clashrestart --mode nohup` 会先停掉当前活跃模式，再用 `nohup` 启动。
 - `clashoff` 默认只关闭当前活跃模式。
 
-完成用户态 E2E 后建议清理测试安装：
-
-```bash
-clashoff || true
-exit
-pgrep -af "$E2E_DIR" || true
-rm -rf "$E2E_DIR"
-```
+如果还要继续验证无损项目更新，先不要删除 `$E2E_DIR`。完成全部 E2E 后，按本文末尾的清理步骤删除测试安装。
 
 ## systemd 与 Tun 高危可选项
 
@@ -145,6 +138,15 @@ clashoff
 - 当前活跃模式不是 `systemd` 时，`clashtun on` 会拒绝，并提示先执行 `clashrestart --mode systemd`。
 - `clashtun` 不会静默切换托管模式。
 
+如果执行了 systemd/Tun 可选项，验证完成后单独清理该安装：
+
+```bash
+sudo bash "$E2E_SYSTEMD_DIR/uninstall.sh"
+systemctl cat mihomo clash 2>/dev/null || true
+pgrep -af "$E2E_SYSTEMD_DIR" || true
+rm -rf "$E2E_SYSTEMD_DIR"
+```
+
 ## 无损项目更新
 
 在源码仓库 pull 新版本后，从源码目录执行：
@@ -157,8 +159,10 @@ bash update.sh --target "$E2E_DIR"
 
 ```bash
 . "$E2E_DIR/scripts/cmd/clashctl.sh"
-test -f "$E2E_DIR/resources/mixin.yaml"
-test -f "$E2E_DIR/resources/clashctl.yaml"
+test -f "$E2E_DIR/config/mixin.yaml"
+test -f "$E2E_DIR/config/clashctl.yaml"
+test -f "$E2E_DIR/config/subscriptions.yaml"
+test -f "$E2E_DIR/resources/install-state.yaml"
 test -d "$E2E_DIR/resources/profiles"
 clashstatus --all
 ```
@@ -168,3 +172,14 @@ clashstatus --all
 - 更新不会启动或停止内核。
 - 更新不会改订阅、mixin、sidecar 配置、运行时端口、日志和 pid 状态。
 - 更新只刷新脚本、README、docs、tests 等项目资产。
+
+## 清理测试安装
+
+完成用户态 E2E 和无损更新验证后，清理测试目录：
+
+```bash
+clashoff || true
+exit
+pgrep -af "$E2E_DIR" || true
+rm -rf "$E2E_DIR"
+```

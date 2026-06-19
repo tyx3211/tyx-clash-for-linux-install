@@ -19,12 +19,24 @@ _copy_install_payload() {
         scripts
         docs
         tests
+        config
         resources
     )
-    local path missing=()
+    local path missing=() full found
 
     for path in "${payload_paths[@]}"; do
-        [ -e "$THIS_INSTALL_DIR/$path" ] || missing+=("$path")
+        full="$THIS_INSTALL_DIR/$path"
+        [ -e "$full" ] || missing+=("$path")
+        [ -L "$full" ] && {
+            printf '安装载荷包含符号链接，拒绝复制：%s\n' "$full" >&2
+            return 1
+        }
+        [ -d "$full" ] || continue
+        found=$(find -P "$full" -type l -print -quit)
+        [ -n "$found" ] && {
+            printf '安装载荷包含符号链接，拒绝复制：%s\n' "$found" >&2
+            return 1
+        }
     done
 
     [ "${#missing[@]}" -eq 0 ] || {
@@ -38,6 +50,7 @@ _copy_install_payload() {
 
 _parse_args "$@"
 _normalize_sudo_install_path
+_validate_kernel_name
 _refresh_install_paths
 _validate_init_mode
 _register_install_cleanup
@@ -53,6 +66,7 @@ _copy_install_payload || _error_quit "安装文件复制失败"
 printf '%s\n' 'tyx-clash-for-linux-install' >"$INSTALL_MARKER"
 touch "$CLASH_CONFIG_BASE"
 _set_envs
+_init_config_git
 _is_regular_sudo && chown -R "$SUDO_USER" "$CLASH_BASE_DIR"
 
 _install_service || _error_quit "服务安装失败，请检查启动方式和权限"
@@ -63,7 +77,7 @@ _install_service || _error_quit "服务安装失败，请检查启动方式和�
 . "$CLASH_CMD_DIR/clashctl.sh"
 
 _merge_config || _error_quit "验证失败：请检查 Mixin 配置"
-_detect_proxy_port
+_detect_proxy_port || _error_quit "代理端口检测或写入失败"
 
 _valid_config "$CLASH_CONFIG_BASE" && CLASH_CONFIG_URL="file://$CLASH_CONFIG_BASE"
 [ -n "$CLASHCTL_NO_QUIT" ] && {
@@ -85,7 +99,7 @@ fi
 clashsub use 1 || exit $?
 
 [ -z "$(_get_secret)" ] && clashsecret "$(_get_random_val)" >/dev/null
-clashui
+clashui || _error_quit "Web 控制台地址检测失败"
 clashsecret
 
 _mark_install_complete

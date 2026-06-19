@@ -1,12 +1,29 @@
 function clashui() {
-    _detect_ext_addr
-    clashstatus >&/dev/null || clashon >/dev/null
+    _detect_ext_addr || return 1
+    clashstatus >&/dev/null || clashon >/dev/null || return 1
+    local local_ip=$EXT_IP
+    local local_address="http://${local_ip}:${EXT_PORT}/ui"
+    case "$local_ip" in
+    127.* | localhost | ::1)
+        printf "\n"
+        printf "╔═══════════════════════════════════════════════╗\n"
+        printf "║                %s                  ║\n" "$(_okcat 'Web 控制台')"
+        printf "║═══════════════════════════════════════════════║\n"
+        printf "║                                               ║\n"
+        printf "║     🏠 本机：%-31s  ║\n" "$local_address"
+        printf "║     🔁 转发：ssh -L %-22s ║\n" "${EXT_PORT}:127.0.0.1:${EXT_PORT} user@remote-host"
+        printf "║     🌐 浏览器：%-27s  ║\n" "http://localhost:${EXT_PORT}/ui"
+        printf "║     ☁️  公共：%-31s  ║\n" "$URL_CLASH_UI"
+        printf "║                                               ║\n"
+        printf "╚═══════════════════════════════════════════════╝\n"
+        printf "\n"
+        return 0
+        ;;
+    esac
+
     local query_url='api64.ipify.org' # ifconfig.me
     local public_ip=$(curl -s --noproxy "*" --location --max-time 2 $query_url)
     local public_address="http://${public_ip:-公网}:${EXT_PORT}/ui"
-
-    local local_ip=$EXT_IP
-    local local_address="http://${local_ip}:${EXT_PORT}/ui"
     printf "\n"
     printf "╔═══════════════════════════════════════════════╗\n"
     printf "║                %s                  ║\n" "$(_okcat 'Web 控制台')"
@@ -126,6 +143,7 @@ _merge_config_restart() {
     [ "$active_status" -ne 0 ] && mode=$(_get_default_service_mode)
 
     _merge_config || return 1
+    _detect_ext_addr || return 1
     _clash_service_stop "$mode" >/dev/null 2>&1 || true
     sleep 0.1
     _clash_service_start "$mode" >/dev/null || return 1
@@ -225,6 +243,8 @@ EOF
 }
 
 function clashupgrade() {
+    local channel="" log_flag=false
+
     for arg in "$@"; do
         case $arg in
         -h | --help)
@@ -242,7 +262,7 @@ EOF
             return 0
             ;;
         -v | --verbose)
-            local log_flag=true
+            log_flag=true
             ;;
         -r | --release)
             channel="release"
@@ -256,8 +276,8 @@ EOF
         esac
     done
 
-    _detect_ext_addr
-    clashstatus >&/dev/null || clashon >/dev/null
+    _detect_ext_addr || return 1
+    clashstatus >&/dev/null || clashon >/dev/null || return 1
     _okcat '⏳' "请求内核升级..."
     local follow_pid=
     [ "$log_flag" = true ] && {

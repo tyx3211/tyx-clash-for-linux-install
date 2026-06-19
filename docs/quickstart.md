@@ -21,11 +21,21 @@ bash install.sh
 
 安装脚本会下载依赖、创建默认安装目录 `~/clashctl`，并提示输入订阅链接。
 
+如果希望从第一天开始就把个人配置放进独立 git 仓库，可以安装时加上：
+
+```bash
+bash install.sh --config-git
+```
+
+这只会在 `~/clashctl/config` 下执行 `git init`，不会把整个安装目录变成 git 仓库。后续可以按自己的习惯在该目录里 `git add` / `git commit`。详细说明见 [配置版本管理](config-versioning.md)。
+
 如果订阅链接需要写在命令或 `.env` 中，请使用双引号：
 
 ```bash
 CLASH_CONFIG_URL="https://example.com/sub?clash=3&extend=1"
 ```
+
+这里的 `.env` 只用于安装前默认值和旧版本兼容。安装完成后，本机安装状态以 `~/clashctl/resources/install-state.yaml` 为主；长期维护和可选 git 管理的代理偏好在 `~/clashctl/config`。
 
 安装结束后，脚本会尝试让当前终端立即拥有 `clashctl`、`clashon`、`clashoff` 等命令。如果当前终端没有这些命令，执行：
 
@@ -78,17 +88,19 @@ clashproxy mode silent
 clashui
 ```
 
-默认控制口绑定 `127.0.0.1:23571`。如果在远程共享机上使用，推荐在本机开 SSH 转发：
+新安装默认控制口绑定 `127.0.0.1:9090`。如果在远程共享机上使用，推荐在本机开 SSH 转发：
 
 ```bash
-ssh -L 23571:127.0.0.1:23571 user@remote-host
+ssh -L 9090:127.0.0.1:9090 user@remote-host
 ```
 
 然后访问：
 
 ```text
-http://localhost:23571/ui
+http://localhost:9090/ui
 ```
+
+旧安装执行 `clashctl update-self` 后不会自动改已有控制口，实际地址以 `clashui` 输出或当前 `mixin.yaml` 为准。如需迁移到 9090，可以手工编辑 `config/mixin.yaml` 或旧兼容路径 `resources/mixin.yaml` 里的 `external-controller`。
 
 ## 订阅管理
 
@@ -130,9 +142,9 @@ clashsub update 1 --convert
 clashctl update-self
 ```
 
-该命令默认从当前 fork 的 GitHub `main` 分支下载最新源码，并无损刷新当前安装目录。它不会停止内核、不会启动内核、不会覆盖订阅、`mixin.yaml`、`clashctl.yaml`、profiles、日志和 pid 状态。
+该命令默认从当前 fork 的 GitHub `main` 分支下载最新源码，并无损刷新当前安装目录。它不会停止内核、不会启动内核、不会覆盖 `config/`、`resources/install-state.yaml`、订阅、运行时配置、日志和 pid 状态。
 
-默认安装目录不是 git 仓库，也不需要 `.git`。如果旧安装目录里已经有 `.git`，通常是历史安装复制遗留；确认没有用它管理个人配置后，可以手工删除。
+默认安装目录不是 git 仓库，也不需要 `.git`。如果旧安装目录里已经有 `.git`，通常是历史安装复制遗留；确认没有自定义用途后，可以手工删除。配置版本管理推荐放在 `~/clashctl/config`。
 
 指定分支或 tag：
 
@@ -169,6 +181,8 @@ sudo bash "$HOME/clashctl/uninstall.sh"
 ## Tun 路线
 
 默认 `tmux` / `nohup` 模式不支持 Tun。需要 Tun 时，在允许 sudo 的机器上安装 systemd 服务：
+
+运行时管理 systemd 服务需要 root 或免密 sudo。可以先用 `sudo -n systemctl status mihomo` 判断当前用户是否具备非交互 sudo 能力；如果该命令要求输入密码，`clashrestart --mode systemd` 和 `clashtun on` 也会失败。
 
 ```bash
 sudo bash install.sh --init systemd

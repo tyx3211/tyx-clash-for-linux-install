@@ -42,8 +42,8 @@ printf 'ci metadata\n' >"$install_payload_source/.github/workflows/ci.yml"
 ) || fail "install payload copy should succeed"
 [ -f "$install_payload_target/scripts/cmd/clashctl.sh" ] ||
     fail "install payload should include runtime scripts"
-[ -f "$install_payload_target/resources/mixin.yaml" ] ||
-    fail "install payload should include default resources"
+[ -f "$install_payload_target/config/mixin.yaml" ] ||
+    fail "install payload should include default editable config"
 [ ! -e "$install_payload_target/.git" ] ||
     fail "install payload should not copy source git metadata"
 [ ! -e "$install_payload_target/.github" ] ||

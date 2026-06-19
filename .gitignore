@@ -1,6 +1,8 @@
 .idea
 .vscode
 config.yaml*
+resources/install-state.yaml
+resources/service-state.yaml
 resources/zip/*
 !resources/zip/dist.zip
 resources/dist/

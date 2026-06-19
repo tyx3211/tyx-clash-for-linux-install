@@ -341,13 +341,16 @@ _detect_proxy_port() {
         local var_val="${entry#*|}"
 
         [ -n "$var_val" ] && _is_port_used "$var_val" && [ "$isActive" != "true" ] && {
-            newPort=$(_get_random_port) || return
+            newPort=$(_get_random_port) || return 1
             ((count++))
             _failcat '🎯' "端口冲突：[$yaml_key] $var_val 🎲 随机分配 $newPort"
-            "$BIN_YQ" -i ".${yaml_key} = $newPort" "$CLASH_CONFIG_MIXIN"
+            "$BIN_YQ" -i ".${yaml_key} = $newPort" "$CLASH_CONFIG_MIXIN" || return 1
         }
     done
-    ((count)) && _merge_config
+    if ((count)); then
+        _merge_config || return 1
+    fi
+    return 0
 }
 
 function clashon() {
@@ -366,7 +369,8 @@ EOF
         return 0
     }
 
-    _detect_proxy_port
+    _detect_proxy_port || return 1
+    _detect_ext_addr || return 1
     active=$(_get_active_mode 2>/dev/null)
     active_status=$?
     if [ "$active_status" -eq 0 ]; then

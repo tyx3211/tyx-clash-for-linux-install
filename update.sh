@@ -16,6 +16,21 @@ _die() {
     exit 1
 }
 
+_load_install_state_lib() {
+    [ "${INSTALL_STATE_LIB_LOADED:-false}" = true ] && return 0
+
+    local candidate
+    for candidate in "$THIS_UPDATE_DIR/scripts/lib/install-state.sh" "${SOURCE_DIR:-}/scripts/lib/install-state.sh"; do
+        [ -n "$candidate" ] || continue
+        [ -r "$candidate" ] || continue
+        . "$candidate" || _die "安装状态解析脚本加载失败：$candidate"
+        INSTALL_STATE_LIB_LOADED=true
+        return 0
+    done
+
+    _die "缺少安装状态解析脚本：$THIS_UPDATE_DIR/scripts/lib/install-state.sh"
+}
+
 _expand_path() {
     local path=$1
     case "$path" in
@@ -63,6 +78,30 @@ _read_env_value() {
     _expand_path "$value"
 }
 
+_read_state_value() {
+    local root=$1 key=$2
+    _load_install_state_lib
+    _install_state_read_yaml_value "$root/resources/install-state.yaml" "$key"
+}
+
+_read_install_dir_value() {
+    local root=$1 value=
+
+    value=$(_read_state_value "$root" install_dir 2>/dev/null || true)
+    [ -n "$value" ] || value=$(_read_env_value "$root/.env" CLASH_BASE_DIR 2>/dev/null || true)
+    [ -n "$value" ] || return 1
+    printf '%s\n' "$value"
+}
+
+_read_target_metadata() {
+    local root=$1 key=$2 env_key=$3 value=
+
+    value=$(_read_state_value "$root" "$key" 2>/dev/null || true)
+    [ -n "$value" ] || value=$(_read_env_value "$root/.env" "$env_key" 2>/dev/null || true)
+    [ -n "$value" ] || return 1
+    printf '%s\n' "$value"
+}
+
 _canonical_dir() {
     local path
     path=$(_expand_path "$1")
@@ -72,7 +111,7 @@ _canonical_dir() {
 _is_install_root() {
     local dir=$1 marker
     marker="$dir/.clashctl-install-root"
-    [ -f "$marker" ] && grep -qx 'tyx-clash-for-linux-install' "$marker"
+    [ ! -L "$marker" ] && [ -f "$marker" ] && grep -qx 'tyx-clash-for-linux-install' "$marker"
 }
 
 _validate_target_path() {
@@ -157,7 +196,7 @@ _reject_managed_symlinks() {
 _validate_source_tree() {
     local source=$1 path full found
 
-    [ -f "$source/update.sh" ] && [ -f "$source/.env" ] && [ -d "$source/scripts/cmd" ] ||
+    [ -f "$source/update.sh" ] && [ -d "$source/scripts/cmd" ] && [ -f "$source/scripts/lib/install-state.sh" ] ||
         _die "源码目录不像 tyx-clash-for-linux-install 仓库：$source"
 
     for path in "${managed_paths[@]}"; do
@@ -169,6 +208,28 @@ _validate_source_tree() {
         [ -n "$found" ] && _die "拒绝更新包含符号链接的源码托管路径：$found"
     done
     return 0
+}
+
+_validate_existing_install_state() {
+    local state_path="$target/resources/install-state.yaml"
+    local state_target= kernel_name=
+
+    [ -e "$state_path" ] || return 0
+    _load_install_state_lib
+    [ ! -L "$target/resources" ] && [ ! -L "$state_path" ] ||
+        _die "拒绝读取符号链接安装状态文件：$state_path"
+
+    state_target=$(_read_state_value "$target" install_dir 2>/dev/null || true)
+    [ -n "$state_target" ] || _die "安装状态缺少 install_dir：$state_path"
+    state_target=$(_canonical_dir "$state_target" 2>/dev/null || true)
+    [ -n "$state_target" ] || _die "安装状态 install_dir 不存在：$state_path"
+    [ "$state_target" = "$target" ] ||
+        _die "安装状态目录不属于当前目标：$state_target != $target"
+
+    kernel_name=$(_read_state_value "$target" kernel_name 2>/dev/null || true)
+    [ -n "$kernel_name" ] || _die "安装状态缺少 kernel_name：$state_path"
+    _install_state_validate_kernel_name "$kernel_name" ||
+        _die "内核名称不安全，仅支持 mihomo、clash：$kernel_name"
 }
 
 _set_env_value() {
@@ -224,6 +285,7 @@ Usage:
   bash update.sh [--target <install_dir>] [--repo <owner/repo>] [--ref <branch_or_tag>]
 
 默认从当前源码仓库刷新已安装的 clashctl 脚本和文档资产，并保留用户配置、订阅和运行状态。
+安装状态优先保存在 resources/install-state.yaml；旧 .env 如存在会继续保留用于兼容。
 如果在已安装目录中运行且未指定 --source，则默认从 GitHub 下载 tyx3211/tyx-clash-for-linux-install 的 main 分支后无损更新。
 EOF
         exit 0
@@ -247,11 +309,13 @@ else
 fi
 
 if [ -z "$target" ]; then
-    if [ -n "$SOURCE_DIR" ]; then
-        target=$(_read_env_value "$SOURCE_DIR/.env" CLASH_BASE_DIR) || true
-        [ -n "$target" ] || _die "无法从源码 .env 读取 CLASH_BASE_DIR，请显式指定 --target"
+    if _is_install_root "$THIS_UPDATE_DIR"; then
+        target=$THIS_UPDATE_DIR
+    elif [ -n "$SOURCE_DIR" ]; then
+        target=$(_read_install_dir_value "$SOURCE_DIR") || true
+        [ -n "$target" ] || _die "无法从源码安装状态读取安装目录，请显式指定 --target"
     else
-        target=$(_read_env_value "$THIS_UPDATE_DIR/.env" CLASH_BASE_DIR 2>/dev/null || true)
+        target=$(_read_install_dir_value "$THIS_UPDATE_DIR" 2>/dev/null || true)
         [ -n "$target" ] || target=$THIS_UPDATE_DIR
     fi
 fi
@@ -261,13 +325,17 @@ _validate_target_path "$target"
 
 marker="$target/.clashctl-install-root"
 legacy=false
-if [ -f "$marker" ] && grep -qx 'tyx-clash-for-linux-install' "$marker"; then
+if [ -L "$marker" ]; then
+    _die "拒绝使用符号链接安装标记：$marker"
+elif [ -f "$marker" ] && grep -qx 'tyx-clash-for-linux-install' "$marker"; then
     :
 elif [ -f "$target/scripts/cmd/clashctl.sh" ] && [ -f "$target/resources/mixin.yaml" ]; then
     legacy=true
 else
     _die "目标目录不像 clashctl 安装目录，拒绝更新：$target"
 fi
+
+_validate_existing_install_state
 
 managed_paths=(install.sh uninstall.sh update.sh README.md scripts docs tests)
 backup_paths=(.env .clashctl-install-root "${managed_paths[@]}")
@@ -326,23 +394,52 @@ if [ -f "$env_path" ]; then
         [ -z "$existing_target" ] || [ "$existing_target" = "$target" ] ||
             _die "目标 .env 中的 CLASH_BASE_DIR 不属于当前安装目录：$existing_target != $target"
     fi
-else
-    /usr/bin/install -m 644 "$SOURCE_DIR/.env" "$env_path"
+    _set_env_value "$env_path" CLASH_BASE_DIR "$target"
 fi
-_set_env_value "$env_path" CLASH_BASE_DIR "$target"
 
-while IFS= read -r line; do
-    case "$line" in
-    "" | "#"*)
-        continue
-        ;;
-    *=*)
-        key=${line%%=*}
-        [[ $key =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
-        grep -qE "^${key}=" "$env_path" || printf '%s\n' "$line" >>"$env_path"
-        ;;
-    esac
-done <"$SOURCE_DIR/.env"
+if [ -f "$env_path" ] && [ -f "$SOURCE_DIR/.env" ]; then
+    while IFS= read -r line; do
+        case "$line" in
+        "" | "#"*)
+            continue
+            ;;
+        *=*)
+            key=${line%%=*}
+            [[ $key =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+            grep -qE "^${key}=" "$env_path" || printf '%s\n' "$line" >>"$env_path"
+            ;;
+        esac
+    done <"$SOURCE_DIR/.env"
+fi
+
+state_path="$target/resources/install-state.yaml"
+if [ -L "$target/resources" ] || [ -L "$state_path" ]; then
+    _die "拒绝写入符号链接安装状态文件：$state_path"
+fi
+if [ ! -f "$state_path" ]; then
+    _load_install_state_lib
+    kernel_name=$(_read_target_metadata "$target" kernel_name KERNEL_NAME 2>/dev/null || printf '%s\n' mihomo)
+    _install_state_validate_kernel_name "$kernel_name" ||
+        _die "内核名称不安全，仅支持 mihomo、clash：$kernel_name"
+    default_mode=$(_read_target_metadata "$target" default_mode INIT_TYPE 2>/dev/null || printf '%s\n' tmux)
+    installed_systemd=false
+    installed_init=$(_read_env_value "$env_path" CLASH_INSTALLED_INIT_TYPE 2>/dev/null || true)
+    [ "$installed_init" = systemd ] && installed_systemd=true
+    [ "$default_mode" = systemd ] && installed_systemd=true
+    version_mihomo=$(_read_env_value "$env_path" VERSION_MIHOMO 2>/dev/null || true)
+    version_yq=$(_read_env_value "$env_path" VERSION_YQ 2>/dev/null || true)
+    version_subconverter=$(_read_env_value "$env_path" VERSION_SUBCONVERTER 2>/dev/null || true)
+    _install_state_write \
+        "$state_path" \
+        "$target" \
+        "$kernel_name" \
+        "$default_mode" \
+        "$installed_systemd" \
+        "$version_mihomo" \
+        "$version_yq" \
+        "$version_subconverter" ||
+        _die "安装状态写入失败：$state_path"
+fi
 
 rollback_needed=false
 trap - EXIT INT TERM

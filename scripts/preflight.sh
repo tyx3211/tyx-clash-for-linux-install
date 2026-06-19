@@ -1,5 +1,13 @@
 #!/usr/bin/env bash
 
+CLASH_BASE_DIR=${CLASH_BASE_DIR:-}
+CLASH_RESOURCES_DIR=${CLASH_RESOURCES_DIR:-"${CLASH_BASE_DIR}/resources"}
+KERNEL_NAME=${KERNEL_NAME:-mihomo}
+
+_PREFLIGHT_SCRIPT_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+. "$_PREFLIGHT_SCRIPT_DIR/lib/install-state.sh"
+unset _PREFLIGHT_SCRIPT_DIR
+
 RESOURCES_BASE_DIR=".${CLASH_RESOURCES_DIR#"$CLASH_BASE_DIR"}"
 
 ZIP_BASE_DIR=".${CLASH_RESOURCES_DIR#"$CLASH_BASE_DIR"}/zip"
@@ -19,9 +27,11 @@ CLASH_INSTALL_COMPLETE=false
 
 _refresh_install_paths() {
     CLASH_RESOURCES_DIR="${CLASH_BASE_DIR}/resources"
+    CLASH_CONFIG_DIR="${CLASH_BASE_DIR}/config"
+    CLASH_INSTALL_STATE="${CLASH_RESOURCES_DIR}/install-state.yaml"
     CLASH_CONFIG_BASE="${CLASH_RESOURCES_DIR}/config.yaml"
-    CLASH_CONFIG_MIXIN="${CLASH_RESOURCES_DIR}/mixin.yaml"
-    CLASH_CONFIG_SIDECAR="${CLASH_RESOURCES_DIR}/clashctl.yaml"
+    CLASH_CONFIG_MIXIN="${CLASH_CONFIG_DIR}/mixin.yaml"
+    CLASH_CONFIG_SIDECAR="${CLASH_CONFIG_DIR}/clashctl.yaml"
     CLASH_CONFIG_RUNTIME="${CLASH_RESOURCES_DIR}/runtime.yaml"
     CLASH_CONFIG_TEMP="${CLASH_RESOURCES_DIR}/temp.yaml"
     CLASH_SERVICE_STATE="${CLASH_RESOURCES_DIR}/service-state.yaml"
@@ -37,7 +47,7 @@ _refresh_install_paths() {
     BIN_SUBCONVERTER_PID="${BIN_SUBCONVERTER_DIR}/subconverter.pid"
 
     CLASH_PROFILES_DIR="${CLASH_RESOURCES_DIR}/profiles"
-    CLASH_PROFILES_META="${CLASH_RESOURCES_DIR}/profiles.yaml"
+    CLASH_PROFILES_META="${CLASH_CONFIG_DIR}/subscriptions.yaml"
     CLASH_PROFILES_LOG="${CLASH_RESOURCES_DIR}/profiles.log"
 
     RESOURCES_BASE_DIR=".${CLASH_RESOURCES_DIR#"$CLASH_BASE_DIR"}"
@@ -79,6 +89,11 @@ _validate_init_mode() {
     esac
 }
 
+_validate_kernel_name() {
+    _install_state_validate_kernel_name "$KERNEL_NAME" ||
+        _error_quit "内核名称不安全，仅支持 mihomo、clash：$KERNEL_NAME"
+}
+
 _validate_install_path() {
     case "$CLASH_BASE_DIR" in
     "" | "/" | "$HOME" | "$HOME/" | . | .. | ./* | ../*)
@@ -94,6 +109,12 @@ _validate_install_path() {
     case "$CLASH_BASE_DIR" in
     *[!A-Za-z0-9_./-]*)
         _error_quit "安装路径包含 shell 模板不支持的字符，请仅使用字母、数字、_、-、.、/：$CLASH_BASE_DIR"
+        ;;
+    esac
+
+    case "$CLASH_BASE_DIR" in
+    */../* | */.. | */./* | */.)
+        _error_quit "安装路径不能包含 . 或 .. 路径组件：$CLASH_BASE_DIR"
         ;;
     esac
 }
@@ -156,10 +177,40 @@ _valid() {
     [ -z "$ZSH_VERSION" ] && [ -z "$BASH_VERSION" ] && _error_quit "仅支持：bash、zsh 执行"
 }
 
+_print_install_help() {
+    cat <<EOF
+Usage:
+  bash install.sh [mihomo|clash] [subscription_url] [OPTIONS]
+
+Options:
+  --init <tmux|nohup|systemd>
+                         设置默认运行托管模式；systemd 需要 root 或 sudo
+  --init=<mode>          等价写法
+  --config-git           安装时在 <安装目录>/config 下执行 git init
+  --no-config-git        即使 CLASHCTL_CONFIG_GIT=1 也不初始化配置仓库
+  -h, --help             显示帮助信息
+
+Environment:
+  CLASHCTL_CONFIG_GIT=1  等价于 --config-git
+  CLASHCTL_NO_RC=1       不写入 shell rc
+  CLASHCTL_NO_QUIT=1     跳过安装末尾的订阅导入交互
+
+Examples:
+  bash install.sh
+  bash install.sh --init nohup
+  CLASHCTL_CONFIG_GIT=1 bash install.sh
+  sudo bash install.sh --init systemd
+EOF
+}
+
 _parse_args() {
     while [ "$#" -gt 0 ]; do
         local arg=$1
         case $arg in
+        -h | --help)
+            _print_install_help
+            exit 0
+            ;;
         mihomo)
             KERNEL_NAME=mihomo
             ;;
@@ -177,10 +228,50 @@ _parse_args() {
             [ "$#" -gt 0 ] || _error_quit "--init 需要指定模式：tmux、nohup、systemd"
             INIT_TYPE=$1
             ;;
+        --config-git | --config-git=1 | --config-git=true | --config-git=yes | --config-git=on)
+            CLASHCTL_CONFIG_GIT=1
+            ;;
+        --config-git=0 | --config-git=false | --config-git=no | --config-git=off | --no-config-git)
+            CLASHCTL_CONFIG_GIT=0
+            ;;
         esac
         shift
     done
     _refresh_install_paths
+}
+
+_config_git_enabled() {
+    case "${CLASHCTL_CONFIG_GIT:-0}" in
+    1 | true | yes | on)
+        return 0
+        ;;
+    *)
+        return 1
+        ;;
+    esac
+}
+
+_init_config_git() {
+    _config_git_enabled || return 0
+
+    [ -d "$CLASH_CONFIG_DIR" ] || _error_quit "配置目录不存在，无法初始化 git：$CLASH_CONFIG_DIR"
+    [ ! -L "$CLASH_CONFIG_DIR" ] || _error_quit "配置目录不能是符号链接：$CLASH_CONFIG_DIR"
+    local base_real config_real expected_config_real
+    base_real=$(cd "$CLASH_BASE_DIR" && pwd -P) || _error_quit "安装目录不存在：$CLASH_BASE_DIR"
+    config_real=$(cd "$CLASH_CONFIG_DIR" && pwd -P) || _error_quit "配置目录不存在：$CLASH_CONFIG_DIR"
+    expected_config_real="${base_real}/config"
+    [ "$config_real" = "$expected_config_real" ] ||
+        _error_quit "配置目录不属于当前安装目录：$CLASH_CONFIG_DIR"
+    command -v git >/dev/null || _error_quit "未检测到 git，无法初始化配置仓库；可去掉 --config-git 后重试"
+
+    if [ -d "$CLASH_CONFIG_DIR/.git" ]; then
+        _okcat "配置目录已经是 git 仓库：$CLASH_CONFIG_DIR"
+        return 0
+    fi
+
+    (cd "$CLASH_CONFIG_DIR" && git init >/dev/null) ||
+        _error_quit "配置目录 git 初始化失败：$CLASH_CONFIG_DIR"
+    _okcat "已在配置目录初始化 git 仓库：$CLASH_CONFIG_DIR"
 }
 
 _prepare_zip() {
@@ -636,6 +727,20 @@ _revoke_rc() {
 }
 
 _set_envs() {
+    local installed_systemd=false
+    [ "$INIT_TYPE" = systemd ] && installed_systemd=true
+
+    _install_state_write \
+        "$CLASH_INSTALL_STATE" \
+        "$CLASH_BASE_DIR" \
+        "$KERNEL_NAME" \
+        "$INIT_TYPE" \
+        "$installed_systemd" \
+        "${VERSION_MIHOMO:-}" \
+        "${VERSION_YQ:-}" \
+        "${VERSION_SUBCONVERTER:-}" ||
+        _error_quit "安装状态写入失败：$CLASH_INSTALL_STATE"
+
     _set_env INIT_TYPE "$INIT_TYPE"
     _set_env CLASH_INSTALLED_INIT_TYPE "$INIT_TYPE"
     _set_env KERNEL_NAME "$KERNEL_NAME"

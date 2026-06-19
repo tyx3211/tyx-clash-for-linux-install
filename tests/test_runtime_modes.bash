@@ -67,10 +67,13 @@ mode_tmp=$(make_test_tmpdir "clash-runtime-mode")
     printf '{}\n' >"$CLASH_CONFIG_RUNTIME"
     printf '{}\n' >"$CLASH_CONFIG_MIXIN"
 
-    _detect_proxy_port() { :; }
+    _detect_proxy_port() {
+        printf 'detect-proxy\n' >>"$mode_tmp/calls"
+    }
     _detect_ext_addr() {
+        printf 'detect-ext\n' >>"$mode_tmp/calls"
         EXT_IP=127.0.0.1
-        EXT_PORT=23571
+        EXT_PORT=9090
     }
     _get_secret() { :; }
     _set_system_proxy() { :; }
@@ -115,6 +118,12 @@ mode_tmp=$(make_test_tmpdir "clash-runtime-mode")
     [ "$status" -eq 0 ] || fail "clashon --mode tmux should start tmux adapter"
     grep -qx 'tmux-start' "$mode_tmp/calls" ||
         fail "clashon --mode tmux should call tmux adapter"
+    awk '
+        $0 == "detect-ext" && !seen_start { seen_detect=NR }
+        $0 == "tmux-start" && !seen_start { seen_start=NR }
+        END { exit (seen_detect && seen_start && seen_detect < seen_start) ? 0 : 1 }
+    ' "$mode_tmp/calls" ||
+        fail "clashon should detect external-controller conflicts before starting the adapter"
     grep -q '^active_mode: tmux$' "$CLASH_SERVICE_STATE" ||
         fail "clashon should record active mode"
 
@@ -141,6 +150,101 @@ mode_tmp=$(make_test_tmpdir "clash-runtime-mode")
         fail "clashoff should stop recorded active mode"
 )
 
+restart_ext_tmp=$(make_test_tmpdir "clash-restart-ext")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    _has_current_proxy_env() { return 1; }
+    _get_active_mode() { return 1; }
+    _get_default_service_mode() { printf '%s\n' tmux; }
+    _merge_config() { printf 'merge\n' >>"$restart_ext_tmp/calls"; }
+    _detect_ext_addr() { printf 'detect-ext\n' >>"$restart_ext_tmp/calls"; }
+    _clash_service_stop() { printf 'stop-%s\n' "$1" >>"$restart_ext_tmp/calls"; }
+    _clash_service_start() { printf 'start-%s\n' "$1" >>"$restart_ext_tmp/calls"; }
+    sleep() { :; }
+
+    _merge_config_restart || fail "_merge_config_restart should succeed with stubbed service operations"
+)
+awk '
+    $0 == "merge" { merge=NR }
+    $0 == "detect-ext" { detect=NR }
+    $0 == "start-tmux" { start=NR }
+    END { exit (merge && detect && start && merge < detect && detect < start) ? 0 : 1 }
+' "$restart_ext_tmp/calls" ||
+    fail "_merge_config_restart should detect external-controller conflicts before restarting"
+
+no_conflict_tmp=$(make_test_tmpdir "clash-no-conflict-return")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    BIN_YQ="$no_conflict_tmp/yq"
+    CLASH_CONFIG_RUNTIME="$no_conflict_tmp/runtime.yaml"
+    CLASH_CONFIG_MIXIN="$no_conflict_tmp/mixin.yaml"
+    cat >"$BIN_YQ" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+'.mixed-port // ""')
+    printf '\n'
+    ;;
+'.port // ""')
+    printf '7890\n'
+    ;;
+'.socks-port // ""')
+    printf '7891\n'
+    ;;
+'.external-controller // ""')
+    printf '127.0.0.1:9090\n'
+    ;;
+*)
+    printf '\n'
+    ;;
+esac
+EOF
+    chmod +x "$BIN_YQ"
+    printf '{}\n' >"$CLASH_CONFIG_RUNTIME"
+    printf '{}\n' >"$CLASH_CONFIG_MIXIN"
+    DEFAULT_HTTP_PORT=7890
+    DEFAULT_SOCKS_PORT=7891
+    _is_port_used() { return 1; }
+    clashstatus() { return 1; }
+    _merge_config() { printf 'merge\n' >>"$no_conflict_tmp/calls"; }
+
+    _detect_proxy_port
+    proxy_status=$?
+    _detect_ext_addr
+    ext_status=$?
+    [ "$proxy_status" -eq 0 ] ||
+        fail "_detect_proxy_port should return success when no configured proxy port conflicts"
+    [ "$ext_status" -eq 0 ] ||
+        fail "_detect_ext_addr should return success when external-controller port is free"
+    [ ! -e "$no_conflict_tmp/calls" ] ||
+        fail "no-conflict detection should not merge config"
+)
+
+on_ext_fail_tmp=$(make_test_tmpdir "clash-on-ext-fail")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    INIT_TYPE=tmux
+    _detect_proxy_port() { printf 'detect-proxy\n' >>"$on_ext_fail_tmp/calls"; }
+    _detect_ext_addr() { printf 'detect-ext\n' >>"$on_ext_fail_tmp/calls"; return 1; }
+    _get_active_mode() { return 1; }
+    _clash_service_start() { printf 'start-%s\n' "$1" >>"$on_ext_fail_tmp/calls"; return 0; }
+    clashstatus() { return 0; }
+    _okcat() { :; }
+    _failcat() { printf '%s\n' "$*" >>"$on_ext_fail_tmp/fail.log"; }
+
+    clashon --mode tmux
+    status=$?
+    [ "$status" -ne 0 ] ||
+        fail "clashon should fail when external-controller conflict resolution fails"
+    ! grep -q '^start-tmux$' "$on_ext_fail_tmp/calls" ||
+        fail "clashon should not start an adapter after external-controller detection fails"
+)
+
 rollback_tmp=$(make_test_tmpdir "clash-runtime-rollback")
 (
     set +e
@@ -155,6 +259,7 @@ rollback_tmp=$(make_test_tmpdir "clash-runtime-rollback")
     printf '{}\n' >"$CLASH_CONFIG_RUNTIME"
 
     _detect_proxy_port() { :; }
+    _detect_ext_addr() { :; }
     _okcat() { :; }
     _failcat() { printf '%s\n' "$*" >>"$rollback_tmp/fail.log"; }
     clashstatus() { return 1; }

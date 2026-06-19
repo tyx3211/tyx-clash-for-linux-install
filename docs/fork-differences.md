@@ -53,7 +53,7 @@ bash install.sh
 
 - `tmux`：默认模式，普通用户可用，可通过 tmux 会话观察进程。
 - `nohup`：普通用户备用模式，不依赖 tmux，但可观测性弱。
-- `systemd`：需要 root 或 sudo，支持 Tun。
+- `systemd`：需要 root 或 sudo，支持 Tun；运行时管理服务需要 root 或免密 sudo。
 
 `INIT_TYPE` 表示默认运行托管模式；`--init` 命令行参数只是在安装时覆盖这个默认值：
 
@@ -83,12 +83,19 @@ clashtun on
 
 通过 sudo 安装时，systemd 服务会以 sudo 调用用户身份运行，并由 systemd 授予 `CAP_NET_ADMIN`、`CAP_NET_RAW`、`CAP_NET_BIND_SERVICE`。
 
+运行时的 start/stop/restart 使用 `sudo -n systemctl`，不会停下来等待输入 sudo 密码。如果当前用户没有免密 sudo，systemd/Tun 路线会明确失败。
+
 ### Sidecar 配置分离
 
 当前 fork 把代理内核运行配置和 `clashctl` 自身行为配置分开：
 
-- `resources/mixin.yaml`：参与 mihomo / clash 运行时配置合并。
-- `resources/clashctl.yaml`：只描述 `clashctl` 自身行为，例如新 shell 是否自动写入代理变量。
+- `config/mixin.yaml`：参与 mihomo / clash 运行时配置合并。
+- `config/clashctl.yaml`：只描述 `clashctl` 自身行为，例如新 shell 是否自动写入代理变量。
+- `config/subscriptions.yaml`：保存订阅元信息和当前使用的订阅 id。
+
+旧安装目录如果还没有 `config/`，脚本会继续兼容 `resources/mixin.yaml`、`resources/clashctl.yaml` 和 `resources/profiles.yaml`。
+
+本机安装状态不放在 `config/`，而是写入 `resources/install-state.yaml`。`.env` 只作为安装前默认值和旧版本兼容入口保留。
 
 这样可以避免把 `clashctl` 私有配置混进内核运行时配置。
 

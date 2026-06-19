@@ -1,7 +1,7 @@
 _ensure_sidecar_config() {
     [ -s "$CLASH_CONFIG_SIDECAR" ] && return 0
 
-    mkdir -p "$CLASH_RESOURCES_DIR"
+    mkdir -p "$(dirname "$CLASH_CONFIG_SIDECAR")"
     cat >"$CLASH_CONFIG_SIDECAR" <<'EOF'
 # clashctl 自身的附加行为配置，不会传给 mihomo / clash 内核。
 system-proxy:

@@ -6,6 +6,7 @@ set -euo pipefail
 
 CLASHCTL_SH="$TEST_ROOT/scripts/cmd/clashctl.sh"
 SERVICE_RUNTIME_SH="$TEST_ROOT/scripts/lib/service-runtime.sh"
+CONFIG_SH="$TEST_ROOT/scripts/lib/config.sh"
 SUBSCRIPTION_SH="$TEST_ROOT/scripts/lib/subscription.sh"
 TUN_SH="$TEST_ROOT/scripts/lib/tun.sh"
 PREFLIGHT_SH="$TEST_ROOT/scripts/preflight.sh"
@@ -48,5 +49,84 @@ assert_file_contains "$TUN_SH" 'clashtun\(\)' \
 
 assert_file_not_contains "$FISH_SH" 'eval ' \
     "fish wrapper should not use eval to generate fixed command wrappers"
+
+sidecar_tmp=$(make_test_tmpdir "clash-sidecar-parent")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    CLASH_CONFIG_SIDECAR="$sidecar_tmp/config/clashctl.yaml"
+    CLASH_RESOURCES_DIR="$sidecar_tmp/resources"
+    _ensure_sidecar_config || exit 1
+    [ -s "$CLASH_CONFIG_SIDECAR" ] ||
+        fail "sidecar config creation should create the selected parent directory"
+)
+
+ui_loopback_tmp=$(make_test_tmpdir "clash-ui-loopback")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    _detect_ext_addr() {
+        EXT_IP=127.0.0.1
+        EXT_PORT=9090
+    }
+    clashstatus() { return 0; }
+    curl() { return 0; }
+    _okcat() {
+        [ "$#" -gt 1 ] && shift
+        printf '%s\n' "$1"
+    }
+
+    clashui >"$ui_loopback_tmp/out"
+)
+grep -q 'http://localhost:9090/ui' "$ui_loopback_tmp/out" ||
+    fail "loopback clashui output should show localhost browser URL"
+grep -q 'ssh -L 9090:127.0.0.1:9090' "$ui_loopback_tmp/out" ||
+    fail "loopback clashui output should show an SSH forwarding example"
+! grep -q '公网' "$ui_loopback_tmp/out" ||
+    fail "loopback clashui output should not show public address"
+! grep -q '放行端口' "$ui_loopback_tmp/out" ||
+    fail "loopback clashui output should not ask users to open firewall ports"
+
+ui_ext_fail_tmp=$(make_test_tmpdir "clash-ui-ext-fail")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    _detect_ext_addr() { return 1; }
+    clashstatus() { return 0; }
+    clashon() { printf 'start\n' >>"$ui_ext_fail_tmp/calls"; return 0; }
+    clashui >"$ui_ext_fail_tmp/out" 2>"$ui_ext_fail_tmp/err"
+    status=$?
+    [ "$status" -ne 0 ] ||
+        fail "clashui should fail when external-controller conflict resolution fails"
+    [ ! -e "$ui_ext_fail_tmp/calls" ] ||
+        fail "clashui should not start the kernel after external-controller detection fails"
+    [ ! -s "$ui_ext_fail_tmp/out" ] ||
+        fail "clashui should not print a stale URL after external-controller detection fails"
+)
+
+assert_file_contains "$CONFIG_SH" '_detect_ext_addr \|\| return 1' \
+    "config commands should propagate external-controller detection failures"
+
+upgrade_setu_tmp=$(make_test_tmpdir "clash-upgrade-setu")
+(
+    set -eu
+    . "$CLASHCTL_SH"
+
+    _detect_ext_addr() {
+        EXT_IP=127.0.0.1
+        EXT_PORT=9090
+    }
+    clashstatus() { return 0; }
+    _get_secret() { :; }
+    _okcat() { :; }
+    curl() {
+        printf '{"status":"ok"}\n'
+    }
+
+    clashupgrade >"$upgrade_setu_tmp/out"
+)
 
 pass "clashctl safety checks"
