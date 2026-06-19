@@ -127,9 +127,9 @@ CLASHCTL_NO_QUIT=1 bash install.sh
 ```
 
 - 如果显式设置了 `CLASHCTL_NO_RC=1` 或 `CLASHCTL_NO_QUIT=1`，安装脚本不会帮当前终端切入新 shell；此时请自行执行：
-  `source ~/.bashrc`
+  `. "$CLASH_BASE_DIR/scripts/cmd/clashctl.sh"`
   或
-  `. ~/clashctl/scripts/cmd/clashctl.sh`
+  `. "$HOME/clashctl/scripts/cmd/clashctl.sh"`
 
 ## ⌨️ 命令一览
 
@@ -345,9 +345,11 @@ $ clashtun off
 从源码仓库 pull 新版本后，可以执行无损项目更新：
 
 ```bash
-bash update.sh
-# 或在已安装环境里执行
-clashctl update-self
+# 在已经 pull 到最新的源码仓库中执行
+bash update.sh --target "$HOME/clashctl"
+
+# 或从已安装环境显式指定源码仓库
+clashctl update-self --source "$HOME/src/clash-shell/tyx-clash-for-linux-install"
 ```
 
 该操作只刷新脚本、service 模板和文档资产，不覆盖 `.env`、`resources/mixin.yaml`、`resources/clashctl.yaml`、订阅 profiles、日志和运行状态。

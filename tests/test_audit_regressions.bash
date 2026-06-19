@@ -27,6 +27,18 @@ assert_file_contains "$PREFLIGHT_SH" '_normalize_sudo_install_path\(\)' \
 assert_file_contains "$PREFLIGHT_SH" '_refresh_install_paths\(\)' \
     "command-line kernel/path overrides should refresh derived install paths"
 
+env_override_tmp=$(make_test_tmpdir "clash-env-override")
+(
+    THIS_SCRIPT_DIR="$TEST_ROOT/scripts/cmd"
+    CLASH_BASE_DIR="$env_override_tmp/custom-install"
+    . "$COMMON_SH"
+    [ "$CLASH_BASE_DIR" = "$env_override_tmp/custom-install" ] ||
+        fail "explicit CLASH_BASE_DIR environment override should win over .env defaults"
+)
+
+assert_file_contains "$PREFLIGHT_SH" '\[\!A-Za-z0-9_\./-\]' \
+    "install path validation should reject shell metacharacters"
+
 assert_file_contains "$INSTALL_SH" 'INSTALL_MARKER' \
     "install should create an ownership marker before uninstall can remove the install root"
 
@@ -35,6 +47,46 @@ assert_file_contains "$UNINSTALL_SH" 'INSTALL_MARKER' \
 
 assert_file_contains "$UNINSTALL_SH" 'CLASH_BASE_REAL' \
     "uninstall should canonicalize the install path before rm -rf"
+
+assert_file_contains "$PREFLIGHT_SH" '_revoke_rc_file' \
+    "rc cleanup should be scoped to the current install block"
+
+assert_file_not_contains "$PREFLIGHT_SH" '/\$start_flag/,/\$end_flag/d' \
+    "rc cleanup should not remove every clashctl block regardless of install path"
+
+rc_symlink_tmp=$(make_test_tmpdir "clash-rc-symlink")
+(
+    CLASH_BASE_DIR="$rc_symlink_tmp/install"
+    CLASH_RESOURCES_DIR="$CLASH_BASE_DIR/resources"
+    KERNEL_NAME=mihomo
+    . "$PREFLIGHT_SH"
+
+    CLASH_CMD_DIR="$CLASH_BASE_DIR/scripts/cmd"
+    mkdir -p "$rc_symlink_tmp/dotfiles" "$CLASH_CMD_DIR"
+    rc_real="$rc_symlink_tmp/dotfiles/bashrc"
+    rc_link="$rc_symlink_tmp/.bashrc"
+    cat >"$rc_real" <<EOF
+keep-before
+# clashctl START /other/install/scripts/cmd
+. /other/install/scripts/cmd/clashctl.sh
+# clashctl END /other/install/scripts/cmd
+# clashctl START $CLASH_CMD_DIR
+. $CLASH_CMD_DIR/clashctl.sh
+# clashctl END $CLASH_CMD_DIR
+keep-after
+EOF
+    ln -s "$rc_real" "$rc_link"
+
+    _revoke_rc_file "$rc_link"
+    [ -L "$rc_link" ] ||
+        fail "rc cleanup should preserve symlink rc files"
+    grep -q '/other/install/scripts/cmd/clashctl.sh' "$rc_real" ||
+        fail "rc cleanup should keep unrelated clashctl blocks"
+    ! grep -q "$CLASH_CMD_DIR/clashctl.sh" "$rc_real" ||
+        fail "rc cleanup should remove only the current install block"
+    grep -q 'keep-after' "$rc_real" ||
+        fail "rc cleanup should preserve trailing user rc content"
+)
 
 uninstall_order=$(
     awk '
@@ -71,5 +123,17 @@ assert_file_contains "$CLASHCTL_SH" '_validate_downloaded_config "\$CLASH_CONFIG
 
 assert_file_contains "$FISH_SH" 'clashtun' \
     "fish wrapper should expose clashtun for clashctl tun"
+
+assert_file_contains "$CLASHCTL_SH" 'sudo -n systemctl' \
+    "systemd adapter should fail fast instead of prompting for sudo password"
+
+assert_file_contains "$CLASHCTL_SH" '_proc_cmdline_has_arg' \
+    "nohup pid matching should parse /proc cmdline as NUL-separated arguments"
+
+assert_file_contains "$CLASHCTL_SH" '_proc_starttime' \
+    "nohup pid matching should record process starttime to reduce PID reuse risk"
+
+assert_file_contains "$CLASHCTL_SH" '_clash_service_is_active.*\|\| return 0|_clash_service_is_active' \
+    "watch_proxy should check that the managed kernel is active before exporting proxy variables"
 
 pass "audit regression checks"

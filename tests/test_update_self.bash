@@ -62,6 +62,11 @@ grep -q 'function clashctl' "$install_dir/scripts/cmd/clashctl.sh" ||
 grep -q '^CLASH_BASE_DIR=' "$install_dir/.env" ||
     fail "update should preserve installed .env"
 
+(
+    cd "$source_dir"
+    CLASHCTL_NO_RC=1 bash update.sh --target "$install_dir" >/dev/null
+) || fail "update should succeed when managed docs/tests directories already exist"
+
 legacy_dir="$update_tmp/legacy"
 mkdir -p "$legacy_dir/resources" "$legacy_dir/scripts/cmd"
 printf 'legacy-mixin\n' >"$legacy_dir/resources/mixin.yaml"
@@ -81,5 +86,77 @@ mkdir -p "$not_install_dir"
     cd "$source_dir"
     CLASHCTL_NO_RC=1 bash update.sh --target "$not_install_dir"
 ) >/dev/null 2>&1 && fail "update should reject non-clash directories"
+
+symlink_install_dir="$update_tmp/symlink-install"
+symlink_outside="$update_tmp/outside"
+mkdir -p "$symlink_install_dir/resources" "$symlink_outside"
+printf 'tyx-clash-for-linux-install\n' >"$symlink_install_dir/.clashctl-install-root"
+printf 'mixin\n' >"$symlink_install_dir/resources/mixin.yaml"
+ln -s "$symlink_outside" "$symlink_install_dir/scripts"
+(
+    cd "$source_dir"
+    CLASHCTL_NO_RC=1 bash update.sh --target "$symlink_install_dir"
+) >/dev/null 2>&1 && fail "update should reject managed paths that are symlinks"
+
+env_source_dir="$update_tmp/env-source"
+env_install_dir="$update_tmp/env-install"
+cp -a "$TEST_ROOT/." "$env_source_dir"
+mkdir -p "$env_install_dir/resources" "$env_install_dir/scripts/cmd"
+printf 'tyx-clash-for-linux-install\n' >"$env_install_dir/.clashctl-install-root"
+printf 'mixin\n' >"$env_install_dir/resources/mixin.yaml"
+printf 'script\n' >"$env_install_dir/scripts/cmd/clashctl.sh"
+cat >"$env_source_dir/.env" <<EOF
+CLASH_BASE_DIR=$env_install_dir
+touch "$update_tmp/env-was-sourced"
+EOF
+(
+    cd "$env_source_dir"
+    CLASHCTL_NO_RC=1 bash update.sh >/dev/null
+)
+[ ! -e "$update_tmp/env-was-sourced" ] ||
+    fail "update should parse .env instead of sourcing executable shell code"
+
+legacy_env_dir="$update_tmp/legacy-env"
+mkdir -p "$legacy_env_dir/resources" "$legacy_env_dir/scripts/cmd"
+printf 'legacy-mixin\n' >"$legacy_env_dir/resources/mixin.yaml"
+printf 'legacy-script\n' >"$legacy_env_dir/scripts/cmd/clashctl.sh"
+(
+    cd "$source_dir"
+    CLASHCTL_NO_RC=1 bash update.sh --target "$legacy_env_dir" >/dev/null
+)
+grep -qx "CLASH_BASE_DIR=$legacy_env_dir" "$legacy_env_dir/.env" ||
+    fail "legacy migration should write .env CLASH_BASE_DIR to the requested target"
+
+legacy_fail_dir="$update_tmp/legacy-fail"
+legacy_other_dir="$update_tmp/legacy-other"
+mkdir -p "$legacy_fail_dir/resources" "$legacy_fail_dir/scripts/cmd" "$legacy_other_dir"
+printf 'legacy-mixin\n' >"$legacy_fail_dir/resources/mixin.yaml"
+printf 'legacy-script\n' >"$legacy_fail_dir/scripts/cmd/clashctl.sh"
+printf 'CLASH_BASE_DIR=%s\n' "$legacy_other_dir" >"$legacy_fail_dir/.env"
+(
+    cd "$source_dir"
+    CLASHCTL_NO_RC=1 bash update.sh --target "$legacy_fail_dir"
+) >/dev/null 2>&1 && fail "legacy migration should reject .env that points at another directory"
+[ ! -e "$legacy_fail_dir/.clashctl-install-root" ] ||
+    fail "failed legacy migration should not leave a new install marker"
+
+explicit_source_dir="$update_tmp/explicit-source"
+explicit_install_dir="$update_tmp/explicit-install"
+cp -a "$TEST_ROOT/." "$explicit_source_dir"
+mkdir -p "$explicit_install_dir/resources" "$explicit_install_dir/scripts/cmd"
+printf 'tyx-clash-for-linux-install\n' >"$explicit_install_dir/.clashctl-install-root"
+printf 'mixin\n' >"$explicit_install_dir/resources/mixin.yaml"
+cp "$TEST_ROOT/update.sh" "$explicit_install_dir/update.sh"
+cat >"$explicit_install_dir/.env" <<EOF
+CLASH_BASE_DIR=$explicit_install_dir
+KERNEL_NAME=mihomo
+INIT_TYPE=tmux
+EOF
+printf 'old installed script\n' >"$explicit_install_dir/scripts/cmd/clashctl.sh"
+printf '\n# explicit-source-marker\n' >>"$explicit_source_dir/scripts/cmd/clashctl.sh"
+bash "$explicit_install_dir/update.sh" --target "$explicit_install_dir" --source "$explicit_source_dir" >/dev/null 2>&1 ||
+    fail "installed update.sh should accept an explicit source directory"
+grep -q 'explicit-source-marker' "$explicit_install_dir/scripts/cmd/clashctl.sh" ||
+    fail "update --source should refresh files from the explicit source directory"
 
 pass "update self checks"

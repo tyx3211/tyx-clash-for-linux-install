@@ -43,7 +43,7 @@ _valid_config "$CLASH_CONFIG_BASE" && CLASH_CONFIG_URL="file://$CLASH_CONFIG_BAS
     if [ -n "$CLASHCTL_NO_RC" ]; then
         _okcat "已跳过写入 shell rc；如需立即使用，请执行：. $CLASH_CMD_DIR/clashctl.sh"
     else
-        _okcat "安装已写入 shell rc；如需在当前 shell 立即使用，请执行：source ~/.bashrc"
+        _okcat "安装已写入 shell rc；如需在当前 shell 立即使用，请执行：. $CLASH_CMD_DIR/clashctl.sh"
     fi
     _mark_install_complete
     exit 0

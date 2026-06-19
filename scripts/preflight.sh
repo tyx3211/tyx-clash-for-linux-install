@@ -92,8 +92,8 @@ _validate_install_path() {
     esac
 
     case "$CLASH_BASE_DIR" in
-    *[[:space:]]* | *[\#\&]*)
-        _error_quit "安装路径包含 shell 模板不支持的字符，请避免空白、#、&：$CLASH_BASE_DIR"
+    *[!A-Za-z0-9_./-]*)
+        _error_quit "安装路径包含 shell 模板不支持的字符，请仅使用字母、数字、_、-、.、/：$CLASH_BASE_DIR"
         ;;
     esac
 }
@@ -403,14 +403,15 @@ _systemd() {
 }
 _tmux() {
     TMUX_SESSION="clash-${KERNEL_NAME}"
+    local kernel_cmd
+    kernel_cmd="$(_quote_command "$BIN_KERNEL" -d "$CLASH_RESOURCES_DIR" -f "$CLASH_CONFIG_RUNTIME") >> $(_shell_quote "$FILE_LOG") 2>&1"
     service_enable=(false)
     service_disable=(false)
 
-    service_start=(tmux new-session -d -s "$TMUX_SESSION" "$BIN_KERNEL -d $CLASH_RESOURCES_DIR -f $CLASH_CONFIG_RUNTIME >> $FILE_LOG 2>&1")
+    service_start=(tmux new-session -d -s "$TMUX_SESSION" "$kernel_cmd")
     service_is_active=(tmux has-session -t "$TMUX_SESSION")
     service_stop=(false)
 
-    local kernel_cmd="$BIN_KERNEL -d $CLASH_RESOURCES_DIR -f $CLASH_CONFIG_RUNTIME >> $FILE_LOG 2>&1"
     service_start_body="tmux new-session -d -s $(_shell_quote "$TMUX_SESSION") $(_shell_quote "$kernel_cmd")"
     service_is_active_body="tmux has-session -t $(_shell_quote "$TMUX_SESSION")"
     service_stop_body="return 0"
@@ -523,22 +524,69 @@ _detect_rc() {
 _apply_rc() {
     _detect_rc
     local source_clashctl=". $CLASH_CMD_DIR/clashctl.sh"
+    _revoke_rc
     # shellcheck disable=SC2086
     tee -a "$SHELL_RC_BASH" $SHELL_RC_ZSH >/dev/null <<EOF
 
-$start_flag
+$start_flag $CLASH_CMD_DIR
 # 加载 clashctl 命令
 $source_clashctl
 # 自动开启代理环境
 watch_proxy
-$end_flag
+$end_flag $CLASH_CMD_DIR
 EOF
     [ -n "$SHELL_RC_FISH" ] && /usr/bin/install "$SCRIPT_CMD_FISH" "$SHELL_RC_FISH"
     $source_clashctl
 }
+_revoke_rc_file() {
+    local rc_file=$1 source_clashctl=". $CLASH_CMD_DIR/clashctl.sh"
+    [ -f "$rc_file" ] || return 0
+
+    local rc_target=$rc_file
+    if [ -L "$rc_file" ]; then
+        rc_target=$(readlink -f "$rc_file") || return 1
+    fi
+    [ -f "$rc_target" ] || return 0
+
+    local rc_dir tmp_file
+    rc_dir=$(dirname "$rc_target")
+    tmp_file=$(mktemp "${rc_dir}/.clashctl-rc.XXXXXX") || return 1
+    chmod --reference="$rc_target" "$tmp_file" 2>/dev/null || true
+    chown --reference="$rc_target" "$tmp_file" 2>/dev/null || true
+
+    awk -v source="$source_clashctl" '
+        /^# clashctl START/ {
+            in_block = 1
+            matched = 0
+            block = $0 ORS
+            next
+        }
+        in_block {
+            block = block $0 ORS
+            if ($0 == source) {
+                matched = 1
+            }
+            if ($0 ~ /^# clashctl END/) {
+                if (!matched) {
+                    printf "%s", block
+                }
+                in_block = 0
+                block = ""
+            }
+            next
+        }
+        { print }
+        END {
+            if (in_block) {
+                printf "%s", block
+            }
+        }
+    ' "$rc_target" >"$tmp_file" && /bin/mv -f "$tmp_file" "$rc_target"
+}
 _revoke_rc() {
     _detect_rc
-    sed -i.bak "/$start_flag/,/$end_flag/d" "$SHELL_RC_BASH" "$SHELL_RC_ZSH" 2>/dev/null
+    _revoke_rc_file "$SHELL_RC_BASH"
+    _revoke_rc_file "$SHELL_RC_ZSH"
     [ -n "$SHELL_RC_FISH" ] && rm -f "$SHELL_RC_FISH" 2>/dev/null
 }
 

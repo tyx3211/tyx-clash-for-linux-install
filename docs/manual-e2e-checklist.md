@@ -19,18 +19,48 @@
 
 ## 执行前检查
 
-在共享机上做手工端到端检查前，先确认当前代理是否正在服务其他工作：
+在共享机上做手工端到端检查前，先确认当前 shell 和系统里可能存在的代理进程。下面命令只读，不会启动或停止服务：
 
 ```bash
-clashstatus --all
-pgrep -af 'mihomo|clash'
+type -a clashctl clashon clashoff || true
+env | grep -i -E '^(http|https|all|no)_proxy=' || true
+tmux ls 2>/dev/null | grep clash || true
+pgrep -af '[/](mihomo|clash)( |$)' || true
+systemctl cat mihomo clash 2>/dev/null || true
+ss -ltnp 2>/dev/null | grep -E ':(7890|7891|23571)\b' || true
 ```
 
-如果当前安装目录正在承担日常代理，建议另选一个临时安装目录，并使用测试订阅或最小配置：
+如果当前安装目录正在承担日常代理，请另选一个临时安装目录。共享机上默认只做 `tmux` / `nohup` 用户态 E2E，不做 systemd/Tun E2E。
+
+准备隔离安装目录：
 
 ```bash
-CLASH_BASE_DIR="$HOME/experiment/clashctl-e2e" bash install.sh --init tmux
+export E2E_DIR="$HOME/experiment/clashctl-e2e-$(date +%Y%m%d%H%M%S)"
+test ! -e "$E2E_DIR"
 ```
+
+安装时不要写 shell rc；订阅仍正常导入，便于后续真实启动内核：
+
+```bash
+read -rsp "SUB_URL: " SUB_URL
+echo
+
+CLASH_BASE_DIR="$E2E_DIR" \
+CLASHCTL_NO_RC=1 \
+bash install.sh --init tmux "$SUB_URL"
+
+unset SUB_URL
+```
+
+进入隔离子 shell，并显式加载测试目录里的 `clashctl`：
+
+```bash
+bash --noprofile --norc
+. "$E2E_DIR/scripts/cmd/clashctl.sh"
+printf 'CLASH_BASE_DIR=%s\n' "$CLASH_BASE_DIR"
+```
+
+确认输出的 `CLASH_BASE_DIR` 必须等于 `$E2E_DIR`。如果不是，停止测试。
 
 ## 用户态托管切换
 
@@ -56,18 +86,42 @@ clashstatus --all
 clashoff
 ```
 
+关闭后检查测试目录没有残留托管进程：
+
+```bash
+pgrep -af "$E2E_DIR" || true
+test ! -s "$E2E_DIR/resources/mihomo.pid"
+```
+
 预期结果：
 
 - 第二条 `clashon --mode nohup` 拒绝，并提示使用 `clashrestart --mode nohup`。
 - `clashrestart --mode nohup` 会先停掉当前活跃模式，再用 `nohup` 启动。
 - `clashoff` 默认只关闭当前活跃模式。
 
-## systemd 与 Tun
+## systemd 与 Tun 高危可选项
 
-只在明确具备 sudo/root 权限且允许注册系统服务的机器上验证：
+只在专用机器上验证 systemd/Tun。共享机默认跳过这一段，因为 systemd 服务名是固定的 `mihomo.service` 或 `clash.service`，可能覆盖同名日常服务。
+
+执行前必须确认同名服务不存在，或确认它已经属于本次测试安装：
 
 ```bash
-sudo bash install.sh --init systemd
+systemctl cat mihomo clash 2>/dev/null || true
+```
+
+确认后使用单独的新目录执行，不要复用前面已经安装过的 `$E2E_DIR`：
+
+```bash
+export E2E_SYSTEMD_DIR="$HOME/experiment/clashctl-e2e-systemd-$(date +%Y%m%d%H%M%S)"
+read -rsp "SUB_URL: " SUB_URL
+echo
+
+sudo env CLASH_BASE_DIR="$E2E_SYSTEMD_DIR" CLASHCTL_NO_RC=1 bash install.sh --init systemd "$SUB_URL"
+unset SUB_URL
+
+systemctl cat mihomo 2>/dev/null | grep -F "$E2E_SYSTEMD_DIR"
+
+. "$E2E_SYSTEMD_DIR/scripts/cmd/clashctl.sh"
 clashrestart --mode systemd
 clashstatus --all
 clashtun on
@@ -87,15 +141,16 @@ clashoff
 在源码仓库 pull 新版本后，从源码目录执行：
 
 ```bash
-bash update.sh --target "$HOME/experiment/clashctl-e2e"
+bash update.sh --target "$E2E_DIR"
 ```
 
 更新后检查用户配置仍然保留：
 
 ```bash
-test -f "$HOME/experiment/clashctl-e2e/resources/mixin.yaml"
-test -f "$HOME/experiment/clashctl-e2e/resources/clashctl.yaml"
-test -d "$HOME/experiment/clashctl-e2e/resources/profiles"
+. "$E2E_DIR/scripts/cmd/clashctl.sh"
+test -f "$E2E_DIR/resources/mixin.yaml"
+test -f "$E2E_DIR/resources/clashctl.yaml"
+test -d "$E2E_DIR/resources/profiles"
 clashstatus --all
 ```
 

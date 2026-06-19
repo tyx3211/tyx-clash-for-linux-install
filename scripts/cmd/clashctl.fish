@@ -55,6 +55,10 @@ function clashctl
             clashon $argv
         case off
             clashoff $argv
+        case restart
+            clashrestart $argv
+        case update-self
+            bash -i -c 'clashctl update-self "$@"' -- $argv
         case '*'
             clash"$suffix" $argv
     end

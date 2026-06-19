@@ -218,26 +218,84 @@ _clash_install_id() {
     printf '%s' "$CLASH_BASE_DIR" | cksum | awk '{print $1}'
 }
 
+_shell_quote_arg() {
+    printf '%q' "$1"
+}
+
+_clash_kernel_command_for_shell() {
+    printf '%s -d %s -f %s >> %s 2>&1' \
+        "$(_shell_quote_arg "$BIN_KERNEL")" \
+        "$(_shell_quote_arg "$CLASH_RESOURCES_DIR")" \
+        "$(_shell_quote_arg "$CLASH_CONFIG_RUNTIME")" \
+        "$(_shell_quote_arg "$FILE_LOG")"
+}
+
 _clash_tmux_session() {
     printf 'clash-%s-%s\n' "$KERNEL_NAME" "$(_clash_install_id)"
 }
 
 _pid_matches_current_kernel() {
-    local pid=$1 exe cmdline
+    local pid=$1 expected_starttime=${2:-} exe starttime
     [ -n "$pid" ] && [ -d "/proc/$pid" ] || return 1
     exe=$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)
     [ "$exe" = "$BIN_KERNEL" ] || return 1
-    cmdline=$(tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null || true)
-    case "$cmdline" in
-    *" -d ${CLASH_RESOURCES_DIR} "* | *" -d ${CLASH_RESOURCES_DIR}"*)
-        case "$cmdline" in
-        *" -f ${CLASH_CONFIG_RUNTIME} "* | *" -f ${CLASH_CONFIG_RUNTIME}"*)
-            return 0
-            ;;
-        esac
-        ;;
-    esac
-    return 1
+
+    if [ -n "$expected_starttime" ]; then
+        starttime=$(_proc_starttime "$pid") || return 1
+        [ "$starttime" = "$expected_starttime" ] || return 1
+    fi
+
+    _proc_cmdline_has_arg "$pid" -d "$CLASH_RESOURCES_DIR" &&
+        _proc_cmdline_has_arg "$pid" -f "$CLASH_CONFIG_RUNTIME"
+}
+
+_proc_cmdline_has_arg() {
+    local pid=$1 key=$2 expected=$3
+    tr '\0' '\n' <"/proc/$pid/cmdline" 2>/dev/null |
+        awk -v key="$key" -v expected="$expected" '
+            want_next {
+                if ($0 == expected) {
+                    found = 1
+                }
+                want_next = 0
+            }
+            $0 == key {
+                want_next = 1
+            }
+            END {
+                exit found ? 0 : 1
+            }
+        '
+}
+
+_proc_starttime() {
+    local pid=$1 stat rest
+    stat=$(cat "/proc/$pid/stat" 2>/dev/null) || return 1
+    rest=${stat#*) }
+    awk '{print $20}' <<<"$rest"
+}
+
+_read_nohup_pid() {
+    [ -f "$FILE_PID" ] || return 1
+    awk -F': *' '
+        NR == 1 && $1 ~ /^[0-9]+$/ { print $1; found=1; exit }
+        $1 == "pid" { print $2; found=1; exit }
+        END { exit found ? 0 : 1 }
+    ' "$FILE_PID"
+}
+
+_read_nohup_starttime() {
+    [ -f "$FILE_PID" ] || return 1
+    awk -F': *' '$1 == "starttime" { print $2; found=1; exit } END { exit found ? 0 : 1 }' "$FILE_PID"
+}
+
+_write_nohup_pid() {
+    local pid=$1 starttime
+    starttime=$(_proc_starttime "$pid" 2>/dev/null || true)
+    {
+        printf 'pid: %s\n' "$pid"
+        [ -n "$starttime" ] && printf 'starttime: %s\n' "$starttime"
+    } >"$FILE_PID"
 }
 
 _clash_adapter_tmux_start() {
@@ -247,7 +305,7 @@ _clash_adapter_tmux_start() {
     }
     local session kernel_cmd
     session=$(_clash_tmux_session)
-    kernel_cmd="$BIN_KERNEL -d $CLASH_RESOURCES_DIR -f $CLASH_CONFIG_RUNTIME >> $FILE_LOG 2>&1"
+    kernel_cmd=$(_clash_kernel_command_for_shell)
     tmux new-session -d -s "$session" "$kernel_cmd"
 }
 
@@ -265,33 +323,35 @@ _clash_adapter_tmux_is_active() {
 
 _clash_adapter_nohup_start() {
     nohup "$BIN_KERNEL" -d "$CLASH_RESOURCES_DIR" -f "$CLASH_CONFIG_RUNTIME" >>"$FILE_LOG" 2>&1 &
-    echo $! >"$FILE_PID"
+    _write_nohup_pid "$!"
 }
 
 _clash_adapter_nohup_stop() {
-    local pid
-    pid=$(cat "$FILE_PID" 2>/dev/null || true)
-    _pid_matches_current_kernel "$pid" || {
+    local pid starttime
+    pid=$(_read_nohup_pid 2>/dev/null || true)
+    starttime=$(_read_nohup_starttime 2>/dev/null || true)
+    _pid_matches_current_kernel "$pid" "$starttime" || {
         /usr/bin/rm -f "$FILE_PID"
         return 0
     }
     kill -TERM "$pid" 2>/dev/null || true
     sleep 0.2
-    _pid_matches_current_kernel "$pid" && kill -KILL "$pid" 2>/dev/null || true
+    _pid_matches_current_kernel "$pid" "$starttime" && kill -KILL "$pid" 2>/dev/null || true
     /usr/bin/rm -f "$FILE_PID"
 }
 
 _clash_adapter_nohup_is_active() {
-    local pid
-    pid=$(cat "$FILE_PID" 2>/dev/null || true)
-    _pid_matches_current_kernel "$pid"
+    local pid starttime
+    pid=$(_read_nohup_pid 2>/dev/null || true)
+    starttime=$(_read_nohup_starttime 2>/dev/null || true)
+    _pid_matches_current_kernel "$pid" "$starttime"
 }
 
 _systemctl() {
     if [ "$(id -u)" -eq 0 ]; then
         systemctl "$@"
     else
-        sudo systemctl "$@"
+        sudo -n systemctl "$@"
     fi
 }
 
@@ -383,7 +443,7 @@ _clash_service_start() {
     local mode=$1 pid=
     _validate_service_mode "$mode" || return 1
     _clash_adapter_call "$mode" start || return 1
-    [ "$mode" = nohup ] && pid=$(cat "$FILE_PID" 2>/dev/null || true)
+    [ "$mode" = nohup ] && pid=$(_read_nohup_pid 2>/dev/null || true)
     _write_service_state "$mode" "$pid"
 }
 
@@ -482,6 +542,8 @@ EOF
     done
 
     {
+        _clash_service_stop "$mode" >/dev/null 2>&1 || true
+        _clear_service_state
         _failcat '启动失败: 执行 clashlog 查看日志'
         return 1
     }
@@ -491,6 +553,7 @@ watch_proxy() {
     [[ $- == *i* ]] || return 0
     _has_current_proxy_env && return 0
     [ "$(_get_system_proxy_enable)" = true ] || return 0
+    _clash_service_is_active >/dev/null 2>&1 || return 0
 
     case "$(_get_system_proxy_mode)" in
     none)

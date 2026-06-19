@@ -3,9 +3,106 @@
 set -euo pipefail
 
 THIS_UPDATE_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 1
-cd "$THIS_UPDATE_DIR" || exit 1
-
+SOURCE_DIR=$THIS_UPDATE_DIR
 target=
+
+_die() {
+    printf '📢 %s\n' "$1" >&2
+    exit 1
+}
+
+_expand_path() {
+    local path=$1
+    case "$path" in
+    "~")
+        printf '%s\n' "$HOME"
+        ;;
+    "~/"*)
+        printf '%s/%s\n' "$HOME" "${path#~/}"
+        ;;
+    '$HOME')
+        printf '%s\n' "$HOME"
+        ;;
+    '$HOME/'*)
+        printf '%s/%s\n' "$HOME" "${path#\$HOME/}"
+        ;;
+    *)
+        printf '%s\n' "$path"
+        ;;
+    esac
+}
+
+_read_env_value() {
+    local file=$1 key=$2 line value=
+    [ -f "$file" ] || return 1
+
+    while IFS= read -r line; do
+        case "$line" in
+        "$key="*)
+            value=${line#*=}
+            ;;
+        esac
+    done <"$file"
+
+    [ -n "$value" ] || return 1
+    case "$value" in
+    \"*\")
+        value=${value#\"}
+        value=${value%\"}
+        ;;
+    \'*\')
+        value=${value#\'}
+        value=${value%\'}
+        ;;
+    esac
+    _expand_path "$value"
+}
+
+_canonical_dir() {
+    local path
+    path=$(_expand_path "$1")
+    cd "$path" 2>/dev/null && pwd -P
+}
+
+_validate_target_path() {
+    local path=$1
+    case "$path" in
+    "" | "/" | "$HOME" | "$HOME/" | . | .. | ./* | ../*)
+        _die "拒绝更新异常安装目录：${path:-<empty>}"
+        ;;
+    esac
+
+    case "$path" in
+    *[!A-Za-z0-9_./-]*)
+        _die "安装目录包含 shell 模板不支持的字符，请仅使用字母、数字、_、-、.、/：$path"
+        ;;
+    esac
+}
+
+_reject_managed_symlinks() {
+    local path full found
+    [ -L "$target/.update-backup" ] && _die "拒绝使用符号链接备份目录：$target/.update-backup"
+    for path in "$@"; do
+        full="$target/$path"
+        [ -e "$full" ] || [ -L "$full" ] || continue
+        [ -L "$full" ] && _die "拒绝更新包含符号链接的托管路径：$full"
+        [ -d "$full" ] || continue
+        found=$(find -P "$full" -type l -print -quit)
+        [ -n "$found" ] && _die "拒绝更新包含符号链接的托管路径：$found"
+    done
+    return 0
+}
+
+_set_env_value() {
+    local file=$1 key=$2 value=$3 escaped
+    escaped=$(printf '%s' "$value" | sed -e 's/[#&\\]/\\&/g')
+    if grep -qE "^${key}=" "$file"; then
+        sed -i -e "s#^${key}=.*#${key}=${escaped}#g" "$file"
+    else
+        printf '%s=%s\n' "$key" "$value" >>"$file"
+    fi
+}
+
 while (($#)); do
     case "$1" in
     --target=*)
@@ -13,52 +110,43 @@ while (($#)); do
         ;;
     --target)
         shift
-        [ $# -gt 0 ] || {
-            printf '📢 --target 需要指定安装目录\n' >&2
-            exit 1
-        }
+        [ $# -gt 0 ] || _die "--target 需要指定安装目录"
         target=$1
+        ;;
+    --source=*)
+        SOURCE_DIR=${1#--source=}
+        ;;
+    --source)
+        shift
+        [ $# -gt 0 ] || _die "--source 需要指定源码目录"
+        SOURCE_DIR=$1
         ;;
     -h | --help)
         cat <<EOF
 Usage:
-  bash update.sh [--target <install_dir>]
+  bash update.sh [--target <install_dir>] [--source <source_dir>]
 
 默认从当前源码仓库刷新已安装的 clashctl 脚本和文档资产，并保留用户配置、订阅和运行状态。
 EOF
         exit 0
         ;;
     *)
-        printf '📢 未知参数：%s\n' "$1" >&2
-        exit 1
+        _die "未知参数：$1"
         ;;
     esac
     shift
 done
 
-[ -z "$target" ] && {
-    # shellcheck disable=SC1091
-    . "$THIS_UPDATE_DIR/.env"
-    target=$CLASH_BASE_DIR
-}
+SOURCE_DIR=$(_canonical_dir "$SOURCE_DIR") || _die "源码目录不存在：$SOURCE_DIR"
+[ -f "$SOURCE_DIR/update.sh" ] && [ -d "$SOURCE_DIR/scripts/cmd" ] ||
+    _die "源码目录不像 tyx-clash-for-linux-install 仓库：$SOURCE_DIR"
 
-case "$target" in
-~/*)
-    target="${HOME}/${target#~/}"
-    ;;
-esac
+[ -z "$target" ] && target=$(_read_env_value "$SOURCE_DIR/.env" CLASH_BASE_DIR) ||
+    true
+[ -n "$target" ] || _die "无法从源码 .env 读取 CLASH_BASE_DIR，请显式指定 --target"
 
-target=$(cd "$target" 2>/dev/null && pwd -P) || {
-    printf '📢 安装目录不存在：%s\n' "$target" >&2
-    exit 1
-}
-
-case "$target" in
-"" | "/" | "$HOME" | "$HOME/" | . | .. | ./* | ../*)
-    printf '📢 拒绝更新异常安装目录：%s\n' "${target:-<empty>}" >&2
-    exit 1
-    ;;
-esac
+target=$(_canonical_dir "$target") || _die "安装目录不存在：$target"
+_validate_target_path "$target"
 
 marker="$target/.clashctl-install-root"
 legacy=false
@@ -67,32 +155,64 @@ if [ -f "$marker" ] && grep -qx 'tyx-clash-for-linux-install' "$marker"; then
 elif [ -f "$target/scripts/cmd/clashctl.sh" ] && [ -f "$target/resources/mixin.yaml" ]; then
     legacy=true
 else
-    printf '📢 目标目录不像 clashctl 安装目录，拒绝更新：%s\n' "$target" >&2
-    exit 1
+    _die "目标目录不像 clashctl 安装目录，拒绝更新：$target"
 fi
 
-backup_dir="$target/.update-backup/$(date +%Y%m%d%H%M%S)"
-mkdir -p "$backup_dir"
-for path in .env scripts install.sh uninstall.sh update.sh README.md docs tests; do
+managed_paths=(install.sh uninstall.sh update.sh README.md scripts docs tests)
+backup_paths=(.env .clashctl-install-root "${managed_paths[@]}")
+_reject_managed_symlinks "${backup_paths[@]}"
+
+backup_root="$target/.update-backup"
+mkdir -p "$backup_root"
+backup_dir=$(mktemp -d "$backup_root/$(date +%Y%m%d%H%M%S).XXXXXX")
+staging_dir=$(mktemp -d "$target/.update-staging.XXXXXX")
+rollback_needed=true
+
+_rollback_update() {
+    local status=$?
+    if [ "${rollback_needed:-false}" = true ]; then
+        local path
+        for path in "${backup_paths[@]}"; do
+            /usr/bin/rm -rf "$target/$path"
+            [ -e "$backup_dir/$path" ] || continue
+            mkdir -p "$target/$(dirname "$path")"
+            cp -a "$backup_dir/$path" "$target/$path"
+        done
+    fi
+    /usr/bin/rm -rf "$staging_dir"
+    return "$status"
+}
+trap _rollback_update EXIT INT TERM
+
+for path in "${backup_paths[@]}"; do
     [ -e "$target/$path" ] || continue
     mkdir -p "$backup_dir/$(dirname "$path")"
-    tar -C "$target" -cf - "$path" | tar -C "$backup_dir" -xf -
+    cp -a "$target/$path" "$backup_dir/$path"
 done
 
-tar -cf - \
-    install.sh \
-    uninstall.sh \
-    update.sh \
-    README.md \
-    scripts \
-    docs \
-    tests |
-    tar -C "$target" -xf -
+tar -C "$SOURCE_DIR" -cf - "${managed_paths[@]}" | tar -C "$staging_dir" -xf -
+
+for path in "${managed_paths[@]}"; do
+    /usr/bin/rm -rf "$target/$path"
+    mkdir -p "$target/$(dirname "$path")"
+    cp -a "$staging_dir/$path" "$target/$path"
+done
 
 printf '%s\n' 'tyx-clash-for-linux-install' >"$marker"
 
 env_path="$target/.env"
-[ -f "$env_path" ] || /usr/bin/install -m 644 "$THIS_UPDATE_DIR/.env" "$env_path"
+if [ -f "$env_path" ]; then
+    existing_target=$(_read_env_value "$env_path" CLASH_BASE_DIR 2>/dev/null || true)
+    if [ -n "$existing_target" ]; then
+        existing_target=$(_canonical_dir "$existing_target" 2>/dev/null || true)
+        [ -z "$existing_target" ] || [ "$existing_target" = "$target" ] ||
+            _die "目标 .env 中的 CLASH_BASE_DIR 不属于当前安装目录：$existing_target != $target"
+    fi
+else
+    /usr/bin/install -m 644 "$SOURCE_DIR/.env" "$env_path"
+fi
+_set_env_value "$env_path" CLASH_BASE_DIR "$target"
+
 while IFS= read -r line; do
     case "$line" in
     "" | "#"*)
@@ -100,10 +220,15 @@ while IFS= read -r line; do
         ;;
     *=*)
         key=${line%%=*}
+        [[ $key =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
         grep -qE "^${key}=" "$env_path" || printf '%s\n' "$line" >>"$env_path"
         ;;
     esac
-done <"$THIS_UPDATE_DIR/.env"
+done <"$SOURCE_DIR/.env"
+
+rollback_needed=false
+trap - EXIT INT TERM
+/usr/bin/rm -rf "$staging_dir"
 
 [ "$legacy" = true ] && printf '📢 已按历史 nosudo-tmux 安装目录执行原地迁移，旧配置已保留。\n'
 printf '✨ 项目脚本已更新，用户配置和订阅状态已保留：%s\n' "$target"

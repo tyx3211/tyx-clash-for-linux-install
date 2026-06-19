@@ -1,6 +1,26 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
-. "$(dirname "$(dirname "$THIS_SCRIPT_DIR")")/.env"
+_clashctl_source_env() {
+    local env_file
+    env_file="$(dirname "$(dirname "$THIS_SCRIPT_DIR")")/.env"
+
+    local kernel_name_set=${KERNEL_NAME+x} kernel_name_value=${KERNEL_NAME-}
+    local base_dir_set=${CLASH_BASE_DIR+x} base_dir_value=${CLASH_BASE_DIR-}
+    local config_url_set=${CLASH_CONFIG_URL+x} config_url_value=${CLASH_CONFIG_URL-}
+    local init_type_set=${INIT_TYPE+x} init_type_value=${INIT_TYPE-}
+    local installed_init_set=${CLASH_INSTALLED_INIT_TYPE+x} installed_init_value=${CLASH_INSTALLED_INIT_TYPE-}
+
+    . "$env_file"
+
+    [ "$kernel_name_set" = x ] && KERNEL_NAME=$kernel_name_value
+    [ "$base_dir_set" = x ] && CLASH_BASE_DIR=$base_dir_value
+    [ "$config_url_set" = x ] && CLASH_CONFIG_URL=$config_url_value
+    [ "$init_type_set" = x ] && INIT_TYPE=$init_type_value
+    [ "$installed_init_set" = x ] && CLASH_INSTALLED_INIT_TYPE=$installed_init_value
+    return 0
+}
+
+_clashctl_source_env
 
 CLASH_RESOURCES_DIR="${CLASH_BASE_DIR}/resources"
 CLASH_CONFIG_BASE="${CLASH_RESOURCES_DIR}/config.yaml"
