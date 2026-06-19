@@ -133,6 +133,6 @@ Project Update:
                                    从本地源码目录更新
 
 Docs:
-  https://github.com/tyx3211/tyx-clash-for-linux-install/tree/main/docs/quickstart.md
+  https://github.com/tyx3211/tyx-clash-for-linux-install/blob/main/docs/quickstart.md
 EOF
 }

@@ -4,8 +4,6 @@
 ![GitHub top language](https://img.shields.io/github/languages/top/tyx3211/tyx-clash-for-linux-install)
 ![GitHub Repo stars](https://img.shields.io/github/stars/tyx3211/tyx-clash-for-linux-install)
 
-![preview](resources/preview.png)
-
 ## 🚀 新用户 3 分钟上手
 
 ### 1. 第一次安装
@@ -480,20 +478,10 @@ sudo bash ~/clashctl/uninstall.sh
 - [yq](https://github.com/mikefarah/yq)
 - [zashboard](https://github.com/Zephyruso/zashboard)
 
-## ⭐ Star History
-
-<a href="https://www.star-history.com/#nelvko/clash-for-linux-install&Date">
-
- <picture>
-   <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=nelvko/clash-for-linux-install&type=Date&theme=dark" />
-   <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=nelvko/clash-for-linux-install&type=Date" />
-   <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=nelvko/clash-for-linux-install&type=Date" />
- </picture>
-</a>
-
 ## 🙏 Thanks
 
-[@鑫哥](https://github.com/TrackRay)
+- 本 fork 基于 [nelvko/clash-for-linux-install](https://github.com/nelvko/clash-for-linux-install)，感谢上游项目的长期维护与实现基础。
+- [@鑫哥](https://github.com/TrackRay)
 
 ## ⚠️ 特别声明
 

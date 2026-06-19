@@ -130,7 +130,7 @@ clashsub update 1 --convert
 clashctl update-self
 ```
 
-该命令默认从当前 fork 的 GitHub `main` 分支下载最新源码，并无损刷新 `~/clashctl`。它不会停止内核、不会启动内核、不会覆盖订阅、`mixin.yaml`、`clashctl.yaml`、profiles、日志和 pid 状态。
+该命令默认从当前 fork 的 GitHub `main` 分支下载最新源码，并无损刷新当前安装目录。它不会停止内核、不会启动内核、不会覆盖订阅、`mixin.yaml`、`clashctl.yaml`、profiles、日志和 pid 状态。
 
 指定分支或 tag：
 

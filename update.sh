@@ -12,6 +12,7 @@ download_tmp=
 
 _die() {
     printf '📢 %s\n' "$1" >&2
+    [ -n "${download_tmp:-}" ] && /usr/bin/rm -rf "$download_tmp"
     exit 1
 }
 
@@ -115,7 +116,7 @@ _download_remote_source() {
     archive="$download_tmp/source.tar.gz"
     url="https://github.com/${UPDATE_REPO}/archive/${UPDATE_REF}.tar.gz"
     proxy=$(_read_env_value "$update_target/.env" URL_GH_PROXY 2>/dev/null || true)
-    [ -n "$proxy" ] && url="${proxy}${url}"
+    [ -n "$proxy" ] && url="${proxy%/}/${url}"
 
     printf '⏳ 正在下载项目源码：%s@%s\n' "$UPDATE_REPO" "$UPDATE_REF" >&2
     if ! curl --fail --location --show-error --silent -o "$archive" "$url"; then
@@ -149,6 +150,23 @@ _reject_managed_symlinks() {
         [ -d "$full" ] || continue
         found=$(find -P "$full" -type l -print -quit)
         [ -n "$found" ] && _die "拒绝更新包含符号链接的托管路径：$found"
+    done
+    return 0
+}
+
+_validate_source_tree() {
+    local source=$1 path full found
+
+    [ -f "$source/update.sh" ] && [ -f "$source/.env" ] && [ -d "$source/scripts/cmd" ] ||
+        _die "源码目录不像 tyx-clash-for-linux-install 仓库：$source"
+
+    for path in "${managed_paths[@]}"; do
+        full="$source/$path"
+        [ -e "$full" ] || _die "源码目录缺少托管路径：$full"
+        [ -L "$full" ] && _die "拒绝更新包含符号链接的源码托管路径：$full"
+        [ -d "$full" ] || continue
+        found=$(find -P "$full" -type l -print -quit)
+        [ -n "$found" ] && _die "拒绝更新包含符号链接的源码托管路径：$found"
     done
     return 0
 }
@@ -257,16 +275,13 @@ _reject_managed_symlinks "${backup_paths[@]}"
 
 [ -n "$SOURCE_DIR" ] || SOURCE_DIR=$(_download_remote_source "$target")
 SOURCE_DIR=$(_canonical_dir "$SOURCE_DIR") || _die "源码目录不存在：$SOURCE_DIR"
-[ -f "$SOURCE_DIR/update.sh" ] && [ -d "$SOURCE_DIR/scripts/cmd" ] || {
-    [ -n "${download_tmp:-}" ] && /usr/bin/rm -rf "$download_tmp"
-    _die "源码目录不像 tyx-clash-for-linux-install 仓库：$SOURCE_DIR"
-}
+_validate_source_tree "$SOURCE_DIR"
 
 backup_root="$target/.update-backup"
 mkdir -p "$backup_root"
 backup_dir=$(mktemp -d "$backup_root/$(date +%Y%m%d%H%M%S).XXXXXX")
 staging_dir=$(mktemp -d "$target/.update-staging.XXXXXX")
-rollback_needed=true
+rollback_needed=false
 
 _rollback_update() {
     local status=$?
@@ -290,6 +305,8 @@ for path in "${backup_paths[@]}"; do
     mkdir -p "$backup_dir/$(dirname "$path")"
     cp -a "$target/$path" "$backup_dir/$path"
 done
+
+rollback_needed=true
 
 tar -C "$SOURCE_DIR" -cf - "${managed_paths[@]}" | tar -C "$staging_dir" -xf -
 

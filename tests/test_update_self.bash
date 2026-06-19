@@ -159,6 +159,55 @@ bash "$explicit_install_dir/update.sh" --target "$explicit_install_dir" --source
 grep -q 'explicit-source-marker' "$explicit_install_dir/scripts/cmd/clashctl.sh" ||
     fail "update --source should refresh files from the explicit source directory"
 
+backup_fail_source_dir="$update_tmp/backup-fail-source"
+backup_fail_install_dir="$update_tmp/backup-fail-install"
+cp -a "$TEST_ROOT/." "$backup_fail_source_dir"
+cp -a "$TEST_ROOT/." "$backup_fail_install_dir"
+cat >"$backup_fail_install_dir/.env" <<EOF
+CLASH_BASE_DIR=$backup_fail_install_dir
+KERNEL_NAME=mihomo
+INIT_TYPE=tmux
+EOF
+printf 'tyx-clash-for-linux-install\n' >"$backup_fail_install_dir/.clashctl-install-root"
+printf 'installed-script\n' >"$backup_fail_install_dir/scripts/cmd/clashctl.sh"
+chmod 000 "$backup_fail_install_dir/README.md"
+bash "$TEST_ROOT/update.sh" --target "$backup_fail_install_dir" --source "$backup_fail_source_dir" >/dev/null 2>&1 &&
+    fail "update should fail when a managed target file cannot be backed up"
+chmod 644 "$backup_fail_install_dir/README.md" 2>/dev/null || true
+grep -qx 'installed-script' "$backup_fail_install_dir/scripts/cmd/clashctl.sh" ||
+    fail "backup failure before replacement should not delete unbacked target files"
+
+source_symlink_dir="$update_tmp/source-symlink"
+source_symlink_install_dir="$update_tmp/source-symlink-install"
+source_symlink_outside="$update_tmp/source-symlink-outside"
+cp -a "$TEST_ROOT/." "$source_symlink_dir"
+mkdir -p "$source_symlink_install_dir/resources" "$source_symlink_install_dir/scripts/cmd" "$source_symlink_outside"
+printf 'tyx-clash-for-linux-install\n' >"$source_symlink_install_dir/.clashctl-install-root"
+printf 'mixin\n' >"$source_symlink_install_dir/resources/mixin.yaml"
+printf 'script\n' >"$source_symlink_install_dir/scripts/cmd/clashctl.sh"
+rm -rf "$source_symlink_dir/scripts"
+mkdir -p "$source_symlink_dir/scripts/cmd"
+rm -rf "$source_symlink_dir/docs"
+printf 'outside-doc\n' >"$source_symlink_outside/README.md"
+ln -s "$source_symlink_outside" "$source_symlink_dir/docs"
+bash "$TEST_ROOT/update.sh" --target "$source_symlink_install_dir" --source "$source_symlink_dir" >/dev/null 2>&1 &&
+    fail "update should reject managed source paths that are symlinks"
+[ ! -L "$source_symlink_install_dir/docs" ] ||
+    fail "rejected source symlink update should not install symlinks into target"
+
+source_missing_env_dir="$update_tmp/source-missing-env"
+source_missing_env_install_dir="$update_tmp/source-missing-env-install"
+cp -a "$TEST_ROOT/." "$source_missing_env_dir"
+mkdir -p "$source_missing_env_install_dir/resources" "$source_missing_env_install_dir/scripts/cmd"
+printf 'tyx-clash-for-linux-install\n' >"$source_missing_env_install_dir/.clashctl-install-root"
+printf 'mixin\n' >"$source_missing_env_install_dir/resources/mixin.yaml"
+printf 'script\n' >"$source_missing_env_install_dir/scripts/cmd/clashctl.sh"
+rm -f "$source_missing_env_dir/.env"
+bash "$TEST_ROOT/update.sh" --target "$source_missing_env_install_dir" --source "$source_missing_env_dir" >/dev/null 2>&1 &&
+    fail "update should reject source directories without .env before replacing target files"
+grep -qx 'script' "$source_missing_env_install_dir/scripts/cmd/clashctl.sh" ||
+    fail "rejected source without .env should leave target files unchanged"
+
 remote_source_parent="$update_tmp/remote-source-parent"
 remote_source_dir="$remote_source_parent/tyx-clash-for-linux-install-main"
 remote_install_dir="$update_tmp/remote-install"
@@ -174,7 +223,7 @@ cat >"$remote_install_dir/.env" <<EOF
 CLASH_BASE_DIR=$remote_install_dir
 KERNEL_NAME=mihomo
 INIT_TYPE=tmux
-URL_GH_PROXY=
+URL_GH_PROXY=https://gh-proxy.org
 EOF
 printf 'tyx-clash-for-linux-install\n' >"$remote_install_dir/.clashctl-install-root"
 cat >"$remote_fake_bin/curl" <<'EOF'
@@ -209,8 +258,8 @@ PATH="$remote_fake_bin:$PATH" \
     fail "installed update.sh should fetch the default remote source when --source is omitted"
 grep -q 'remote-source-marker' "$remote_install_dir/scripts/cmd/clashctl.sh" ||
     fail "default update-self should refresh files from the downloaded archive"
-grep -q 'github.com/tyx3211/tyx-clash-for-linux-install' "$remote_seen_url" ||
-    fail "default update-self should download from the fork GitHub repository"
+grep -qx 'https://gh-proxy.org/https://github.com/tyx3211/tyx-clash-for-linux-install/archive/main.tar.gz' "$remote_seen_url" ||
+    fail "default update-self should normalize URL_GH_PROXY before the fork GitHub URL"
 PATH="$remote_fake_bin:$PATH" \
     CURL_SEEN_URL="$remote_seen_url" \
     REMOTE_ARCHIVE="$remote_archive" \
@@ -218,5 +267,29 @@ PATH="$remote_fake_bin:$PATH" \
     fail "installed update.sh should accept --ref for remote updates"
 grep -q 'release-test.tar.gz' "$remote_seen_url" ||
     fail "remote update should include the selected ref in the download URL"
+PATH="$remote_fake_bin:$PATH" \
+    CURL_SEEN_URL="$remote_seen_url" \
+    REMOTE_ARCHIVE="$remote_archive" \
+    bash "$remote_install_dir/update.sh" --target "$remote_install_dir" --repo example-owner/example-repo --ref repo-test >/dev/null 2>&1 ||
+    fail "installed update.sh should accept --repo for remote updates"
+grep -qx 'https://gh-proxy.org/https://github.com/example-owner/example-repo/archive/repo-test.tar.gz' "$remote_seen_url" ||
+    fail "remote update should include the selected repo in the download URL"
+
+wrapper_install_dir="$update_tmp/wrapper-install"
+cp -a "$TEST_ROOT/." "$wrapper_install_dir"
+cat >"$wrapper_install_dir/.env" <<EOF
+CLASH_BASE_DIR=$wrapper_install_dir
+KERNEL_NAME=mihomo
+INIT_TYPE=tmux
+URL_GH_PROXY=
+EOF
+printf 'tyx-clash-for-linux-install\n' >"$wrapper_install_dir/.clashctl-install-root"
+PATH="$remote_fake_bin:$PATH" \
+    CURL_SEEN_URL="$remote_seen_url" \
+    REMOTE_ARCHIVE="$remote_archive" \
+    bash -c '. "$1/scripts/cmd/clashctl.sh"; clashctl update-self --repo wrapper-owner/wrapper-repo --ref wrapper-test' _ "$wrapper_install_dir" >/dev/null 2>&1 ||
+    fail "clashctl update-self wrapper should forward --repo and --ref to update.sh"
+grep -qx 'https://github.com/wrapper-owner/wrapper-repo/archive/wrapper-test.tar.gz' "$remote_seen_url" ||
+    fail "clashctl update-self wrapper should preserve remote update arguments"
 
 pass "update self checks"
