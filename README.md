@@ -10,7 +10,7 @@
 
 - 支持一键安装 `mihomo` 与 `clash` 代理内核。
 - 面向 no-sudo 环境，默认使用 `tmux` 管理内核进程，不依赖 `systemd`。
-- 支持显式切换启动方式：`tmux`、`nohup`、`systemd`。其中 `systemd` 需要 root 或 sudo，并支持 Tun。
+- 支持运行时选择托管模式：`clashon --mode tmux|nohup|systemd`。其中 `systemd` 需要 root 或 sudo，并支持 Tun。
 - 当前维护入口是 `main`。历史 `nosudo-tmux` 分支保留为早期用户态 fork 快照，不再代表当前完整功能面。
 - 默认代理端口为 `port: 7890`、`socks-port: 7891`，默认控制端口为 `127.0.0.1:23571`。
 - 代理内核配置与 `clashctl` 自身行为配置分离：
@@ -24,22 +24,23 @@
 
 这个 fork 已经不是单一的 `nosudo-tmux` 分支版本，而是把共享机用户态链路和上游较新的安装/订阅/Tun 机制合并后的维护版本。
 
-- 默认路线：普通用户执行 `bash install.sh`，使用 `tmux` 管理内核进程。
-- 备用用户态路线：普通用户执行 `bash install.sh --init nohup`。
-- sudo 路线：root 或 sudo 执行 `bash install.sh --init systemd`，用于需要 Tun 的机器。
+- 默认路线：普通用户执行 `bash install.sh`，默认运行托管模式为 `tmux`。
+- 备用用户态路线：执行 `clashon --mode nohup`，用 nohup 托管本次内核进程。
+- sudo 路线：root 或 sudo 执行 `bash install.sh --init systemd` 注册 systemd 服务，用于需要 Tun 的机器。
 - 不支持路线：不使用 `systemd --user`；共享机上这一能力经常被禁用，当前 fork 不把它作为依赖。
 
 更多说明：
 
 - [Fork 差异与分支策略](docs/fork-differences.md)
 - [当前版本使用指南](docs/usage-guide.md)
+- [手工端到端检查清单](docs/manual-e2e-checklist.md)
 - [上游同步计划记录](docs/superpowers/plans/2026-06-18-shell-upstream-sync.md)
 
 ## ✅ no-sudo 使用补充
 
-- 当前 fork 以 `INIT_TYPE=tmux` 为默认配置，请先确保系统已安装 `tmux`。
-- 如需纯用户态但不想依赖 `tmux`，可以使用 `--init nohup`；该模式可运行内核，但可观测性弱于 `tmux`。
-- 如需 Tun，请使用 `sudo bash install.sh --init systemd` 或 root 执行 `bash install.sh --init systemd`。
+- 当前 fork 以 `INIT_TYPE=tmux` 为默认运行托管模式，请先确保系统已安装 `tmux`。
+- 如需纯用户态但不想依赖 `tmux`，可以在运行时使用 `clashon --mode nohup`。
+- 如需 Tun，请先使用 `sudo bash install.sh --init systemd` 注册 systemd 服务，再执行 `clashrestart --mode systemd` 和 `clashtun on`。
 - `external-controller` 默认绑定 `127.0.0.1:23571`，远程访问面板请优先使用 SSH 端口转发。
 - `clashproxy on` / `clashproxy off` 只影响当前 shell 的环境变量，不会改系统级代理。
 - `clashproxy status` 只看当前终端实际环境变量，避免与配置状态偏离。
@@ -63,21 +64,21 @@ cd clash-for-linux-install
 bash install.sh
 ```
 
-### 启动方式
+### 默认托管模式
 
-默认安装使用 `tmux`：
+默认安装把 `INIT_TYPE` 设为 `tmux`：
 
 ```bash
 bash install.sh
 ```
 
-显式指定 `nohup`：
+安装时也可以修改默认托管模式：
 
 ```bash
 bash install.sh --init nohup
 ```
 
-显式指定 `systemd` 并启用 sudo 能力：
+显式注册 `systemd` 服务并启用 sudo 能力：
 
 ```bash
 sudo bash install.sh --init systemd
@@ -91,9 +92,10 @@ bash install.sh --init=nohup
 sudo bash install.sh --init=systemd
 ```
 
-- `tmux`：默认模式，适合共享机普通用户，便于查看会话和日志。
+- `tmux`：默认托管模式，适合共享机普通用户，便于查看会话和日志。
 - `nohup`：普通用户备用模式，不依赖 `tmux`，但进程托管能力较弱。
 - `systemd`：需要 root 或 sudo，会注册系统服务，支持 `clashtun on/off`。
+- 安装后也可以用 `clashon --mode ...` / `clashrestart --mode ...` 在运行时选择本次托管模式。
 
 - `.env` 里的 `CLASH_CONFIG_URL` 默认留空，不再内置任何真实订阅链接。
 - 安装结束时，如果 `CLASH_CONFIG_URL` 仍为空，脚本会交互式提示输入订阅链接。
@@ -138,6 +140,7 @@ Usage:
 Commands:
   on                    开启代理内核
   off                   关闭代理内核
+  restart               重启或切换托管模式
   status                查看内核状态
   proxy                 管理当前终端代理变量
   ui                    查看 Web 面板地址
@@ -146,6 +149,7 @@ Commands:
   tun                   管理 Tun 模式（仅 systemd）
   mixin                 查看或刷新 Mixin 配置
   upgrade               升级内核
+  update-self           无损更新项目脚本
 
 Global Options:
   -h, --help            显示帮助信息
@@ -157,7 +161,10 @@ Global Options:
 
 ```bash
 $ clashon
-😼 已开启代理环境
+😼 已开启代理环境（mode=tmux）
+
+$ clashrestart --mode nohup
+😼 已开启代理环境（mode=nohup）
 
 $ clashproxy on
 😼 已为当前终端开启代理
@@ -172,7 +179,8 @@ $ clashproxy on -g
 😼 已为当前终端开启代理，并开启全局自动代理
 ```
 
-- `clashon` / `clashoff` 负责启动或关闭代理内核。
+- `clashon` / `clashoff` 负责启动或关闭代理内核；`clashrestart --mode <mode>` 用于显式切换托管模式。
+- `clashstatus --all` 可以查看 `tmux`、`nohup`、`systemd` 三种 adapter 的探测结果。
 - `clashproxy on` / `clashproxy off` 只负责写入或清理当前 shell 的代理变量，不改 sidecar 全局状态。
 - `clashproxy on -g` / `clashproxy off -g` 会在处理当前 shell 的同时，更新 sidecar 中的全局自动代理开关。
 - `clashproxy status` 只根据当前 shell 的实际环境变量输出结果，不读 sidecar 状态。
@@ -313,21 +321,36 @@ clashctl sub ls
 Tun 需要内核权限，因此默认 `tmux` / `nohup` 模式会拒绝执行：
 
 ```bash
-$ clashtun
-😾 当前 INIT_TYPE=tmux 不支持 Tun；如需 Tun，请使用 --init systemd 重新安装
+$ clashtun on
+😾 Tun 需要当前内核以 systemd 模式运行；请先执行 clashrestart --mode systemd
 ```
 
-使用 `systemd` 模式安装后，可以执行：
+注册 `systemd` 服务并切换到 systemd 托管模式后，可以执行：
 
 ```bash
+$ clashrestart --mode systemd
 $ clashtun
 $ clashtun on
 $ clashtun off
 ```
 
-- `systemd` 模式会使用 root 或 sudo 注册系统服务；通过 sudo 安装时，服务进程会以 sudo 调用用户身份运行，并由 systemd 授予 Tun 所需网络能力。
+- `systemd` 注册会使用 root 或 sudo 写入系统服务；通过 sudo 安装时，服务进程会以 sudo 调用用户身份运行，并由 systemd 授予 Tun 所需网络能力。
 - 开启 Tun 时会修改 `resources/mixin.yaml` 中的 `tun.enable`，重新合并运行时配置并重启内核。
 - 共享机默认不建议启用 Tun，除非我们明确知道该机器允许普通用户通过 sudo 管理这个服务。
+
+## 🔄 更新项目脚本
+
+`clashsub update` 更新订阅，`clashupgrade` 升级内核，二者都不会更新本项目的 shell 脚本。
+
+从源码仓库 pull 新版本后，可以执行无损项目更新：
+
+```bash
+bash update.sh
+# 或在已安装环境里执行
+clashctl update-self
+```
+
+该操作只刷新脚本、service 模板和文档资产，不覆盖 `.env`、`resources/mixin.yaml`、`resources/clashctl.yaml`、订阅 profiles、日志和运行状态。
 
 ## ⬆️ 升级内核
 

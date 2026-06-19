@@ -24,6 +24,7 @@ _refresh_install_paths() {
     CLASH_CONFIG_SIDECAR="${CLASH_RESOURCES_DIR}/clashctl.yaml"
     CLASH_CONFIG_RUNTIME="${CLASH_RESOURCES_DIR}/runtime.yaml"
     CLASH_CONFIG_TEMP="${CLASH_RESOURCES_DIR}/temp.yaml"
+    CLASH_SERVICE_STATE="${CLASH_RESOURCES_DIR}/service-state.yaml"
 
     BIN_BASE_DIR="${CLASH_BASE_DIR}/bin"
     BIN_KERNEL="${BIN_BASE_DIR}/$KERNEL_NAME"
@@ -407,12 +408,12 @@ _tmux() {
 
     service_start=(tmux new-session -d -s "$TMUX_SESSION" "$BIN_KERNEL -d $CLASH_RESOURCES_DIR -f $CLASH_CONFIG_RUNTIME >> $FILE_LOG 2>&1")
     service_is_active=(tmux has-session -t "$TMUX_SESSION")
-    service_stop=(tmux has-session -t "$TMUX_SESSION" "2>/dev/null" "&&" tmux kill-session -t "$TMUX_SESSION" "2>/dev/null" "||" pkill -TERM -f "^${BIN_KERNEL}( |$)")
+    service_stop=(false)
 
     local kernel_cmd="$BIN_KERNEL -d $CLASH_RESOURCES_DIR -f $CLASH_CONFIG_RUNTIME >> $FILE_LOG 2>&1"
     service_start_body="tmux new-session -d -s $(_shell_quote "$TMUX_SESSION") $(_shell_quote "$kernel_cmd")"
     service_is_active_body="tmux has-session -t $(_shell_quote "$TMUX_SESSION")"
-    service_stop_body="if tmux has-session -t $(_shell_quote "$TMUX_SESSION") 2>/dev/null; then tmux kill-session -t $(_shell_quote "$TMUX_SESSION") 2>/dev/null; else pkill -TERM -f $(_shell_quote "^${BIN_KERNEL}( |$)"); fi"
+    service_stop_body="return 0"
 }
 _nohup() {
     service_enable=(false)
@@ -420,11 +421,11 @@ _nohup() {
 
     service_start=(nohup "$BIN_KERNEL" -d "$CLASH_RESOURCES_DIR" -f "$CLASH_CONFIG_RUNTIME" ">>" "$FILE_LOG" "2>&1" "&")
     service_is_active=(pgrep -fa "^${BIN_KERNEL}( |$)")
-    service_stop=(pkill -TERM -f "^${BIN_KERNEL}( |$)")
+    service_stop=(false)
 
     service_start_body="nohup $(_shell_quote "$BIN_KERNEL") -d $(_shell_quote "$CLASH_RESOURCES_DIR") -f $(_shell_quote "$CLASH_CONFIG_RUNTIME") >> $(_shell_quote "$FILE_LOG") 2>&1 &"
     service_is_active_body="pgrep -fa $(_shell_quote "^${BIN_KERNEL}( |$)")"
-    service_stop_body="pkill -TERM -f $(_shell_quote "^${BIN_KERNEL}( |$)")"
+    service_stop_body="return 0"
 }
 
 _shell_quote() {
@@ -442,28 +443,7 @@ _quote_command() {
 }
 
 _append_service_functions() {
-    cat >>"$CLASH_CMD_DIR/clashctl.sh" <<EOF
-
-_clash_service_start() {
-    ${service_start_body:-return 1}
-}
-
-_clash_service_is_active() {
-    ${service_is_active_body:-return 1}
-}
-
-_clash_service_stop() {
-    ${service_stop_body:-return 1}
-}
-
-_clash_service_log() {
-    ${service_log_body:-return 1}
-}
-
-_clash_service_follow_log() {
-    ${service_follow_log_body:-return 1}
-}
-EOF
+    return 0
 }
 
 _install_service() {
@@ -506,11 +486,6 @@ _install_service() {
     local sed_installed_init
     sed_installed_init=$(_escape_sed_repl "CLASH_INSTALLED_INIT_TYPE=\${CLASH_INSTALLED_INIT_TYPE:-${INIT_TYPE}}")
     sed -i \
-        -e "s#placeholder_start#_clash_service_start#g" \
-        -e "s#placeholder_is_active#_clash_service_is_active#g" \
-        -e "s#placeholder_stop#_clash_service_stop#g" \
-        -e "s#placeholder_log#_clash_service_log#g" \
-        -e "s#placeholder_follow_log#_clash_service_follow_log#g" \
         -e "s#^CLASH_INSTALLED_INIT_TYPE=.*#${sed_installed_init}#g" \
         "$CLASH_CMD_DIR/clashctl.sh" "$CLASH_CMD_DIR/common.sh"
     _append_service_functions

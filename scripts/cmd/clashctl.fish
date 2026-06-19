@@ -61,11 +61,11 @@ function clashctl
 end
 
 function clashon
-    bash -i -c 'clashon'
+    bash -i -c 'clashon "$@"' -- $argv
 end
 
 function clashoff
-    bash -i -c 'clashoff'
+    bash -i -c 'clashoff "$@"' -- $argv
 
     set -e \
     http_proxy \
@@ -76,6 +76,10 @@ function clashoff
     ALL_PROXY \
     no_proxy \
     NO_PROXY
+end
+
+function clashrestart
+    bash -i -c 'clashrestart "$@"' -- $argv
 end
 
 function clashproxy
