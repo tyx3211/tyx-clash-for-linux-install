@@ -159,4 +159,64 @@ bash "$explicit_install_dir/update.sh" --target "$explicit_install_dir" --source
 grep -q 'explicit-source-marker' "$explicit_install_dir/scripts/cmd/clashctl.sh" ||
     fail "update --source should refresh files from the explicit source directory"
 
+remote_source_parent="$update_tmp/remote-source-parent"
+remote_source_dir="$remote_source_parent/tyx-clash-for-linux-install-main"
+remote_install_dir="$update_tmp/remote-install"
+remote_archive="$update_tmp/remote.tar.gz"
+remote_fake_bin="$update_tmp/remote-fake-bin"
+remote_seen_url="$update_tmp/remote-seen-url"
+mkdir -p "$remote_source_parent" "$remote_install_dir" "$remote_fake_bin"
+cp -a "$TEST_ROOT/." "$remote_source_dir"
+printf '\n# remote-source-marker\n' >>"$remote_source_dir/scripts/cmd/clashctl.sh"
+tar -C "$remote_source_parent" -czf "$remote_archive" "$(basename "$remote_source_dir")"
+cp -a "$TEST_ROOT/." "$remote_install_dir"
+cat >"$remote_install_dir/.env" <<EOF
+CLASH_BASE_DIR=$remote_install_dir
+KERNEL_NAME=mihomo
+INIT_TYPE=tmux
+URL_GH_PROXY=
+EOF
+printf 'tyx-clash-for-linux-install\n' >"$remote_install_dir/.clashctl-install-root"
+cat >"$remote_fake_bin/curl" <<'EOF'
+#!/usr/bin/env bash
+set -eu
+out=
+url=
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+    -o | --output)
+        shift
+        out=$1
+        ;;
+    -*)
+        ;;
+    *)
+        url=$1
+        ;;
+    esac
+    shift
+done
+[ -n "$out" ] || exit 2
+[ -n "$url" ] || exit 3
+printf '%s\n' "$url" >"$CURL_SEEN_URL"
+cp "$REMOTE_ARCHIVE" "$out"
+EOF
+chmod +x "$remote_fake_bin/curl"
+PATH="$remote_fake_bin:$PATH" \
+    CURL_SEEN_URL="$remote_seen_url" \
+    REMOTE_ARCHIVE="$remote_archive" \
+    bash "$remote_install_dir/update.sh" --target "$remote_install_dir" >/dev/null 2>&1 ||
+    fail "installed update.sh should fetch the default remote source when --source is omitted"
+grep -q 'remote-source-marker' "$remote_install_dir/scripts/cmd/clashctl.sh" ||
+    fail "default update-self should refresh files from the downloaded archive"
+grep -q 'github.com/tyx3211/tyx-clash-for-linux-install' "$remote_seen_url" ||
+    fail "default update-self should download from the fork GitHub repository"
+PATH="$remote_fake_bin:$PATH" \
+    CURL_SEEN_URL="$remote_seen_url" \
+    REMOTE_ARCHIVE="$remote_archive" \
+    bash "$remote_install_dir/update.sh" --target "$remote_install_dir" --ref release-test >/dev/null 2>&1 ||
+    fail "installed update.sh should accept --ref for remote updates"
+grep -q 'release-test.tar.gz' "$remote_seen_url" ||
+    fail "remote update should include the selected ref in the download URL"
+
 pass "update self checks"

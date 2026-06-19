@@ -6,6 +6,75 @@
 
 ![preview](resources/preview.png)
 
+## 🚀 新用户 3 分钟上手
+
+### 1. 第一次安装
+
+共享机、没有 sudo、想用 `tmux` 托管内核时，直接执行：
+
+```bash
+git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git
+cd tyx-clash-for-linux-install
+bash install.sh
+```
+
+安装脚本会提示输入订阅链接。订阅链接里通常带 `?`、`&`，手工输入命令时请始终用双引号包起来。
+
+如果安装完成后当前终端还没有 `clashctl` 命令，执行：
+
+```bash
+. "$HOME/clashctl/scripts/cmd/clashctl.sh"
+```
+
+### 2. 日常启动
+
+```bash
+clashon
+clashstatus
+clashproxy on
+```
+
+- `clashon` 启动 mihomo / clash 内核，默认使用 `tmux`。
+- `clashstatus` 查看当前内核是否运行。
+- `clashproxy on` 只给当前终端写入代理环境变量，不改系统代理。
+
+需要 Web 面板地址：
+
+```bash
+clashui
+```
+
+共享机远程访问面板时，推荐先做 SSH 端口转发：
+
+```bash
+ssh -L 23571:127.0.0.1:23571 user@remote-host
+```
+
+然后在本机浏览器访问 `http://localhost:23571/ui`。
+
+### 3. 关闭与切换托管模式
+
+```bash
+clashoff
+clashrestart --mode nohup
+clashrestart --mode tmux
+```
+
+- 没有 `tmux` 时，可以用 `clashrestart --mode nohup`。
+- 需要 Tun 时，需要 sudo 安装 systemd 服务，然后用 `clashrestart --mode systemd`。
+
+### 4. 直接更新项目脚本
+
+已安装后，以后更新本项目脚本和文档只需要：
+
+```bash
+clashctl update-self
+```
+
+这个命令会从当前 fork 的 GitHub `main` 分支下载最新源码，并无损刷新安装目录。它不会停止内核、不会启动内核、不会覆盖订阅、`mixin.yaml`、`clashctl.yaml`、profiles、日志和 pid 状态。
+
+更多新手说明见 [快速上手教程](docs/quickstart.md)。运行托管模式、订阅、项目更新和迁移细节见 [当前版本使用指南](docs/usage-guide.md)。
+
 ## ✨ 功能特性
 
 - 支持一键安装 `mihomo` 与 `clash` 代理内核。
@@ -33,6 +102,7 @@
 更多说明：
 
 - [Fork 差异与分支策略](docs/fork-differences.md)
+- [快速上手教程](docs/quickstart.md)
 - [当前版本使用指南](docs/usage-guide.md)
 - [手工端到端检查清单](docs/manual-e2e-checklist.md)
 - [上游同步计划记录](docs/superpowers/plans/2026-06-18-shell-upstream-sync.md)
@@ -347,7 +417,19 @@ $ clashtun off
 
 `clashsub update` 更新订阅，`clashupgrade` 升级内核，二者都不会更新本项目的 shell 脚本。
 
-从源码仓库 pull 新版本后，可以执行无损项目更新：
+已安装环境可以直接从 GitHub 更新当前 fork 的 `main` 分支：
+
+```bash
+clashctl update-self
+```
+
+也可以指定分支或 tag：
+
+```bash
+clashctl update-self --ref main
+```
+
+如果正在本地开发源码，或者已经手工 pull 了源码仓库，可以执行本地无损项目更新：
 
 ```bash
 # 在已经 pull 到最新的源码仓库中执行

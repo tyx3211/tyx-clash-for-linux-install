@@ -3,8 +3,12 @@
 set -euo pipefail
 
 THIS_UPDATE_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 1
-SOURCE_DIR=$THIS_UPDATE_DIR
+SOURCE_DIR=
+source_explicit=false
 target=
+UPDATE_REPO=${CLASHCTL_UPDATE_REPO:-tyx3211/tyx-clash-for-linux-install}
+UPDATE_REF=${CLASHCTL_UPDATE_REF:-main}
+download_tmp=
 
 _die() {
     printf '📢 %s\n' "$1" >&2
@@ -64,6 +68,12 @@ _canonical_dir() {
     cd "$path" 2>/dev/null && pwd -P
 }
 
+_is_install_root() {
+    local dir=$1 marker
+    marker="$dir/.clashctl-install-root"
+    [ -f "$marker" ] && grep -qx 'tyx-clash-for-linux-install' "$marker"
+}
+
 _validate_target_path() {
     local path=$1
     case "$path" in
@@ -77,6 +87,56 @@ _validate_target_path() {
         _die "安装目录包含 shell 模板不支持的字符，请仅使用字母、数字、_、-、.、/：$path"
         ;;
     esac
+}
+
+_validate_repo_slug() {
+    local repo=$1
+    [[ $repo =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] ||
+        _die "更新仓库必须是 owner/repo 格式：$repo"
+}
+
+_validate_ref() {
+    local ref=$1
+    [[ $ref =~ ^[A-Za-z0-9._/-]+$ ]] ||
+        _die "更新 ref 只能包含字母、数字、.、_、-、/：$ref"
+
+    case "$ref" in
+    "" | /* | */ | *..* | *//*)
+        _die "更新 ref 不安全：$ref"
+        ;;
+    esac
+}
+
+_download_remote_source() {
+    local update_target=$1
+    local archive archive_root proxy url
+
+    download_tmp=$(mktemp -d "$update_target/.update-source.XXXXXX")
+    archive="$download_tmp/source.tar.gz"
+    url="https://github.com/${UPDATE_REPO}/archive/${UPDATE_REF}.tar.gz"
+    proxy=$(_read_env_value "$update_target/.env" URL_GH_PROXY 2>/dev/null || true)
+    [ -n "$proxy" ] && url="${proxy}${url}"
+
+    printf '⏳ 正在下载项目源码：%s@%s\n' "$UPDATE_REPO" "$UPDATE_REF" >&2
+    if ! curl --fail --location --show-error --silent -o "$archive" "$url"; then
+        /usr/bin/rm -rf "$download_tmp"
+        download_tmp=
+        _die "项目源码下载失败：$url"
+    fi
+
+    if ! tar -xzf "$archive" -C "$download_tmp"; then
+        /usr/bin/rm -rf "$download_tmp"
+        download_tmp=
+        _die "项目源码归档解压失败：$url"
+    fi
+
+    archive_root=$(find "$download_tmp" -mindepth 2 -maxdepth 2 -type f -name update.sh -print -quit)
+    [ -n "$archive_root" ] || {
+        /usr/bin/rm -rf "$download_tmp"
+        download_tmp=
+        _die "项目源码归档中没有找到 update.sh"
+    }
+    dirname "$archive_root"
 }
 
 _reject_managed_symlinks() {
@@ -115,18 +175,38 @@ while (($#)); do
         ;;
     --source=*)
         SOURCE_DIR=${1#--source=}
+        source_explicit=true
         ;;
     --source)
         shift
         [ $# -gt 0 ] || _die "--source 需要指定源码目录"
         SOURCE_DIR=$1
+        source_explicit=true
+        ;;
+    --repo=*)
+        UPDATE_REPO=${1#--repo=}
+        ;;
+    --repo)
+        shift
+        [ $# -gt 0 ] || _die "--repo 需要指定 owner/repo"
+        UPDATE_REPO=$1
+        ;;
+    --ref=*)
+        UPDATE_REF=${1#--ref=}
+        ;;
+    --ref)
+        shift
+        [ $# -gt 0 ] || _die "--ref 需要指定 branch、tag 或 commit"
+        UPDATE_REF=$1
         ;;
     -h | --help)
         cat <<EOF
 Usage:
   bash update.sh [--target <install_dir>] [--source <source_dir>]
+  bash update.sh [--target <install_dir>] [--repo <owner/repo>] [--ref <branch_or_tag>]
 
 默认从当前源码仓库刷新已安装的 clashctl 脚本和文档资产，并保留用户配置、订阅和运行状态。
+如果在已安装目录中运行且未指定 --source，则默认从 GitHub 下载 tyx3211/tyx-clash-for-linux-install 的 main 分支后无损更新。
 EOF
         exit 0
         ;;
@@ -137,13 +217,26 @@ EOF
     shift
 done
 
-SOURCE_DIR=$(_canonical_dir "$SOURCE_DIR") || _die "源码目录不存在：$SOURCE_DIR"
-[ -f "$SOURCE_DIR/update.sh" ] && [ -d "$SOURCE_DIR/scripts/cmd" ] ||
-    _die "源码目录不像 tyx-clash-for-linux-install 仓库：$SOURCE_DIR"
+_validate_repo_slug "$UPDATE_REPO"
+_validate_ref "$UPDATE_REF"
 
-[ -z "$target" ] && target=$(_read_env_value "$SOURCE_DIR/.env" CLASH_BASE_DIR) ||
-    true
-[ -n "$target" ] || _die "无法从源码 .env 读取 CLASH_BASE_DIR，请显式指定 --target"
+if [ "$source_explicit" = true ]; then
+    SOURCE_DIR=$(_canonical_dir "$SOURCE_DIR") || _die "源码目录不存在：$SOURCE_DIR"
+elif _is_install_root "$THIS_UPDATE_DIR"; then
+    SOURCE_DIR=
+else
+    SOURCE_DIR=$(_canonical_dir "$THIS_UPDATE_DIR") || _die "源码目录不存在：$THIS_UPDATE_DIR"
+fi
+
+if [ -z "$target" ]; then
+    if [ -n "$SOURCE_DIR" ]; then
+        target=$(_read_env_value "$SOURCE_DIR/.env" CLASH_BASE_DIR) || true
+        [ -n "$target" ] || _die "无法从源码 .env 读取 CLASH_BASE_DIR，请显式指定 --target"
+    else
+        target=$(_read_env_value "$THIS_UPDATE_DIR/.env" CLASH_BASE_DIR 2>/dev/null || true)
+        [ -n "$target" ] || target=$THIS_UPDATE_DIR
+    fi
+fi
 
 target=$(_canonical_dir "$target") || _die "安装目录不存在：$target"
 _validate_target_path "$target"
@@ -162,6 +255,13 @@ managed_paths=(install.sh uninstall.sh update.sh README.md scripts docs tests)
 backup_paths=(.env .clashctl-install-root "${managed_paths[@]}")
 _reject_managed_symlinks "${backup_paths[@]}"
 
+[ -n "$SOURCE_DIR" ] || SOURCE_DIR=$(_download_remote_source "$target")
+SOURCE_DIR=$(_canonical_dir "$SOURCE_DIR") || _die "源码目录不存在：$SOURCE_DIR"
+[ -f "$SOURCE_DIR/update.sh" ] && [ -d "$SOURCE_DIR/scripts/cmd" ] || {
+    [ -n "${download_tmp:-}" ] && /usr/bin/rm -rf "$download_tmp"
+    _die "源码目录不像 tyx-clash-for-linux-install 仓库：$SOURCE_DIR"
+}
+
 backup_root="$target/.update-backup"
 mkdir -p "$backup_root"
 backup_dir=$(mktemp -d "$backup_root/$(date +%Y%m%d%H%M%S).XXXXXX")
@@ -179,7 +279,8 @@ _rollback_update() {
             cp -a "$backup_dir/$path" "$target/$path"
         done
     fi
-    /usr/bin/rm -rf "$staging_dir"
+    [ -n "${staging_dir:-}" ] && /usr/bin/rm -rf "$staging_dir"
+    [ -n "${download_tmp:-}" ] && /usr/bin/rm -rf "$download_tmp"
     return "$status"
 }
 trap _rollback_update EXIT INT TERM
@@ -229,6 +330,7 @@ done <"$SOURCE_DIR/.env"
 rollback_needed=false
 trap - EXIT INT TERM
 /usr/bin/rm -rf "$staging_dir"
+[ -n "${download_tmp:-}" ] && /usr/bin/rm -rf "$download_tmp"
 
 [ "$legacy" = true ] && printf '📢 已按历史 nosudo-tmux 安装目录执行原地迁移，旧配置已保留。\n'
 printf '✨ 项目脚本已更新，用户配置和订阅状态已保留：%s\n' "$target"
