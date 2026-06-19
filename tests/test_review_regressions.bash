@@ -21,6 +21,36 @@ assert_file_contains "$INSTALL_SH" 'cd "\$THIS_INSTALL_DIR"' \
 assert_file_not_contains "$INSTALL_SH" '/bin/cp -rf \\. ' \
     "install should not copy the caller current directory"
 
+assert_file_not_contains "$INSTALL_SH" '/bin/cp -rf "\$THIS_INSTALL_DIR"/\. "\$CLASH_BASE_DIR"' \
+    "install should not copy the whole source checkout including .git"
+
+assert_file_contains "$INSTALL_SH" '_copy_install_payload\(\)' \
+    "install should copy an explicit runtime payload instead of the whole source checkout"
+
+install_payload_tmp=$(make_test_tmpdir "clash-install-payload")
+install_payload_source="$install_payload_tmp/source"
+install_payload_target="$install_payload_tmp/target"
+cp -a "$TEST_ROOT/." "$install_payload_source"
+mkdir -p "$install_payload_source/.git" "$install_payload_source/.github/workflows" "$install_payload_target"
+printf 'git metadata\n' >"$install_payload_source/.git/config"
+printf 'ci metadata\n' >"$install_payload_source/.github/workflows/ci.yml"
+(
+    THIS_INSTALL_DIR="$install_payload_source"
+    CLASH_BASE_DIR="$install_payload_target"
+    eval "$(extract_function _copy_install_payload "$INSTALL_SH")"
+    _copy_install_payload
+) || fail "install payload copy should succeed"
+[ -f "$install_payload_target/scripts/cmd/clashctl.sh" ] ||
+    fail "install payload should include runtime scripts"
+[ -f "$install_payload_target/resources/mixin.yaml" ] ||
+    fail "install payload should include default resources"
+[ ! -e "$install_payload_target/.git" ] ||
+    fail "install payload should not copy source git metadata"
+[ ! -e "$install_payload_target/.github" ] ||
+    fail "install payload should not copy GitHub workflow metadata"
+[ ! -e "$install_payload_target/.editorconfig" ] ||
+    fail "install payload should not copy editor-only metadata"
+
 assert_file_contains "$SYSTEMD_SH" 'placeholder_run_as_user' \
     "systemd service should be able to run as the sudo invoking user"
 

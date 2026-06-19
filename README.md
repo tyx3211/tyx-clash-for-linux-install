@@ -71,6 +71,8 @@ clashctl update-self
 
 这个命令会从当前 fork 的 GitHub `main` 分支下载最新源码，并无损刷新安装目录。它不会停止内核、不会启动内核、不会覆盖订阅、`mixin.yaml`、`clashctl.yaml`、profiles、日志和 pid 状态。
 
+`git clone` 得到的是安装源目录；默认安装目录 `~/clashctl` 不是项目 git 仓库，也不需要 `.git`。历史版本安装目录里如果已有 `.git`，那通常是旧安装复制策略遗留，`clashctl update-self` 不依赖它。
+
 更多新手说明见 [快速上手教程](docs/quickstart.md)。运行托管模式、订阅、项目更新和迁移细节见 [当前版本使用指南](docs/usage-guide.md)。
 
 ## ✨ 功能特性
@@ -437,6 +439,14 @@ clashctl update-self --source "$HOME/src/clash-shell/tyx-clash-for-linux-install
 ```
 
 该操作只刷新脚本、service 模板和文档资产，不覆盖 `.env`、`resources/mixin.yaml`、`resources/clashctl.yaml`、订阅 profiles、日志和运行状态。
+
+安装目录默认不携带 `.git`，`update-self` 也不会使用安装目录里的 git 仓库。旧安装目录如果已经带有 `.git`，可以在确认没有把它当作个人配置仓库后手工删除：
+
+```bash
+rm -rf "$HOME/clashctl/.git"
+```
+
+不建议直接在安装目录根启用 git 来管理配置，因为 `.env`、订阅 profiles、运行时配置和日志可能包含订阅链接、节点凭据或 Web 密钥。如需版本管理偏好配置，建议另建私有仓库，只保存脱敏后的 `resources/mixin.yaml`、`resources/clashctl.yaml` 等少量源配置。
 
 ## ⬆️ 升级内核
 

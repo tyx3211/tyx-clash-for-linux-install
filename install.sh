@@ -8,6 +8,34 @@ cd "$THIS_INSTALL_DIR" || exit 1
 
 CLASHCTL_ERROR_EXIT=1
 
+_copy_install_payload() {
+    local payload_paths=(
+        .env
+        LICENSE
+        README.md
+        install.sh
+        uninstall.sh
+        update.sh
+        scripts
+        docs
+        tests
+        resources
+    )
+    local path missing=()
+
+    for path in "${payload_paths[@]}"; do
+        [ -e "$THIS_INSTALL_DIR/$path" ] || missing+=("$path")
+    done
+
+    [ "${#missing[@]}" -eq 0 ] || {
+        printf '缺少安装载荷：%s\n' "${missing[*]}" >&2
+        return 1
+    }
+
+    tar -C "$THIS_INSTALL_DIR" -cf - "${payload_paths[@]}" |
+        tar -C "$CLASH_BASE_DIR" -xf -
+}
+
 _parse_args "$@"
 _normalize_sudo_install_path
 _refresh_install_paths
@@ -21,7 +49,7 @@ _detect_init
 _okcat "安装内核：$KERNEL_NAME by ${INIT_TYPE}"
 _okcat '📦' "安装路径：$CLASH_BASE_DIR"
 
-/bin/cp -rf "$THIS_INSTALL_DIR"/. "$CLASH_BASE_DIR"
+_copy_install_payload || _error_quit "安装文件复制失败"
 printf '%s\n' 'tyx-clash-for-linux-install' >"$INSTALL_MARKER"
 touch "$CLASH_CONFIG_BASE"
 _set_envs

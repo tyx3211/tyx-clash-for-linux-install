@@ -59,6 +59,9 @@ printf 'old-script\n' >"$install_dir/scripts/cmd/clashctl.sh"
 grep -q 'function clashctl' "$install_dir/scripts/cmd/clashctl.sh" ||
     fail "update should refresh installed clashctl script"
 
+[ ! -e "$install_dir/.git" ] ||
+    fail "update should not create .git in install dir when source is a git checkout"
+
 grep -q '^CLASH_BASE_DIR=' "$install_dir/.env" ||
     fail "update should preserve installed .env"
 
@@ -207,6 +210,19 @@ bash "$TEST_ROOT/update.sh" --target "$source_missing_env_install_dir" --source 
     fail "update should reject source directories without .env before replacing target files"
 grep -qx 'script' "$source_missing_env_install_dir/scripts/cmd/clashctl.sh" ||
     fail "rejected source without .env should leave target files unchanged"
+
+git_preserve_source_dir="$update_tmp/git-preserve-source"
+git_preserve_install_dir="$update_tmp/git-preserve-install"
+cp -a "$TEST_ROOT/." "$git_preserve_source_dir"
+mkdir -p "$git_preserve_install_dir/resources" "$git_preserve_install_dir/scripts/cmd" "$git_preserve_install_dir/.git"
+printf 'tyx-clash-for-linux-install\n' >"$git_preserve_install_dir/.clashctl-install-root"
+printf 'mixin\n' >"$git_preserve_install_dir/resources/mixin.yaml"
+printf 'script\n' >"$git_preserve_install_dir/scripts/cmd/clashctl.sh"
+printf 'user-managed-git\n' >"$git_preserve_install_dir/.git/config"
+bash "$TEST_ROOT/update.sh" --target "$git_preserve_install_dir" --source "$git_preserve_source_dir" >/dev/null 2>&1 ||
+    fail "update should succeed when a legacy install dir already has .git"
+grep -qx 'user-managed-git' "$git_preserve_install_dir/.git/config" ||
+    fail "update should not silently delete existing install dir .git"
 
 remote_source_parent="$update_tmp/remote-source-parent"
 remote_source_dir="$remote_source_parent/tyx-clash-for-linux-install-main"

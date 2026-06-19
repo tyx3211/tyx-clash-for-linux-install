@@ -208,6 +208,18 @@ clashctl update-self --source "$HOME/src/clash-shell/tyx-clash-for-linux-install
 
 项目脚本更新会保留 `.env`、`resources/mixin.yaml`、`resources/clashctl.yaml`、`resources/config.yaml`、`resources/runtime.yaml`、`resources/profiles.yaml`、`resources/profiles/`、日志和 pid 状态。
 
+## 安装目录与 git
+
+`git clone` 得到的是源码目录，用来执行初装或本地 `--source` 更新。默认安装目录 `~/clashctl` 是运行时目录，不是项目 git 仓库；初装不会复制源码目录里的 `.git`，`clashctl update-self` 也不依赖安装目录中的 git 状态。
+
+旧版本安装目录如果已经带有 `.git`，它通常是历史全量复制遗留。为了避免误删用户手工创建的配置仓库，`update-self` 不会自动删除已有 `.git`。确认没有自定义用途后，可以手工删除：
+
+```bash
+rm -rf "$HOME/clashctl/.git"
+```
+
+不建议在安装目录根启用 git 管理配置。该目录包含脚本、二进制、订阅展开结果、运行时配置、日志和 pid 状态，其中 `.env`、`resources/profiles.yaml`、`resources/profiles/`、`resources/config.yaml`、`resources/runtime.yaml`、`resources/mixin.yaml` 都可能含有订阅链接、节点凭据或 Web 密钥。如需版本管理偏好配置，建议另建私有仓库，只保存脱敏后的源配置，例如 `resources/mixin.yaml` 和 `resources/clashctl.yaml`。
+
 ## 自动化安装
 
 跳过 shell rc 写入：

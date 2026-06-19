@@ -132,6 +132,8 @@ clashctl update-self
 
 该命令默认从当前 fork 的 GitHub `main` 分支下载最新源码，并无损刷新当前安装目录。它不会停止内核、不会启动内核、不会覆盖订阅、`mixin.yaml`、`clashctl.yaml`、profiles、日志和 pid 状态。
 
+默认安装目录不是 git 仓库，也不需要 `.git`。如果旧安装目录里已经有 `.git`，通常是历史安装复制遗留；确认没有用它管理个人配置后，可以手工删除。
+
 指定分支或 tag：
 
 ```bash
