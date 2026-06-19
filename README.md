@@ -1,4 +1,6 @@
-# Clash/Mihomo Linux 用户态托管工具
+# Clash/Mihomo Linux 多模式托管工具
+
+默认免 sudo，以 `tmux` / `nohup` 在用户态托管内核；需要 Tun 时，可切换到 sudo + `systemd` 模式。
 
 ![GitHub License](https://img.shields.io/github/license/tyx3211/tyx-clash-for-linux-install)
 ![GitHub top language](https://img.shields.io/github/languages/top/tyx3211/tyx-clash-for-linux-install)
@@ -92,7 +94,7 @@ clashctl update-self
 
 ## 🧭 项目定位
 
-本项目是面向共享机和普通 Linux 用户环境的 Clash/Mihomo 安装与托管工具。默认路线不需要 sudo，使用 `tmux` 托管内核；需要更轻量后台进程时可以切到 `nohup`；需要 Tun 时再显式使用 sudo 注册 `systemd` 服务。
+本项目是面向共享机和普通 Linux 用户环境的 Clash/Mihomo 多模式托管工具。默认路线免 sudo，使用 `tmux` 托管内核；需要更轻量后台进程时可以切到 `nohup`；需要 Tun 时再显式使用 sudo 注册 `systemd` 服务。
 
 - 默认路线：普通用户执行 `bash install.sh`，默认运行托管模式为 `tmux`。
 - 备用用户态路线：执行 `clashon --mode nohup`，用 nohup 托管本次内核进程。
