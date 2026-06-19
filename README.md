@@ -1,4 +1,4 @@
-# Linux 一键安装 Clash
+# Clash/Mihomo Linux 用户态托管工具
 
 ![GitHub License](https://img.shields.io/github/license/tyx3211/tyx-clash-for-linux-install)
 ![GitHub top language](https://img.shields.io/github/languages/top/tyx3211/tyx-clash-for-linux-install)
@@ -75,7 +75,7 @@ clashctl update-self
 
 ## ✨ 功能特性
 
-- 支持一键安装 `mihomo` 与 `clash` 代理内核。
+- 支持安装和托管 `mihomo` / `clash` 代理内核。
 - 面向 no-sudo 环境，默认使用 `tmux` 管理内核进程，不依赖 `systemd`。
 - 支持运行时选择托管模式：`clashon --mode tmux|nohup|systemd`。其中 `systemd` 需要 root 或 sudo，并支持 Tun。
 - 当前维护入口统一为 `main`。历史 `nosudo-tmux` 分支已经退役；新的 no-sudo / tmux 能力直接在 `main` 维护。
@@ -87,9 +87,9 @@ clashctl update-self
 - 在需要时调用 [subconverter](https://github.com/tindy2013/subconverter) 进行本地订阅转换。
 - 默认 no-sudo / tmux 模式不提供 Tun；显式选择 `systemd` 模式时支持 Tun。
 
-## 🧭 当前 fork（分叉）定位
+## 🧭 项目定位
 
-这个 fork 仍然跟随 upstream（上游）`nelvko/clash-for-linux-install` 的基本安装体验，但把共享机用户态链路作为一等入口维护。当前版本不是单一的 `nosudo-tmux` 分支，而是在 `main` 中同时维护现代友好的 `tmux` 默认模式、`nohup` 备用模式和 `systemd` + Tun 模式。
+本项目是面向共享机和普通 Linux 用户环境的 Clash/Mihomo 安装与托管工具。默认路线不需要 sudo，使用 `tmux` 托管内核；需要更轻量后台进程时可以切到 `nohup`；需要 Tun 时再显式使用 sudo 注册 `systemd` 服务。
 
 - 默认路线：普通用户执行 `bash install.sh`，默认运行托管模式为 `tmux`。
 - 备用用户态路线：执行 `clashon --mode nohup`，用 nohup 托管本次内核进程。
@@ -103,7 +103,6 @@ clashctl update-self
 - [快速上手教程](docs/quickstart.md)
 - [当前版本使用指南](docs/usage-guide.md)
 - [手工端到端检查清单](docs/manual-e2e-checklist.md)
-- [上游同步计划记录](docs/superpowers/plans/2026-06-18-shell-upstream-sync.md)
 
 ## ✅ no-sudo 使用补充
 
@@ -117,7 +116,7 @@ clashctl update-self
 
 ## 🚀 安装
 
-这个 README 对应当前 fork 的 `main` 维护线，不是 upstream 原仓库。历史 `nosudo-tmux` 分支已经退役，新安装和更新都应使用 `main`。
+这个 README 对应当前 `main` 维护线。历史 `nosudo-tmux` 分支已经退役，新安装和更新都应使用 `main`。
 
 ```bash
 git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git clash-for-linux-install
@@ -466,24 +465,11 @@ sudo bash ~/clashctl/uninstall.sh
 
 - 请执行安装目录里的卸载脚本，而不是源码仓库里的同名脚本，避免把安装副本和源码目录混淆。
 
-## 📖 常见问题
-
-👉 [Wiki · FAQ](https://github.com/nelvko/clash-for-linux-install/wiki/FAQ)
-
-## 🔗 引用
+## 🔗 相关项目
 
 - [clash](https://clash.wiki/)
 - [mihomo](https://github.com/MetaCubeX/mihomo)
 - [subconverter](https://github.com/tindy2013/subconverter)
 - [yq](https://github.com/mikefarah/yq)
 - [zashboard](https://github.com/Zephyruso/zashboard)
-
-## 🙏 Thanks
-
-- 本 fork 基于 [nelvko/clash-for-linux-install](https://github.com/nelvko/clash-for-linux-install)，感谢上游项目的长期维护与实现基础。
-- [@鑫哥](https://github.com/TrackRay)
-
-## ⚠️ 特别声明
-
-1. 编写本项目主要目的为学习和研究 `Shell` 编程，不得将本项目中任何内容用于违反国家/地区/组织等的法律法规或相关规定的其他用途。
-2. 本项目保留随时对免责声明进行补充或更改的权利，直接或间接使用本项目内容的个人或组织，视为接受本项目的特别声明。
+- [nelvko/clash-for-linux-install](https://github.com/nelvko/clash-for-linux-install)：本项目的上游基础，感谢其长期维护。
