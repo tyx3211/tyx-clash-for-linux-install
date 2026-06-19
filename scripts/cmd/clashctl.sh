@@ -1146,6 +1146,6 @@ Commands:
 Global Options:
   -h, --help            显示帮助信息
 
-For more help on how to use clashctl, head to https://github.com/tyx3211/tyx-clash-for-linux-install/tree/nosudo-tmux
+For more help on how to use clashctl, head to https://github.com/tyx3211/tyx-clash-for-linux-install/tree/main
 EOF
 }

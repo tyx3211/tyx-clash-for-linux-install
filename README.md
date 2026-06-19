@@ -11,6 +11,7 @@
 - 支持一键安装 `mihomo` 与 `clash` 代理内核。
 - 面向 no-sudo 环境，默认使用 `tmux` 管理内核进程，不依赖 `systemd`。
 - 支持显式切换启动方式：`tmux`、`nohup`、`systemd`。其中 `systemd` 需要 root 或 sudo，并支持 Tun。
+- 当前维护入口是 `main`。历史 `nosudo-tmux` 分支保留为早期用户态 fork 快照，不再代表当前完整功能面。
 - 默认代理端口为 `port: 7890`、`socks-port: 7891`，默认控制端口为 `127.0.0.1:23571`。
 - 代理内核配置与 `clashctl` 自身行为配置分离：
   `resources/mixin.yaml` 只放会参与 mihomo/clash 合并的配置；
@@ -18,6 +19,21 @@
 - 自动检测端口占用情况，在冲突时随机分配可用端口。
 - 在需要时调用 [subconverter](https://github.com/tindy2013/subconverter) 进行本地订阅转换。
 - 默认 no-sudo / tmux 模式不提供 Tun；显式选择 `systemd` 模式时支持 Tun。
+
+## 🧭 当前 fork（分叉）定位
+
+这个 fork 已经不是单一的 `nosudo-tmux` 分支版本，而是把共享机用户态链路和上游较新的安装/订阅/Tun 机制合并后的维护版本。
+
+- 默认路线：普通用户执行 `bash install.sh`，使用 `tmux` 管理内核进程。
+- 备用用户态路线：普通用户执行 `bash install.sh --init nohup`。
+- sudo 路线：root 或 sudo 执行 `bash install.sh --init systemd`，用于需要 Tun 的机器。
+- 不支持路线：不使用 `systemd --user`；共享机上这一能力经常被禁用，当前 fork 不把它作为依赖。
+
+更多说明：
+
+- [Fork 差异与分支策略](docs/fork-differences.md)
+- [当前版本使用指南](docs/usage-guide.md)
+- [上游同步计划记录](docs/superpowers/plans/2026-06-18-shell-upstream-sync.md)
 
 ## ✅ no-sudo 使用补充
 
@@ -31,10 +47,10 @@
 
 ## 🚀 安装
 
-这个 README 对应的是当前 fork 的 `nosudo-tmux` 分支，不是 upstream 原仓库。
+这个 README 对应当前 fork 的 `main` 维护线，不是 upstream 原仓库。历史 `nosudo-tmux` 分支只建议用于回看旧实现，不建议新安装继续使用。
 
 ```bash
-git clone --branch nosudo-tmux --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git clash-for-linux-install
+git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git clash-for-linux-install
 cd clash-for-linux-install
 bash install.sh
 ```
@@ -42,7 +58,7 @@ bash install.sh
 如需 GitHub 代理前缀，也可以使用：
 
 ```bash
-git clone --branch nosudo-tmux --depth 1 https://gh-proxy.org/https://github.com/tyx3211/tyx-clash-for-linux-install.git clash-for-linux-install
+git clone --branch main --depth 1 https://gh-proxy.org/https://github.com/tyx3211/tyx-clash-for-linux-install.git clash-for-linux-install
 cd clash-for-linux-install
 bash install.sh
 ```
