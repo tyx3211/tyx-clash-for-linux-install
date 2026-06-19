@@ -10,13 +10,18 @@
 git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git clash-for-linux-install
 ```
 
-历史 `nosudo-tmux` 分支保留为早期共享机用户态 fork 快照。它只适合回看旧实现，当前新增的上游同步机制、systemd sudo 模式、Tun 支持、事务回滚和安全修复都不应该继续落在这个旧分支上。
+历史 `nosudo-tmux` 分支已经退役。早期共享机用户态实现已经合入 `main`，并和上游同步机制、systemd sudo 模式、Tun 支持、事务回滚和安全修复一起维护。新安装、更新和问题修复都不再以 `nosudo-tmux` 作为入口。
 
 本地建议分支语义如下：
 
 - `main`：当前维护版本，默认 tmux 用户态，兼容 `nohup` 和 `systemd` sudo 模式。
-- `nosudo-tmux`：历史快照，表示最早的纯用户态 tmux 路线。
 - `experiment-bun-ts`：实验性 Bun + TypeScript 重写路线，不影响 shell 版本。
+
+GitHub 远程分支策略：
+
+- 默认分支应指向 `main`。
+- 旧 `nosudo-tmux` 远程分支不再保留为发布入口，避免新用户误装旧实现。
+- 旧 `master` 若仍存在，只能视为迁移前遗留分支，不代表当前文档描述的功能面。
 
 ## 与 upstream 的关系
 
@@ -128,4 +133,4 @@ clashproxy mode silent
 
 Shell 版本仍是第一版跟进版本。Bun + TypeScript 或 Rust / Go 重写可以降低字符串拼接、全局变量、隐式返回码、trap 和 quoting 带来的风险，但短期内 shell 版本更容易跟进 upstream，也更容易被现有用户直接审查和部署。
 
-实验路线应放在独立分支，例如 `experiment-bun-ts`，不要阻塞当前 shell 主线。
+实验路线应放在独立分支，例如 `experiment-bun-ts`，不要阻塞当前 shell 主线。生产使用、共享机部署和文档示例都以 `main` 为准。

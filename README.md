@@ -1,8 +1,8 @@
 # Linux 一键安装 Clash
 
-![GitHub License](https://img.shields.io/github/license/nelvko/clash-for-linux-install)
-![GitHub top language](https://img.shields.io/github/languages/top/nelvko/clash-for-linux-install)
-![GitHub Repo stars](https://img.shields.io/github/stars/nelvko/clash-for-linux-install)
+![GitHub License](https://img.shields.io/github/license/tyx3211/tyx-clash-for-linux-install)
+![GitHub top language](https://img.shields.io/github/languages/top/tyx3211/tyx-clash-for-linux-install)
+![GitHub Repo stars](https://img.shields.io/github/stars/tyx3211/tyx-clash-for-linux-install)
 
 ![preview](resources/preview.png)
 
@@ -11,7 +11,7 @@
 - 支持一键安装 `mihomo` 与 `clash` 代理内核。
 - 面向 no-sudo 环境，默认使用 `tmux` 管理内核进程，不依赖 `systemd`。
 - 支持运行时选择托管模式：`clashon --mode tmux|nohup|systemd`。其中 `systemd` 需要 root 或 sudo，并支持 Tun。
-- 当前维护入口是 `main`。历史 `nosudo-tmux` 分支保留为早期用户态 fork 快照，不再代表当前完整功能面。
+- 当前维护入口统一为 `main`。历史 `nosudo-tmux` 分支已经退役；新的 no-sudo / tmux 能力直接在 `main` 维护。
 - 默认代理端口为 `port: 7890`、`socks-port: 7891`，默认控制端口为 `127.0.0.1:23571`。
 - 代理内核配置与 `clashctl` 自身行为配置分离：
   `resources/mixin.yaml` 只放会参与 mihomo/clash 合并的配置；
@@ -22,12 +22,13 @@
 
 ## 🧭 当前 fork（分叉）定位
 
-这个 fork 已经不是单一的 `nosudo-tmux` 分支版本，而是把共享机用户态链路和上游较新的安装/订阅/Tun 机制合并后的维护版本。
+这个 fork 仍然跟随 upstream（上游）`nelvko/clash-for-linux-install` 的基本安装体验，但把共享机用户态链路作为一等入口维护。当前版本不是单一的 `nosudo-tmux` 分支，而是在 `main` 中同时维护现代友好的 `tmux` 默认模式、`nohup` 备用模式和 `systemd` + Tun 模式。
 
 - 默认路线：普通用户执行 `bash install.sh`，默认运行托管模式为 `tmux`。
 - 备用用户态路线：执行 `clashon --mode nohup`，用 nohup 托管本次内核进程。
 - sudo 路线：root 或 sudo 执行 `bash install.sh --init systemd` 注册 systemd 服务，用于需要 Tun 的机器。
 - 不支持路线：不使用 `systemd --user`；共享机上这一能力经常被禁用，当前 fork 不把它作为依赖。
+- 分支策略：GitHub 默认分支为 `main`；旧 `nosudo-tmux` 远程分支不再作为发布入口保留。
 
 更多说明：
 
@@ -48,7 +49,7 @@
 
 ## 🚀 安装
 
-这个 README 对应当前 fork 的 `main` 维护线，不是 upstream 原仓库。历史 `nosudo-tmux` 分支只建议用于回看旧实现，不建议新安装继续使用。
+这个 README 对应当前 fork 的 `main` 维护线，不是 upstream 原仓库。历史 `nosudo-tmux` 分支已经退役，新安装和更新都应使用 `main`。
 
 ```bash
 git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git clash-for-linux-install

@@ -30,7 +30,7 @@ systemctl cat mihomo clash 2>/dev/null || true
 ss -ltnp 2>/dev/null | grep -E ':(7890|7891|23571)\b' || true
 ```
 
-如果当前安装目录正在承担日常代理，请另选一个临时安装目录。共享机上默认只做 `tmux` / `nohup` 用户态 E2E，不做 systemd/Tun E2E。
+如果当前安装目录正在承担日常代理，请另选一个临时安装目录。共享机上默认只做 `tmux` / `nohup` 用户态 E2E，不做 systemd/Tun E2E。这样可以验证新代码路径，同时不碰日常使用中的 `~/clashctl` 和当前正在运行的 mihomo / clash。
 
 准备隔离安装目录：
 
@@ -98,6 +98,15 @@ test ! -s "$E2E_DIR/resources/mihomo.pid"
 - 第二条 `clashon --mode nohup` 拒绝，并提示使用 `clashrestart --mode nohup`。
 - `clashrestart --mode nohup` 会先停掉当前活跃模式，再用 `nohup` 启动。
 - `clashoff` 默认只关闭当前活跃模式。
+
+完成用户态 E2E 后建议清理测试安装：
+
+```bash
+clashoff || true
+exit
+pgrep -af "$E2E_DIR" || true
+rm -rf "$E2E_DIR"
+```
 
 ## systemd 与 Tun 高危可选项
 

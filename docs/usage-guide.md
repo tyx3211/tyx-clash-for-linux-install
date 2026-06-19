@@ -143,7 +143,8 @@ clashsub add "https://example.com/sub?clash=3&extend=1"
 clashsub ls
 clashsub use 1
 clashsub update 1
-clashsub update --convert 1
+clashsub update 1 --convert
+clashsub delete 1
 clashsub log
 ```
 
@@ -216,7 +217,7 @@ CLASHCTL_NO_RC=1 CLASHCTL_NO_QUIT=1 bash install.sh --init tmux
 
 ## 从 nosudo-tmux 迁移
 
-旧 `nosudo-tmux` 分支用户建议重新 clone 当前 `main` 后执行无损更新或迁移，不要先卸载旧安装目录。已有 `~/clashctl` 时，主路径是从新源码目录原地刷新旧安装：
+旧 `nosudo-tmux` 分支已经退役。旧分支用户建议重新 clone 当前 `main` 后执行无损更新或迁移，不要先卸载旧安装目录。已有 `~/clashctl` 时，主路径是从新源码目录原地刷新旧安装：
 
 ```bash
 git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git clash-for-linux-install
