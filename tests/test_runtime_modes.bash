@@ -5,16 +5,17 @@ set -euo pipefail
 . "$(dirname "$0")/lib/test_helpers.bash"
 
 CLASHCTL_SH="$TEST_ROOT/scripts/cmd/clashctl.sh"
+SERVICE_RUNTIME_SH="$TEST_ROOT/scripts/lib/service-runtime.sh"
 PREFLIGHT_SH="$TEST_ROOT/scripts/preflight.sh"
 FISH_SH="$TEST_ROOT/scripts/cmd/clashctl.fish"
 
-assert_file_contains "$CLASHCTL_SH" '_clash_adapter_tmux_start\(\)' \
+assert_file_contains "$SERVICE_RUNTIME_SH" '_clash_adapter_tmux_start\(\)' \
     "clashctl should keep tmux adapter available at runtime"
 
-assert_file_contains "$CLASHCTL_SH" '_clash_adapter_nohup_start\(\)' \
+assert_file_contains "$SERVICE_RUNTIME_SH" '_clash_adapter_nohup_start\(\)' \
     "clashctl should keep nohup adapter available at runtime"
 
-assert_file_contains "$CLASHCTL_SH" '_clash_adapter_systemd_start\(\)' \
+assert_file_contains "$SERVICE_RUNTIME_SH" '_clash_adapter_systemd_start\(\)' \
     "clashctl should keep systemd adapter available at runtime"
 
 assert_file_contains "$CLASHCTL_SH" 'clashon "\$@"|clashon "\$\{@\}"' \

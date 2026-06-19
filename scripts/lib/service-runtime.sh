@@ -1,0 +1,571 @@
+_validate_service_mode() {
+    case "$1" in
+    tmux | nohup | systemd)
+        return 0
+        ;;
+    *)
+        _failcat "无效托管模式：${1:-<empty>}，可选值：tmux、nohup、systemd"
+        return 1
+        ;;
+    esac
+}
+
+_get_default_service_mode() {
+    local mode="${INIT_TYPE:-tmux}"
+    _validate_service_mode "$mode" >/dev/null || mode=tmux
+    printf '%s\n' "$mode"
+}
+
+_parse_mode_args() {
+    local __mode_var=$1
+    shift
+    local parsed_mode=
+    while (($#)); do
+        case "$1" in
+        --mode=*)
+            parsed_mode=${1#--mode=}
+            ;;
+        --mode)
+            shift
+            [ $# -gt 0 ] || {
+                _failcat "--mode 需要指定：tmux、nohup、systemd"
+                return 1
+            }
+            parsed_mode=$1
+            ;;
+        -h | --help)
+            parsed_mode=__help__
+            ;;
+        *)
+            _failcat "未知参数：$1"
+            return 1
+            ;;
+        esac
+        shift
+    done
+    [ -z "$parsed_mode" ] && parsed_mode=$(_get_default_service_mode)
+    [ "$parsed_mode" = __help__ ] || _validate_service_mode "$parsed_mode" || return 1
+    printf -v "$__mode_var" '%s' "$parsed_mode"
+}
+
+_service_state_active_mode() {
+    [ -f "$CLASH_SERVICE_STATE" ] || return 1
+    awk -F': *' '$1 == "active_mode" { print $2; found=1; exit } END { exit found ? 0 : 1 }' "$CLASH_SERVICE_STATE"
+}
+
+_write_service_state() {
+    local mode=$1 pid=${2:-}
+    mkdir -p "$CLASH_RESOURCES_DIR"
+    {
+        printf 'active_mode: %s\n' "$mode"
+        [ -n "$pid" ] && printf 'pid: %s\n' "$pid"
+        printf 'started_at: %s\n' "$(date +%s)"
+        printf 'bin_kernel: %s\n' "$BIN_KERNEL"
+        printf 'config_runtime: %s\n' "$CLASH_CONFIG_RUNTIME"
+    } >"$CLASH_SERVICE_STATE"
+}
+
+_clear_service_state() {
+    /usr/bin/rm -f "$CLASH_SERVICE_STATE"
+}
+
+_clash_install_id() {
+    printf '%s' "$CLASH_BASE_DIR" | cksum | awk '{print $1}'
+}
+
+_shell_quote_arg() {
+    printf '%q' "$1"
+}
+
+_clash_kernel_command_for_shell() {
+    printf '%s -d %s -f %s >> %s 2>&1' \
+        "$(_shell_quote_arg "$BIN_KERNEL")" \
+        "$(_shell_quote_arg "$CLASH_RESOURCES_DIR")" \
+        "$(_shell_quote_arg "$CLASH_CONFIG_RUNTIME")" \
+        "$(_shell_quote_arg "$FILE_LOG")"
+}
+
+_clash_tmux_session() {
+    printf 'clash-%s-%s\n' "$KERNEL_NAME" "$(_clash_install_id)"
+}
+
+_pid_matches_current_kernel() {
+    local pid=$1 expected_starttime=${2:-} exe starttime
+    [ -n "$pid" ] && [ -d "/proc/$pid" ] || return 1
+    exe=$(readlink -f "/proc/$pid/exe" 2>/dev/null || true)
+    [ "$exe" = "$BIN_KERNEL" ] || return 1
+
+    if [ -n "$expected_starttime" ]; then
+        starttime=$(_proc_starttime "$pid") || return 1
+        [ "$starttime" = "$expected_starttime" ] || return 1
+    fi
+
+    _proc_cmdline_has_arg "$pid" -d "$CLASH_RESOURCES_DIR" &&
+        _proc_cmdline_has_arg "$pid" -f "$CLASH_CONFIG_RUNTIME"
+}
+
+_proc_cmdline_has_arg() {
+    local pid=$1 key=$2 expected=$3
+    tr '\0' '\n' <"/proc/$pid/cmdline" 2>/dev/null |
+        awk -v key="$key" -v expected="$expected" '
+            want_next {
+                if ($0 == expected) {
+                    found = 1
+                }
+                want_next = 0
+            }
+            $0 == key {
+                want_next = 1
+            }
+            END {
+                exit found ? 0 : 1
+            }
+        '
+}
+
+_proc_starttime() {
+    local pid=$1 stat rest
+    stat=$(cat "/proc/$pid/stat" 2>/dev/null) || return 1
+    rest=${stat#*) }
+    awk '{print $20}' <<<"$rest"
+}
+
+_read_nohup_pid() {
+    [ -f "$FILE_PID" ] || return 1
+    awk -F': *' '
+        NR == 1 && $1 ~ /^[0-9]+$/ { print $1; found=1; exit }
+        $1 == "pid" { print $2; found=1; exit }
+        END { exit found ? 0 : 1 }
+    ' "$FILE_PID"
+}
+
+_read_nohup_starttime() {
+    [ -f "$FILE_PID" ] || return 1
+    awk -F': *' '$1 == "starttime" { print $2; found=1; exit } END { exit found ? 0 : 1 }' "$FILE_PID"
+}
+
+_write_nohup_pid() {
+    local pid=$1 starttime
+    starttime=$(_proc_starttime "$pid" 2>/dev/null || true)
+    {
+        printf 'pid: %s\n' "$pid"
+        [ -n "$starttime" ] && printf 'starttime: %s\n' "$starttime"
+    } >"$FILE_PID"
+}
+
+_clash_adapter_tmux_start() {
+    command -v tmux >/dev/null || {
+        _failcat "未检测到 tmux，请先安装 tmux 或使用 --mode nohup"
+        return 1
+    }
+    local session kernel_cmd
+    session=$(_clash_tmux_session)
+    kernel_cmd=$(_clash_kernel_command_for_shell)
+    tmux new-session -d -s "$session" "$kernel_cmd"
+}
+
+_clash_adapter_tmux_stop() {
+    local session
+    session=$(_clash_tmux_session)
+    tmux has-session -t "$session" 2>/dev/null || return 0
+    tmux kill-session -t "$session" 2>/dev/null
+}
+
+_clash_adapter_tmux_is_active() {
+    command -v tmux >/dev/null || return 1
+    tmux has-session -t "$(_clash_tmux_session)" 2>/dev/null
+}
+
+_clash_adapter_nohup_start() {
+    nohup "$BIN_KERNEL" -d "$CLASH_RESOURCES_DIR" -f "$CLASH_CONFIG_RUNTIME" >>"$FILE_LOG" 2>&1 &
+    _write_nohup_pid "$!"
+}
+
+_clash_adapter_nohup_stop() {
+    local pid starttime
+    pid=$(_read_nohup_pid 2>/dev/null || true)
+    starttime=$(_read_nohup_starttime 2>/dev/null || true)
+    _pid_matches_current_kernel "$pid" "$starttime" || {
+        /usr/bin/rm -f "$FILE_PID"
+        return 0
+    }
+    kill -TERM "$pid" 2>/dev/null || true
+    sleep 0.2
+    _pid_matches_current_kernel "$pid" "$starttime" && kill -KILL "$pid" 2>/dev/null || true
+    /usr/bin/rm -f "$FILE_PID"
+}
+
+_clash_adapter_nohup_is_active() {
+    local pid starttime
+    pid=$(_read_nohup_pid 2>/dev/null || true)
+    starttime=$(_read_nohup_starttime 2>/dev/null || true)
+    _pid_matches_current_kernel "$pid" "$starttime"
+}
+
+_systemctl() {
+    if [ "$(id -u)" -eq 0 ]; then
+        systemctl "$@"
+    else
+        sudo -n systemctl "$@"
+    fi
+}
+
+_clash_systemd_unit_path() {
+    printf '/etc/systemd/system/%s.service\n' "$KERNEL_NAME"
+}
+
+_clash_systemd_registered() {
+    local unit expected
+    unit=$(_clash_systemd_unit_path)
+    expected="ExecStart=${BIN_KERNEL} -d ${CLASH_RESOURCES_DIR} -f ${CLASH_CONFIG_RUNTIME}"
+    [ -f "$unit" ] && grep -Fqx "$expected" "$unit" && return 0
+    systemctl cat "$KERNEL_NAME" 2>/dev/null | grep -Fqx "$expected"
+}
+
+_clash_adapter_systemd_start() {
+    command -v systemctl >/dev/null || {
+        _failcat "未检测到 systemctl，无法使用 --mode systemd"
+        return 1
+    }
+    _clash_systemd_registered || {
+        _failcat "systemd 服务未注册或不属于当前安装，请先 sudo bash install.sh --init systemd"
+        return 1
+    }
+    _systemctl start "$KERNEL_NAME"
+}
+
+_clash_adapter_systemd_stop() {
+    command -v systemctl >/dev/null || return 1
+    _clash_systemd_registered || return 1
+    _systemctl stop "$KERNEL_NAME"
+}
+
+_clash_adapter_systemd_is_active() {
+    command -v systemctl >/dev/null || return 1
+    _clash_systemd_registered || return 1
+    systemctl is-active "$KERNEL_NAME" >/dev/null 2>&1
+}
+
+_clash_adapter_call() {
+    local mode=$1 action=$2
+    "_clash_adapter_${mode}_${action}"
+}
+
+_list_active_modes() {
+    local mode
+    for mode in tmux nohup systemd; do
+        _clash_adapter_call "$mode" is_active >/dev/null 2>&1 && printf '%s\n' "$mode"
+    done
+}
+
+_get_active_mode() {
+    local mode modes count
+    mode=$(_service_state_active_mode 2>/dev/null || true)
+    if [ -n "$mode" ] && _validate_service_mode "$mode" >/dev/null &&
+        _clash_adapter_call "$mode" is_active >/dev/null 2>&1; then
+        printf '%s\n' "$mode"
+        return 0
+    fi
+
+    modes=$(_list_active_modes)
+    count=$(printf '%s\n' "$modes" | sed '/^$/d' | wc -l)
+    case "$count" in
+    0)
+        return 1
+        ;;
+    1)
+        printf '%s\n' "$modes"
+        return 0
+        ;;
+    *)
+        printf '%s\n' "$modes"
+        return 2
+        ;;
+    esac
+}
+
+_clash_service_is_active() {
+    local mode=${1:-}
+    if [ -n "$mode" ]; then
+        _validate_service_mode "$mode" >/dev/null &&
+            _clash_adapter_call "$mode" is_active
+        return $?
+    fi
+    _get_active_mode >/dev/null
+}
+
+_clash_service_start() {
+    local mode=$1 pid=
+    _validate_service_mode "$mode" || return 1
+    _clash_adapter_call "$mode" start || return 1
+    [ "$mode" = nohup ] && pid=$(_read_nohup_pid 2>/dev/null || true)
+    _write_service_state "$mode" "$pid"
+}
+
+_clash_service_stop() {
+    local mode=$1
+    _validate_service_mode "$mode" || return 1
+    _clash_adapter_call "$mode" stop || return 1
+    _clash_adapter_call "$mode" is_active >/dev/null 2>&1 && return 1
+    local active
+    active=$(_service_state_active_mode 2>/dev/null || true)
+    [ "$active" = "$mode" ] && _clear_service_state
+    return 0
+}
+
+_clash_service_log() {
+    less <"$FILE_LOG" "$@"
+}
+
+_clash_service_follow_log() {
+    tail -f -n 0 "$FILE_LOG" "$@"
+}
+
+_detect_proxy_port() {
+    local mixed_port=$("$BIN_YQ" '.mixed-port // ""' "$CLASH_CONFIG_RUNTIME")
+    local http_port=$("$BIN_YQ" '.port // ""' "$CLASH_CONFIG_RUNTIME")
+    local socks_port=$("$BIN_YQ" '.socks-port // ""' "$CLASH_CONFIG_RUNTIME")
+    [ -z "$mixed_port" ] && [ -z "$http_port" ] && [ -z "$socks_port" ] && {
+        http_port=$DEFAULT_HTTP_PORT
+        socks_port=$DEFAULT_SOCKS_PORT
+    }
+
+    local newPort count=0
+    local port_list=()
+    [ -n "$mixed_port" ] && port_list+=("mixed-port|$mixed_port")
+    [ -n "$http_port" ] && port_list+=("port|$http_port")
+    [ -n "$socks_port" ] && port_list+=("socks-port|$socks_port")
+    clashstatus >&/dev/null && local isActive='true'
+    for entry in "${port_list[@]}"; do
+        local yaml_key="${entry%|*}"
+        local var_val="${entry#*|}"
+
+        [ -n "$var_val" ] && _is_port_used "$var_val" && [ "$isActive" != "true" ] && {
+            newPort=$(_get_random_port) || return
+            ((count++))
+            _failcat '🎯' "端口冲突：[$yaml_key] $var_val 🎲 随机分配 $newPort"
+            "$BIN_YQ" -i ".${yaml_key} = $newPort" "$CLASH_CONFIG_MIXIN"
+        }
+    done
+    ((count)) && _merge_config
+}
+
+function clashon() {
+    local mode active active_status
+    _parse_mode_args mode "$@" || return 1
+    [ "$mode" = __help__ ] && {
+        cat <<EOF
+
+- 按默认托管模式启动
+  clashon
+
+- 按指定托管模式启动
+  clashon --mode tmux|nohup|systemd
+
+EOF
+        return 0
+    }
+
+    _detect_proxy_port
+    active=$(_get_active_mode 2>/dev/null)
+    active_status=$?
+    if [ "$active_status" -eq 0 ]; then
+        [ "$active" = "$mode" ] && {
+            _okcat "已开启代理环境（mode=$active）"
+            return 0
+        }
+        _failcat "当前 $active 模式正在运行，请先 clashoff，或执行 clashrestart --mode $mode"
+        return 1
+    fi
+    if [ "$active_status" -eq 2 ]; then
+        _failcat "检测到多个托管模式同时运行，请先执行 clashstatus --all 并用 clashoff --mode <mode> 清理"
+        return 1
+    fi
+
+    _clash_service_start "$mode" >/dev/null 2>&1 || {
+        _failcat "启动失败：无法以 $mode 模式启动"
+        return 1
+    }
+
+    local deadline=$((SECONDS + 5))
+    while [ "$SECONDS" -le "$deadline" ]; do
+        clashstatus >&/dev/null && {
+            _okcat "已开启代理环境（mode=$mode）"
+            return 0
+        }
+        sleep 0.2
+    done
+
+    {
+        _clash_service_stop "$mode" >/dev/null 2>&1 || true
+        _clear_service_state
+        _failcat '启动失败: 执行 clashlog 查看日志'
+        return 1
+    }
+}
+function clashoff() {
+    local mode active active_status
+    mode=
+    while (($#)); do
+        case "$1" in
+        --mode=*)
+            mode=${1#--mode=}
+            ;;
+        --mode)
+            shift
+            [ $# -gt 0 ] || {
+                _failcat "--mode 需要指定：tmux、nohup、systemd"
+                return 1
+            }
+            mode=$1
+            ;;
+        -h | --help)
+            cat <<EOF
+
+- 关闭当前活跃托管模式
+  clashoff
+
+- 显式关闭指定托管模式
+  clashoff --mode tmux|nohup|systemd
+
+EOF
+            return 0
+            ;;
+        *)
+            _failcat "未知参数：$1"
+            return 1
+            ;;
+        esac
+        shift
+    done
+    if [ -n "$mode" ]; then
+        _validate_service_mode "$mode" || return 1
+    fi
+    if [ -z "$mode" ]; then
+        active=$(_get_active_mode 2>/dev/null)
+        active_status=$?
+        [ "$active_status" -eq 1 ] && {
+            _unset_system_proxy
+            _okcat '已关闭代理环境'
+            return 0
+        }
+        [ "$active_status" -eq 2 ] && {
+            _failcat "检测到多个托管模式同时运行，请先执行 clashstatus --all，再用 clashoff --mode <mode> 指定关闭"
+            return 1
+        }
+        mode=$active
+    fi
+
+    _clash_service_is_active "$mode" >/dev/null 2>&1 && {
+        _clash_service_stop "$mode" >/dev/null
+        _clash_service_is_active "$mode" >/dev/null 2>&1 && {
+            _failcat '代理环境关闭失败'
+            return 1
+        }
+    }
+    _unset_system_proxy
+    _okcat '已关闭代理环境'
+}
+
+clashrestart() {
+    local mode active active_status has_mode_arg=false arg
+    for arg in "$@"; do
+        case "$arg" in
+        --mode | --mode=*)
+            has_mode_arg=true
+            ;;
+        esac
+    done
+    _parse_mode_args mode "$@" || return 1
+    [ "$mode" = __help__ ] && {
+        cat <<EOF
+
+- 重启当前活跃托管模式
+  clashrestart
+
+- 切换到指定托管模式
+  clashrestart --mode tmux|nohup|systemd
+
+EOF
+        return 0
+    }
+    active=$(_get_active_mode 2>/dev/null)
+    active_status=$?
+    [ "$active_status" -eq 2 ] && {
+        _failcat "检测到多个托管模式同时运行，请先执行 clashstatus --all 并手动清理"
+        return 1
+    }
+    if [ "$active_status" -eq 0 ]; then
+        [ "$has_mode_arg" = false ] && mode=$active
+        clashoff --mode "$active" >/dev/null || return 1
+    fi
+    clashon --mode "$mode"
+}
+function clashstatus() {
+    local mode active_status status=1
+    case "${1:-}" in
+    --all)
+        for mode in tmux nohup systemd; do
+            if _clash_service_is_active "$mode" >/dev/null 2>&1; then
+                _okcat "$mode：运行中"
+                status=0
+            else
+                _failcat "$mode：未运行" || true
+            fi
+        done
+        return "$status"
+        ;;
+    --mode=*)
+        mode=${1#--mode=}
+        _validate_service_mode "$mode" || return 1
+        ;;
+    --mode)
+        shift
+        mode=${1:-}
+        _validate_service_mode "$mode" || return 1
+        ;;
+    -h | --help)
+        cat <<EOF
+
+- 查看当前活跃模式状态
+  clashstatus
+
+- 查看全部托管模式状态
+  clashstatus --all
+
+EOF
+        return 0
+        ;;
+    "")
+        mode=$(_get_active_mode 2>/dev/null)
+        active_status=$?
+        [ "$active_status" -eq 2 ] && {
+            _failcat "检测到多个托管模式同时运行，请执行 clashstatus --all"
+            return 1
+        }
+        ;;
+    *)
+        _failcat "未知参数：$1"
+        return 1
+        ;;
+    esac
+    [ -n "$mode" ] && _clash_service_is_active "$mode" >/dev/null 2>&1 || {
+        _failcat "内核未运行"
+        return 1
+    }
+    _detect_ext_addr
+    local api="http://${EXT_IP}:${EXT_PORT}/version"
+    local secret="$(_get_secret)"
+    local auth_args=()
+    [ -n "$secret" ] && auth_args=(-H "Authorization: Bearer $secret")
+    curl --silent --fail --noproxy "*" "${auth_args[@]}" "$api" >/dev/null && {
+        _okcat "内核运行中（mode=$mode）"
+        return 0
+    }
+    _failcat "内核运行中但 API 不可达：$api"
+    return 1
+}
+
+function clashlog() {
+    _clash_service_log "$@"
+}

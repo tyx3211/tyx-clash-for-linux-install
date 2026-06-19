@@ -8,6 +8,10 @@ INSTALL_SH="$TEST_ROOT/install.sh"
 PREFLIGHT_SH="$TEST_ROOT/scripts/preflight.sh"
 COMMON_SH="$TEST_ROOT/scripts/cmd/common.sh"
 CLASHCTL_SH="$TEST_ROOT/scripts/cmd/clashctl.sh"
+PROXY_SH="$TEST_ROOT/scripts/lib/proxy.sh"
+SERVICE_RUNTIME_SH="$TEST_ROOT/scripts/lib/service-runtime.sh"
+TUN_SH="$TEST_ROOT/scripts/lib/tun.sh"
+SUBSCRIPTION_SH="$TEST_ROOT/scripts/lib/subscription.sh"
 FISH_SH="$TEST_ROOT/scripts/cmd/clashctl.fish"
 UNINSTALL_SH="$TEST_ROOT/uninstall.sh"
 
@@ -100,10 +104,10 @@ grep -q $'marker\nsource_installed' <<<"$uninstall_order" ||
 assert_file_contains "$CLASHCTL_SH" 'CLASH_INSTALLED_INIT_TYPE' \
     "tun gate should use the installed service mode, not only mutable .env INIT_TYPE"
 
-assert_file_contains "$CLASHCTL_SH" '_restore_tun_mixin' \
+assert_file_contains "$TUN_SH" '_restore_tun_mixin' \
     "tunon should restore mixin config if enabling Tun fails"
 
-assert_file_contains "$CLASHCTL_SH" '_is_tun_enabled' \
+assert_file_contains "$TUN_SH" '_is_tun_enabled' \
     "tunoff should be able to disable stale tun.enable even when the device is absent"
 
 assert_file_contains "$COMMON_SH" 'BIN_SUBCONVERTER_PID' \
@@ -118,22 +122,22 @@ assert_file_contains "$COMMON_SH" 'newPort=\$\(_get_random_port\) \|\| return 1'
 assert_file_contains "$COMMON_SH" '_detect_subconverter_port \|\| return 1' \
     "subconverter port detection failures should stop conversion startup"
 
-assert_file_contains "$CLASHCTL_SH" '_validate_downloaded_config "\$CLASH_CONFIG_TEMP"' \
+assert_file_contains "$SUBSCRIPTION_SH" '_validate_downloaded_config "\$CLASH_CONFIG_TEMP"' \
     "clashsub update --convert should run post-conversion safety validation"
 
 assert_file_contains "$FISH_SH" 'clashtun' \
     "fish wrapper should expose clashtun for clashctl tun"
 
-assert_file_contains "$CLASHCTL_SH" 'sudo -n systemctl' \
+assert_file_contains "$SERVICE_RUNTIME_SH" 'sudo -n systemctl' \
     "systemd adapter should fail fast instead of prompting for sudo password"
 
-assert_file_contains "$CLASHCTL_SH" '_proc_cmdline_has_arg' \
+assert_file_contains "$SERVICE_RUNTIME_SH" '_proc_cmdline_has_arg' \
     "nohup pid matching should parse /proc cmdline as NUL-separated arguments"
 
-assert_file_contains "$CLASHCTL_SH" '_proc_starttime' \
+assert_file_contains "$SERVICE_RUNTIME_SH" '_proc_starttime' \
     "nohup pid matching should record process starttime to reduce PID reuse risk"
 
-assert_file_contains "$CLASHCTL_SH" '_clash_service_is_active.*\|\| return 0|_clash_service_is_active' \
+assert_file_contains "$PROXY_SH" '_clash_service_is_active.*\|\| return 0|_clash_service_is_active' \
     "watch_proxy should check that the managed kernel is active before exporting proxy variables"
 
 pass "audit regression checks"

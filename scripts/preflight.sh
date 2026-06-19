@@ -216,12 +216,57 @@ _load_zip() {
     ZIP_YQ=$(echo "${ZIP_BASE_DIR}"/yq*)
     ZIP_SUBCONVERTER=$(echo "${ZIP_BASE_DIR}"/subconverter*)
 }
+_fetch_latest_tag() {
+    local repo=$1 body tag
+    body=$(
+        curl \
+            --silent \
+            --location \
+            --max-time 10 \
+            --retry 1 \
+            -H 'Accept: application/vnd.github+json' \
+            "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null
+    ) || return 1
+    tag=$(
+        printf '%s' "$body" |
+            grep -oE '"tag_name"[[:space:]]*:[[:space:]]*"[^"]+"' |
+            head -1 |
+            sed -E 's/.*"([^"]+)"[[:space:]]*$/\1/'
+    )
+    [ -n "$tag" ] && printf '%s\n' "$tag"
+}
+_resolve_version() {
+    local varname=$1 repo=$2 tag
+    [ -n "${!varname:-}" ] && return 0
+
+    tag=$(_fetch_latest_tag "$repo") || {
+        _error_quit "${repo} 版本获取失败，请在 .env 中手动指定 $varname"
+        return 1
+    }
+    printf -v "$varname" '%s' "$tag"
+    _okcat '🏷️ ' "${repo} -> $tag"
+}
 _download_zip() {
     (($#)) || return 0
     local url_clash url_mihomo url_yq url_subconverter
     local subconverter_repo=${SUBCONVERTER_REPO:-tindy2013/subconverter}
     local download_timeout=${CLASHCTL_DOWNLOAD_TIMEOUT:-60}
     local arch=$(uname -m)
+    local item
+    for item in "$@"; do
+        case $item in
+        mihomo)
+            _resolve_version VERSION_MIHOMO MetaCubeX/mihomo || return 1
+            ;;
+        yq)
+            _resolve_version VERSION_YQ mikefarah/yq || return 1
+            ;;
+        subconverter)
+            _resolve_version VERSION_SUBCONVERTER "$subconverter_repo" || return 1
+            ;;
+        esac
+    done
+
     case "$arch" in
     x86_64)
         local flags=$(grep -m1 '^flags' /proc/cpuinfo)
@@ -265,7 +310,7 @@ _download_zip() {
         [subconverter]="$url_subconverter"
     )
 
-    local item target_zips=()
+    local target_zips=()
     _okcat '🖥️ ' "系统架构：$arch $level"
     for item in "$@"; do
         local url="${urls[$item]}"

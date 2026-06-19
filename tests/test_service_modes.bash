@@ -8,6 +8,7 @@ ENV_FILE="$TEST_ROOT/.env"
 INSTALL_SH="$TEST_ROOT/install.sh"
 PREFLIGHT_SH="$TEST_ROOT/scripts/preflight.sh"
 CLASHCTL_SH="$TEST_ROOT/scripts/cmd/clashctl.sh"
+TUN_SH="$TEST_ROOT/scripts/lib/tun.sh"
 
 assert_file_contains "$ENV_FILE" '^INIT_TYPE=tmux$' \
     "tmux should remain the default init mode"
@@ -27,11 +28,13 @@ assert_file_contains "$PREFLIGHT_SH" '--init=' \
 assert_file_contains "$PREFLIGHT_SH" '--init' \
     "_parse_args should accept --init <mode>"
 
-clashtun_body=$(extract_function "clashtun" "$CLASHCTL_SH")
+clashtun_body=$(extract_function "clashtun" "$TUN_SH")
+[ -n "$clashtun_body" ] ||
+    fail "extract_function should read function-style clashtun definitions"
 grep -q 'no-sudo 版已禁用' <<<"$clashtun_body" &&
     fail "clashtun should be mode-gated instead of permanently disabled"
 
-assert_file_contains "$CLASHCTL_SH" 'tunon\(\)' \
+assert_file_contains "$TUN_SH" 'tunon\(\)' \
     "clashctl should provide tunon implementation for sudo-capable mode"
 
 assert_file_contains "$INSTALL_SH" '_parse_args "\$@"' \

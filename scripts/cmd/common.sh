@@ -10,7 +10,14 @@ _clashctl_source_env() {
     local init_type_set=${INIT_TYPE+x} init_type_value=${INIT_TYPE-}
     local installed_init_set=${CLASH_INSTALLED_INIT_TYPE+x} installed_init_value=${CLASH_INSTALLED_INIT_TYPE-}
 
-    . "$env_file"
+    [ -r "$env_file" ] || {
+        printf 'clashctl: missing required env file: %s\n' "$env_file" >&2
+        return 1
+    }
+    . "$env_file" || {
+        printf 'clashctl: failed to source env file: %s\n' "$env_file" >&2
+        return 1
+    }
 
     [ "$kernel_name_set" = x ] && KERNEL_NAME=$kernel_name_value
     [ "$base_dir_set" = x ] && CLASH_BASE_DIR=$base_dir_value
@@ -20,7 +27,7 @@ _clashctl_source_env() {
     return 0
 }
 
-_clashctl_source_env
+_clashctl_source_env || { return 1 2>/dev/null || exit 1; }
 
 CLASH_RESOURCES_DIR="${CLASH_BASE_DIR}/resources"
 CLASH_CONFIG_BASE="${CLASH_RESOURCES_DIR}/config.yaml"

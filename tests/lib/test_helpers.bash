@@ -34,7 +34,7 @@ extract_function() {
     local file=$2
 
     awk -v name="$function_name" '
-        $0 ~ "^" name "\\(\\)[[:space:]]*\\{" {
+        $0 ~ "^(function[[:space:]]+)?" name "\\(\\)[[:space:]]*\\{" {
             in_function = 1
             depth = 0
         }

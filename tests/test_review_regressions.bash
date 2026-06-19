@@ -7,6 +7,8 @@ set -euo pipefail
 INSTALL_SH="$TEST_ROOT/install.sh"
 PREFLIGHT_SH="$TEST_ROOT/scripts/preflight.sh"
 CLASHCTL_SH="$TEST_ROOT/scripts/cmd/clashctl.sh"
+TUN_SH="$TEST_ROOT/scripts/lib/tun.sh"
+SUBSCRIPTION_SH="$TEST_ROOT/scripts/lib/subscription.sh"
 SYSTEMD_SH="$TEST_ROOT/scripts/init/systemd.sh"
 ENV_FILE="$TEST_ROOT/.env"
 
@@ -34,31 +36,60 @@ assert_file_contains "$PREFLIGHT_SH" '_validate_install_path' \
 assert_file_contains "$PREFLIGHT_SH" '_install_service\(\)' \
     "preflight should define install service rendering"
 
+assert_file_contains "$PREFLIGHT_SH" '_fetch_latest_tag\(\)' \
+    "preflight should support resolving latest dependency versions when version variables are empty"
+
+assert_file_contains "$PREFLIGHT_SH" '_resolve_version VERSION_MIHOMO MetaCubeX/mihomo' \
+    "preflight should resolve missing mihomo version from GitHub latest release"
+
+assert_file_contains "$PREFLIGHT_SH" '_resolve_version VERSION_YQ mikefarah/yq' \
+    "preflight should resolve missing yq version from GitHub latest release"
+
+assert_file_contains "$PREFLIGHT_SH" '_resolve_version VERSION_SUBCONVERTER "\$subconverter_repo"' \
+    "preflight should resolve missing subconverter version from the configured repository"
+
+latest_version_tmp=$(make_test_tmpdir "clash-latest-version")
+(
+    set +e
+    . "$CLASHCTL_SH"
+    . "$PREFLIGHT_SH"
+
+    curl() {
+        printf '%s\n' '{"tag_name":"v9.9.9"}'
+    }
+
+    VERSION_YQ=
+    _resolve_version VERSION_YQ mikefarah/yq >/dev/null || exit 1
+    printf '%s\n' "$VERSION_YQ" >"$latest_version_tmp/version"
+)
+grep -qx 'v9.9.9' "$latest_version_tmp/version" ||
+    fail "empty dependency version should be resolved from the latest release tag"
+
 assert_file_contains "$SYSTEMD_SH" 'CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE' \
     "systemd service should keep only network-related capabilities"
 
 assert_file_not_contains "$SYSTEMD_SH" 'CAP_SYS_PTRACE|CAP_DAC_OVERRIDE|CAP_DAC_READ_SEARCH|CAP_SYS_TIME' \
     "systemd service should not grant unrelated broad capabilities"
 
-assert_file_contains "$CLASHCTL_SH" '_download_config "\$CLASH_CONFIG_TEMP" "\$url" \\|\\|' \
+assert_file_contains "$SUBSCRIPTION_SH" '_download_config "\$CLASH_CONFIG_TEMP" "\$url" \\|\\|' \
     "clashsub add should stop immediately when subscription download fails"
 
-assert_file_contains "$CLASHCTL_SH" '_download_convert_config "\$CLASH_CONFIG_TEMP" "\$url" \\|\\|' \
+assert_file_contains "$SUBSCRIPTION_SH" '_download_convert_config "\$CLASH_CONFIG_TEMP" "\$url" \\|\\|' \
     "clashsub update --convert should stop immediately when conversion download fails"
 
-assert_file_contains "$CLASHCTL_SH" '_download_config "\$CLASH_CONFIG_TEMP" "\$url" \\|\\|' \
+assert_file_contains "$SUBSCRIPTION_SH" '_download_config "\$CLASH_CONFIG_TEMP" "\$url" \\|\\|' \
     "clashsub update should stop immediately when subscription download fails"
 
-assert_file_contains "$CLASHCTL_SH" '_make_config_temp' \
+assert_file_contains "$SUBSCRIPTION_SH" '_make_config_temp' \
     "subscription updates should use a fresh temporary file instead of reusing stale temp.yaml"
 
-assert_file_contains "$CLASHCTL_SH" 'mktemp "\$\{CLASH_RESOURCES_DIR\}/temp\.' \
+assert_file_contains "$SUBSCRIPTION_SH" 'mktemp "\$\{CLASH_RESOURCES_DIR\}/temp\.' \
     "subscription temporary files should be created with mktemp"
 
-assert_file_contains "$CLASHCTL_SH" '_merge_config \\|\\|' \
+assert_file_contains "$TUN_SH" '_merge_config \\|\\|' \
     "tun operations should be able to recover when merge validation fails"
 
-assert_file_contains "$CLASHCTL_SH" '_merge_config_restart \\|\\| return 1' \
+assert_file_contains "$SUBSCRIPTION_SH" '_merge_config_restart \\|\\| return 1' \
     "clashsub use should stop when runtime merge fails"
 
 assert_file_contains "$CLASHCTL_SH" 'tun[[:space:]]+管理 Tun 模式' \
@@ -141,6 +172,9 @@ assert_file_contains "$ENV_FILE" 'CLASHCTL_DOWNLOAD_TIMEOUT=' \
 assert_file_contains "$ENV_FILE" 'CLASHCTL_SUB_TIMEOUT=' \
     "subscription download timeout should be configurable like upstream"
 
+assert_file_contains "$ENV_FILE" 'VERSION_MIHOMO.*VERSION_YQ.*VERSION_SUBCONVERTER|留空时安装脚本会通过 GitHub releases/latest 自动解析最新 tag' \
+    "dependency version comments should document latest-tag resolution"
+
 tmp=$(make_test_tmpdir "clash-sub-fail")
 (
     set +e
@@ -161,6 +195,87 @@ tmp=$(make_test_tmpdir "clash-sub-fail")
     [ "$status" -ne 0 ] || fail "clashsub add should fail when download fails"
     [ "$valid_called" = false ] || fail "clashsub add should not validate stale temp after download failure"
 )
+
+sub_add_use_tmp=$(make_test_tmpdir "clash-sub-add-use")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    CLASH_RESOURCES_DIR="$sub_add_use_tmp/resources"
+    CLASH_PROFILES_DIR="$sub_add_use_tmp/profiles"
+    CLASH_PROFILES_META="$sub_add_use_tmp/profiles.yaml"
+    CLASH_PROFILES_LOG="$sub_add_use_tmp/profiles.log"
+    BIN_YQ="$sub_add_use_tmp/yq"
+    mkdir -p "$CLASH_RESOURCES_DIR" "$CLASH_PROFILES_DIR"
+    printf 'profiles: []\n' >"$CLASH_PROFILES_META"
+    cat >"$BIN_YQ" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+-i)
+    exit 0
+    ;;
+*)
+    printf '7\n'
+    ;;
+esac
+EOF
+    chmod +x "$BIN_YQ"
+
+    _error_quit() { return 97; }
+    _get_id_by_url() { return 1; }
+    _make_config_temp() {
+        printf '%s\n' "$sub_add_use_tmp/temp.yaml"
+    }
+    _download_config() {
+        printf '%s\n' "$2" >>"$sub_add_use_tmp/downloaded-url"
+        printf 'profile\n' >"$1"
+    }
+    _valid_config() { return 0; }
+    _logging_sub() { :; }
+    _okcat() { :; }
+    _sub_use() {
+        printf '%s\n' "$1" >>"$sub_add_use_tmp/used-id"
+    }
+
+    _sub_add -u "https://example.invalid/sub-a"
+    _sub_add --use "https://example.invalid/sub-b"
+)
+grep -qx 'https://example.invalid/sub-a' "$sub_add_use_tmp/downloaded-url" ||
+    fail "clashsub add -u should treat the following argument as the subscription URL"
+grep -qx 'https://example.invalid/sub-b' "$sub_add_use_tmp/downloaded-url" ||
+    fail "clashsub add --use should treat the following argument as the subscription URL"
+[ "$(grep -c '^7$' "$sub_add_use_tmp/used-id")" -eq 2 ] ||
+    fail "clashsub add -u/--use should immediately activate the added subscription"
+
+sub_delete_tmp=$(make_test_tmpdir "clash-sub-delete")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    _sub_del() {
+        printf '%s\n' "$1" >"$sub_delete_tmp/deleted-id"
+    }
+
+    clashsub delete 5
+)
+grep -qx '5' "$sub_delete_tmp/deleted-id" ||
+    fail "clashsub delete should alias clashsub del like upstream"
+
+sub_update_args_tmp=$(make_test_tmpdir "clash-sub-update-args")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    _error_quit() { return 97; }
+    _get_url_by_id() {
+        printf '%s\n' "$1" >"$sub_update_args_tmp/seen-id"
+        return 1
+    }
+
+    _sub_update 1 --convert || true
+)
+grep -qx '1' "$sub_update_args_tmp/seen-id" ||
+    fail "clashsub update <id> --convert should preserve the subscription id"
 
 rollback_tmp=$(make_test_tmpdir "clash-rollback")
 (

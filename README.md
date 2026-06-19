@@ -96,6 +96,7 @@ sudo bash install.sh --init=systemd
 - `nohup`：普通用户备用模式，不依赖 `tmux`，但进程托管能力较弱。
 - `systemd`：需要 root 或 sudo，会注册系统服务，支持 `clashtun on/off`。
 - 安装后也可以用 `clashon --mode ...` / `clashrestart --mode ...` 在运行时选择本次托管模式。
+- `.env` 里的 `VERSION_MIHOMO`、`VERSION_YQ`、`VERSION_SUBCONVERTER` 默认固定版本；如果留空，安装脚本会通过 GitHub `releases/latest` 自动解析最新 tag。共享机或网络受限环境建议固定版本，便于复现和排错。
 
 - `.env` 里的 `CLASH_CONFIG_URL` 默认留空，不再内置任何真实订阅链接。
 - 安装结束时，如果 `CLASH_CONFIG_URL` 仍为空，脚本会交互式提示输入订阅链接。
@@ -288,9 +289,10 @@ Usage:
   clashsub COMMAND [OPTIONS]
 
 Commands:
-  add <url>       添加订阅
+  add [-u|--use] <url>
+                  添加订阅
   ls              查看订阅
-  del <id>        删除订阅
+  del|delete <id> 删除订阅
   use <id>        使用订阅
   update [id]     更新订阅
   log             订阅日志
@@ -305,8 +307,10 @@ Options:
 
 ```bash
 clashctl sub add "https://example.com/sub?clash=3&extend=1"
+clashctl sub add --use "https://example.com/sub?clash=3&extend=1"
 clashctl sub use 1
 clashctl sub update 1
+clashctl sub update 1 --convert
 clashctl sub ls
 ```
 
