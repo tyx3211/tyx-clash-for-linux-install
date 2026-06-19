@@ -13,6 +13,68 @@ CLASH_CMD_DIR="${CLASH_BASE_DIR}/$SCRIPT_CMD_DIR"
 
 FILE_LOG="${CLASH_RESOURCES_DIR}/${KERNEL_NAME}.log"
 FILE_PID="${CLASH_RESOURCES_DIR}/${KERNEL_NAME}.pid"
+INSTALL_MARKER="${CLASH_BASE_DIR}/.clashctl-install-root"
+
+_refresh_install_paths() {
+    CLASH_RESOURCES_DIR="${CLASH_BASE_DIR}/resources"
+    CLASH_CONFIG_BASE="${CLASH_RESOURCES_DIR}/config.yaml"
+    CLASH_CONFIG_MIXIN="${CLASH_RESOURCES_DIR}/mixin.yaml"
+    CLASH_CONFIG_SIDECAR="${CLASH_RESOURCES_DIR}/clashctl.yaml"
+    CLASH_CONFIG_RUNTIME="${CLASH_RESOURCES_DIR}/runtime.yaml"
+    CLASH_CONFIG_TEMP="${CLASH_RESOURCES_DIR}/temp.yaml"
+
+    BIN_BASE_DIR="${CLASH_BASE_DIR}/bin"
+    BIN_KERNEL="${BIN_BASE_DIR}/$KERNEL_NAME"
+    BIN_YQ="${BIN_BASE_DIR}/yq"
+    BIN_SUBCONVERTER_DIR="${BIN_BASE_DIR}/subconverter"
+    BIN_SUBCONVERTER="${BIN_SUBCONVERTER_DIR}/subconverter"
+    BIN_SUBCONVERTER_START="$BIN_SUBCONVERTER"
+    BIN_SUBCONVERTER_CONFIG="$BIN_SUBCONVERTER_DIR/pref.yml"
+    BIN_SUBCONVERTER_LOG="${BIN_SUBCONVERTER_DIR}/latest.log"
+    BIN_SUBCONVERTER_PID="${BIN_SUBCONVERTER_DIR}/subconverter.pid"
+
+    CLASH_PROFILES_DIR="${CLASH_RESOURCES_DIR}/profiles"
+    CLASH_PROFILES_META="${CLASH_RESOURCES_DIR}/profiles.yaml"
+    CLASH_PROFILES_LOG="${CLASH_RESOURCES_DIR}/profiles.log"
+
+    RESOURCES_BASE_DIR=".${CLASH_RESOURCES_DIR#"$CLASH_BASE_DIR"}"
+    ZIP_BASE_DIR=".${CLASH_RESOURCES_DIR#"$CLASH_BASE_DIR"}/zip"
+    CLASH_CMD_DIR="${CLASH_BASE_DIR}/$SCRIPT_CMD_DIR"
+    FILE_LOG="${CLASH_RESOURCES_DIR}/${KERNEL_NAME}.log"
+    FILE_PID="${CLASH_RESOURCES_DIR}/${KERNEL_NAME}.pid"
+    INSTALL_MARKER="${CLASH_BASE_DIR}/.clashctl-install-root"
+}
+
+_normalize_sudo_install_path() {
+    _is_regular_sudo || return 0
+
+    case "$CLASH_BASE_DIR" in
+    /root | /root/*)
+        local sudo_home
+        sudo_home=$(awk -F: -v user="$SUDO_USER" '$1==user{print $6}' /etc/passwd)
+        [ -n "$sudo_home" ] || _error_quit "无法识别 sudo 调用用户的 HOME：$SUDO_USER"
+        CLASH_BASE_DIR="${sudo_home}${CLASH_BASE_DIR#/root}"
+        ;;
+    esac
+}
+
+_validate_init_mode() {
+    [ -z "$INIT_TYPE" ] && INIT_TYPE='tmux'
+
+    case "$INIT_TYPE" in
+    tmux | nohup)
+        return 0
+        ;;
+    systemd)
+        command -v systemctl >&/dev/null || _error_quit "未检测到 systemctl，请改用 INIT_TYPE=tmux 或 INIT_TYPE=nohup"
+        _is_root || _is_regular_sudo || _error_quit "INIT_TYPE=systemd 需要 root 或 sudo 执行"
+        return 0
+        ;;
+    *)
+        _error_quit "仅支持 INIT_TYPE=tmux、nohup、systemd"
+        ;;
+    esac
+}
 
 _valid_required() {
     local required_cmds=("xz" "pgrep" "pkill" "curl" "tar" 'unzip' "shuf")
@@ -23,7 +85,7 @@ _valid_required() {
         required_cmds+=("tmux")
         ;;
     systemd)
-        required_cmds+=("systemctl")
+        required_cmds+=("systemctl" "ip")
         ;;
     esac
 
@@ -69,6 +131,7 @@ _parse_args() {
         esac
         shift
     done
+    _refresh_install_paths
 }
 
 _prepare_zip() {
@@ -194,7 +257,7 @@ _unzip_zip() {
 
 # shellcheck disable=SC2206
 _detect_init() {
-    [ -z "$INIT_TYPE" ] && INIT_TYPE='tmux'
+    _validate_init_mode
 
     service_log=(less '<' $FILE_LOG)
     service_follow_log=(tail -f -n 0 $FILE_LOG)
@@ -211,8 +274,6 @@ _detect_init() {
         _nohup
         ;;
     systemd)
-        command -v systemctl >&/dev/null || _error_quit "未检测到 systemctl，请改用 INIT_TYPE=tmux 或 INIT_TYPE=nohup"
-        _is_root || _is_regular_sudo || _error_quit "INIT_TYPE=systemd 需要 root 或 sudo 执行"
         _systemd
         ;;
     *)
@@ -335,6 +396,7 @@ _install_service() {
         -e "s#placeholder_stop#${sed_service_stop}#g" \
         -e "s#placeholder_log#${sed_service_log}#g" \
         -e "s#placeholder_follow_log#${sed_service_follow_log}#g" \
+        -e "s#placeholder_init_type#${INIT_TYPE}#g" \
         "$CLASH_CMD_DIR/clashctl.sh" "$CLASH_CMD_DIR/common.sh"
 
     "${service_enable[@]}" >&/dev/null && _okcat '🚀' '已设置开机自启'
@@ -388,6 +450,7 @@ _revoke_rc() {
 
 _set_envs() {
     _set_env INIT_TYPE "$INIT_TYPE"
+    _set_env CLASH_INSTALLED_INIT_TYPE "$INIT_TYPE"
     _set_env KERNEL_NAME "$KERNEL_NAME"
     _set_env CLASH_BASE_DIR "$CLASH_BASE_DIR"
     _set_env VERSION_MIHOMO "$VERSION_MIHOMO"

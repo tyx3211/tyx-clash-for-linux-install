@@ -5,6 +5,7 @@ THIS_SCRIPT_DIR=$(dirname "$(readlink -f "${BASH_SOURCE:-${(%):-%N}}")")
 
 DEFAULT_HTTP_PORT=7890
 DEFAULT_SOCKS_PORT=7891
+CLASH_INSTALLED_INIT_TYPE=${CLASH_INSTALLED_INIT_TYPE:-placeholder_init_type}
 
 _ensure_sidecar_config() {
     [ -s "$CLASH_CONFIG_SIDECAR" ] && return 0
@@ -526,8 +527,29 @@ EOF
     esac
 }
 
+_get_installed_init_type() {
+    case "$CLASH_INSTALLED_INIT_TYPE" in
+    "" | placeholder_init_type)
+        echo "${INIT_TYPE:-tmux}"
+        ;;
+    *)
+        echo "$CLASH_INSTALLED_INIT_TYPE"
+        ;;
+    esac
+}
+
 _tun_supported() {
-    [ "$INIT_TYPE" = "systemd" ]
+    [ "$(_get_installed_init_type)" = "systemd" ]
+}
+
+_restore_tun_mixin() {
+    local backup=$1
+    local restart_after_restore=$2
+
+    [ -f "$backup" ] || return 0
+    /bin/mv -f "$backup" "$CLASH_CONFIG_MIXIN"
+    _merge_config
+    [ "$restart_after_restore" = true ] && placeholder_start >/dev/null
 }
 
 tunstatus() {
@@ -544,7 +566,7 @@ tunstatus() {
     local device
     device=$("$BIN_YQ" '.tun.device // ""' "$CLASH_CONFIG_RUNTIME")
     [ -z "$device" ] && device="Meta"
-    ip link show | grep -qs "$device" && {
+    ip link show "$device" >/dev/null 2>&1 && {
         _okcat 'Tun 状态：启用'
         return 0
     }
@@ -562,11 +584,15 @@ tunon() {
         return 1
     }
 
+    local was_active=false backup="${CLASH_CONFIG_TEMP}.tun.bak"
+    placeholder_is_active >&/dev/null && was_active=true
     tunstatus 2>/dev/null && return 0
+    cat "$CLASH_CONFIG_MIXIN" >"$backup" || return 1
     placeholder_stop >/dev/null
     "$BIN_YQ" -i '.tun.enable = true' "$CLASH_CONFIG_MIXIN"
     _merge_config
     placeholder_start >/dev/null || {
+        _restore_tun_mixin "$backup" "$was_active"
         _failcat 'Tun 模式开启失败'
         return 1
     }
@@ -579,15 +605,19 @@ tunon() {
             placeholder_start >/dev/null
             sleep 1
             tunstatus >&/dev/null || {
+                _restore_tun_mixin "$backup" "$was_active"
                 _failcat 'Tun 模式开启失败，请检查代理内核日志'
                 return 1
             }
+            /usr/bin/rm -f "$backup"
             _okcat "Tun 模式已开启"
             return 0
         }
+        _restore_tun_mixin "$backup" "$was_active"
         _failcat 'Tun 模式开启失败，请检查代理内核日志'
         return 1
     }
+    /usr/bin/rm -f "$backup"
     _okcat "Tun 模式已开启"
 }
 
@@ -597,7 +627,9 @@ tunoff() {
         return 1
     }
 
-    tunstatus >/dev/null || return 0
+    _is_tun_enabled || {
+        tunstatus >/dev/null 2>&1 || return 0
+    }
     placeholder_stop >/dev/null
     "$BIN_YQ" -i '.tun.enable = false' "$CLASH_CONFIG_MIXIN"
     _merge_config
@@ -900,7 +932,8 @@ _sub_update() {
     _okcat "✈️ " "更新订阅：[$id] $url"
 
     [ "$is_convert" = true ] && {
-        _download_convert_config "$CLASH_CONFIG_TEMP" "$url"
+        _download_convert_config "$CLASH_CONFIG_TEMP" "$url" &&
+            _validate_downloaded_config "$CLASH_CONFIG_TEMP"
     }
     [ "$is_convert" != true ] && {
         _download_config "$CLASH_CONFIG_TEMP" "$url"

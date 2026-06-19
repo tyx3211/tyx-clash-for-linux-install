@@ -4,6 +4,9 @@
 . scripts/preflight.sh
 
 _parse_args "$@"
+_normalize_sudo_install_path
+_refresh_install_paths
+_validate_init_mode
 _valid
 
 _prepare_zip
@@ -13,6 +16,7 @@ _okcat "安装内核：$KERNEL_NAME by ${INIT_TYPE}"
 _okcat '📦' "安装路径：$CLASH_BASE_DIR"
 
 /bin/cp -rf . "$CLASH_BASE_DIR"
+printf '%s\n' 'tyx-clash-for-linux-install' >"$INSTALL_MARKER"
 touch "$CLASH_CONFIG_BASE"
 _set_envs
 _is_regular_sudo && chown -R "$SUDO_USER" "$CLASH_BASE_DIR"

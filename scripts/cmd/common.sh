@@ -17,10 +17,12 @@ BIN_SUBCONVERTER="${BIN_SUBCONVERTER_DIR}/subconverter"
 BIN_SUBCONVERTER_START="$BIN_SUBCONVERTER"
 BIN_SUBCONVERTER_CONFIG="$BIN_SUBCONVERTER_DIR/pref.yml"
 BIN_SUBCONVERTER_LOG="${BIN_SUBCONVERTER_DIR}/latest.log"
+BIN_SUBCONVERTER_PID="${BIN_SUBCONVERTER_DIR}/subconverter.pid"
 
 CLASH_PROFILES_DIR="${CLASH_RESOURCES_DIR}/profiles"
 CLASH_PROFILES_META="${CLASH_RESOURCES_DIR}/profiles.yaml"
 CLASH_PROFILES_LOG="${CLASH_RESOURCES_DIR}/profiles.log"
+INSTALL_MARKER="${CLASH_BASE_DIR}/.clashctl-install-root"
 CLASHCTL_CRON_TAG="# clashctl-auto-update"
 
 _is_port_used() {
@@ -78,7 +80,8 @@ function _detect_ext_addr() {
         local auth_args=()
         [ -n "$secret" ] && auth_args=(-H "Authorization: Bearer $secret")
         curl --silent --fail --noproxy "*" "${auth_args[@]}" "127.0.0.1:${EXT_PORT}/version" >/dev/null && return 0
-        local newPort=$(_get_random_port)
+        local newPort
+        newPort=$(_get_random_port) || return 1
         _failcat '🎯' "端口冲突：[external-controller] ${EXT_PORT} 🎲 随机分配 $newPort"
         EXT_PORT=$newPort
         "$BIN_YQ" -i ".external-controller = \"$ext_ip:$newPort\"" "$CLASH_CONFIG_MIXIN"
@@ -165,8 +168,7 @@ function _download_config() {
         _failcat '🍂' "原生配置验证失败：尝试订阅转换..."
         cat "$dest" >"${dest}.raw"
         _download_convert_config "$dest" "$url" || return
-        _normalize_sub_config "$dest" || return
-        _valid_sub_nodes "$dest"
+        _validate_downloaded_config "$dest"
         return
     }
 
@@ -176,8 +178,7 @@ function _download_config() {
     _failcat '🍂' "验证失败：尝试订阅转换..."
     cat "$dest" >"${dest}.raw"
     _download_convert_config "$dest" "$url" || return
-    _normalize_sub_config "$dest" || return
-    _valid_sub_nodes "$dest"
+    _validate_downloaded_config "$dest"
 }
 
 _normalize_sub_config() {
@@ -230,6 +231,18 @@ _valid_sub_nodes() {
         return 1
     }
 }
+
+_validate_downloaded_config() {
+    local dest=$1
+
+    _normalize_sub_config "$dest" || return 1
+    _is_html_response "$dest" && {
+        _failcat "订阅响应疑似 HTML 页面，请检查订阅链接或 User-Agent"
+        return 1
+    }
+    _valid_sub_nodes "$dest"
+}
+
 _download_raw_config() {
     local dest=$1
     local url=$2
@@ -259,7 +272,7 @@ _download_convert_config() {
     local url=$2
     local flag
     [ "${url:0:4}" = 'file' ] && return 0
-    _start_convert
+    _start_convert || return 1
     local convert_url=$(
         target='clash'
         base_url="http://127.0.0.1:${BIN_SUBCONVERTER_PORT}/sub"
@@ -283,7 +296,8 @@ _download_convert_config() {
 _detect_subconverter_port() {
     BIN_SUBCONVERTER_PORT=$("$BIN_YQ" '.server.port' "$BIN_SUBCONVERTER_CONFIG")
     _is_port_used "$BIN_SUBCONVERTER_PORT" && {
-        local newPort=$(_get_random_port)
+        local newPort
+        newPort=$(_get_random_port) || return 1
         _failcat '🎯' "端口冲突：[subconverter] ${BIN_SUBCONVERTER_PORT} 🎲 随机分配：$newPort"
         BIN_SUBCONVERTER_PORT=$newPort
         "$BIN_YQ" -i ".server.port = $newPort" "$BIN_SUBCONVERTER_CONFIG" 2>/dev/null
@@ -291,21 +305,36 @@ _detect_subconverter_port() {
 }
 
 _start_convert() {
-    _detect_subconverter_port
+    _detect_subconverter_port || return 1
     local check_cmd="curl http://localhost:${BIN_SUBCONVERTER_PORT}/version"
     $check_cmd >&/dev/null && return 0
-    ("$BIN_SUBCONVERTER_START" >&"$BIN_SUBCONVERTER_LOG" &)
+    "$BIN_SUBCONVERTER_START" >&"$BIN_SUBCONVERTER_LOG" &
+    echo "$!" >"$BIN_SUBCONVERTER_PID"
     local start=$(date +%s)
     while ! $check_cmd >&/dev/null; do
         sleep 0.5s
         local now=$(date +%s)
-        [ $((now - start)) -gt 2 ] && _error_quit "订阅转换服务未启动，请检查日志：$BIN_SUBCONVERTER_LOG"
+        [ $((now - start)) -gt 2 ] && {
+            _stop_convert
+            _error_quit "订阅转换服务未启动，请检查日志：$BIN_SUBCONVERTER_LOG"
+        }
     done
 }
 _stop_convert() {
-    pkill -TERM -x subconverter 2>/dev/null
+    local pid exe
+    pid=$(cat "$BIN_SUBCONVERTER_PID" 2>/dev/null || true)
+    [ -n "$pid" ] || return 0
+
+    exe=$(readlink -f "/proc/${pid}/exe" 2>/dev/null || true)
+    [ "$exe" = "$BIN_SUBCONVERTER" ] || {
+        /usr/bin/rm -f "$BIN_SUBCONVERTER_PID"
+        return 0
+    }
+
+    kill -TERM "$pid" 2>/dev/null || true
     sleep 0.2
-    pkill -KILL -x subconverter 2>/dev/null
+    kill -0 "$pid" 2>/dev/null && kill -KILL "$pid" 2>/dev/null || true
+    /usr/bin/rm -f "$BIN_SUBCONVERTER_PID"
     return 0
 }
 

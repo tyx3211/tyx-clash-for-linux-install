@@ -4,6 +4,7 @@ clashstatus \
 clashsecret \
 clashmixin \
 clashsub \
+clashtun \
 clashlog \
 clashupgrade \
 clashhelp
