@@ -337,8 +337,9 @@ fi
 
 _validate_existing_install_state
 
-managed_paths=(install.sh uninstall.sh update.sh README.md scripts docs tests)
-backup_paths=(.env .clashctl-install-root "${managed_paths[@]}")
+managed_paths=(install.sh uninstall.sh update.sh migrate.sh README.md scripts docs tests)
+obsolete_paths=(placeholder_start1 preview.png .github .editorconfig .gitattributes .shellcheckrc resources/preview.png)
+backup_paths=(.env .clashctl-install-root "${managed_paths[@]}" "${obsolete_paths[@]}")
 _reject_managed_symlinks "${backup_paths[@]}"
 
 [ -n "$SOURCE_DIR" ] || SOURCE_DIR=$(_download_remote_source "$target")
@@ -382,6 +383,11 @@ for path in "${managed_paths[@]}"; do
     /usr/bin/rm -rf "$target/$path"
     mkdir -p "$target/$(dirname "$path")"
     cp -a "$staging_dir/$path" "$target/$path"
+done
+
+for path in "${obsolete_paths[@]}"; do
+    [ -e "$target/$path" ] || [ -L "$target/$path" ] || continue
+    /usr/bin/rm -rf "$target/$path"
 done
 
 printf '%s\n' 'tyx-clash-for-linux-install' >"$marker"

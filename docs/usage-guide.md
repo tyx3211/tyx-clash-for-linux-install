@@ -277,18 +277,70 @@ CLASHCTL_NO_RC=1 CLASHCTL_NO_QUIT=1 bash install.sh --init tmux
 
 ## 从 nosudo-tmux 迁移
 
-旧 `nosudo-tmux` 分支已经退役。旧分支用户建议重新 clone 当前 `main` 后执行无损更新或迁移，不要先卸载旧安装目录。已有 `~/clashctl` 时，主路径是从新源码目录原地刷新旧安装：
+旧 `nosudo-tmux` 分支已经退役。旧分支、旧 `master` 或早期中间版安装用户，建议重新 clone 当前 `main` 后执行一次迁移，不要先卸载旧安装目录。
+
+推荐迁移命令：
 
 ```bash
 git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git clash-for-linux-install
 cd clash-for-linux-install
-bash update.sh --target ~/clashctl
+bash migrate.sh --target "$HOME/clashctl"
+source "$HOME/clashctl/scripts/cmd/clashctl.sh"
+clashstatus --all
 ```
 
-如果想做全新安装，请先选择一个不存在的新目录，或明确完成旧目录备份/卸载后再执行：
+`migrate.sh` 默认只做原地迁移，不停止内核、不启动内核、不修改当前 shell 的代理变量。它会：
+
+- 刷新安装目录里的项目脚本、模板和文档。
+- 写入 `resources/install-state.yaml`。
+- 将旧 `resources/mixin.yaml` 复制到 `config/mixin.yaml`。
+- 将旧 `resources/clashctl.yaml` 复制到 `config/clashctl.yaml`。
+- 将旧 `resources/profiles.yaml` 复制到 `config/subscriptions.yaml`。
+- 清理 `placeholder_start1`、`.github`、`.editorconfig` 等旧项目遗留文件。
+
+如果迁移后要立即重启，可以显式指定：
+
+```bash
+bash migrate.sh --target "$HOME/clashctl" --restart-mode tmux
+```
+
+远程会话依赖当前代理链路时，不建议迁移脚本里直接重启。先执行默认迁移，确认 `clashstatus --all` 后，再手动执行：
+
+```bash
+clashrestart --mode tmux
+```
+
+如果想做全新安装，请先选择一个不存在的新目录：
 
 ```bash
 CLASH_BASE_DIR="$HOME/experiment/clashctl-new" bash install.sh --init tmux
+```
+
+如果必须复用旧安装目录，至少先备份：
+
+```bash
+mkdir -p "$HOME/clashctl-backup"
+cp -a "$HOME/clashctl/.env" "$HOME/clashctl-backup/" 2>/dev/null || true
+cp -a "$HOME/clashctl/config" "$HOME/clashctl-backup/config" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/mixin.yaml" "$HOME/clashctl-backup/mixin.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/clashctl.yaml" "$HOME/clashctl-backup/clashctl.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/profiles.yaml" "$HOME/clashctl-backup/profiles.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/profiles" "$HOME/clashctl-backup/profiles" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/config.yaml" "$HOME/clashctl-backup/config.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/runtime.yaml" "$HOME/clashctl-backup/runtime.yaml" 2>/dev/null || true
+```
+
+重装后按新版布局恢复：
+
+```bash
+mkdir -p "$HOME/clashctl/config" "$HOME/clashctl/resources"
+cp -a "$HOME/clashctl-backup/config/." "$HOME/clashctl/config/" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/mixin.yaml" "$HOME/clashctl/config/mixin.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/clashctl.yaml" "$HOME/clashctl/config/clashctl.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/profiles.yaml" "$HOME/clashctl/config/subscriptions.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/profiles" "$HOME/clashctl/resources/profiles" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/config.yaml" "$HOME/clashctl/resources/config.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/runtime.yaml" "$HOME/clashctl/resources/runtime.yaml" 2>/dev/null || true
 ```
 
 迁移时需要注意：

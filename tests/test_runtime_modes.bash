@@ -51,6 +51,58 @@ tmux_quote_tmp=$(make_test_tmpdir "clash-tmux-quote")
         fail "tmux adapter should shell-quote metacharacters in the command string"
 )
 
+legacy_tmux_tmp=$(make_test_tmpdir "clash-legacy-tmux")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    CLASH_BASE_DIR="$legacy_tmux_tmp/install"
+    CLASH_RESOURCES_DIR="$CLASH_BASE_DIR/resources"
+    CLASH_CONFIG_RUNTIME="$CLASH_RESOURCES_DIR/runtime.yaml"
+    BIN_KERNEL="$CLASH_BASE_DIR/bin/mihomo"
+    KERNEL_NAME=mihomo
+    mkdir -p "$CLASH_RESOURCES_DIR" "$CLASH_BASE_DIR/bin"
+
+    tmux() {
+        case "$1" in
+        has-session)
+            [ "$3" = "clash-mihomo" ] && return 0
+            return 1
+            ;;
+        list-panes)
+            [ "$3" = "clash-mihomo" ] && {
+                printf '777\n'
+                return 0
+            }
+            return 1
+            ;;
+        kill-session)
+            printf 'kill %s\n' "$3" >>"$legacy_tmux_tmp/calls"
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+        esac
+    }
+    _pid_matches_current_kernel() {
+        [ "$1" = 777 ]
+    }
+    sleep() { :; }
+    kill() {
+        printf 'kill-pid %s %s\n' "$1" "$2" >>"$legacy_tmux_tmp/calls"
+    }
+
+    _clash_adapter_tmux_is_active ||
+        fail "tmux adapter should detect a legacy clash-mihomo session owned by this install"
+    _clash_adapter_tmux_stop ||
+        fail "tmux adapter should stop a legacy clash-mihomo session owned by this install"
+    grep -qx 'kill clash-mihomo' "$legacy_tmux_tmp/calls" ||
+        fail "tmux adapter should kill the matching legacy session during migration cleanup"
+    grep -qx 'kill-pid -TERM 777' "$legacy_tmux_tmp/calls" ||
+        fail "tmux adapter should terminate current-install kernel pids left behind by a legacy session"
+)
+
 mode_tmp=$(make_test_tmpdir "clash-runtime-mode")
 (
     set +e

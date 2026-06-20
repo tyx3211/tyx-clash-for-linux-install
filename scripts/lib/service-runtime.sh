@@ -89,6 +89,74 @@ _clash_tmux_session() {
     printf 'clash-%s-%s\n' "$KERNEL_NAME" "$(_clash_install_id)"
 }
 
+_clash_legacy_tmux_session() {
+    printf 'clash-%s\n' "$KERNEL_NAME"
+}
+
+_pid_or_children_match_current_kernel() {
+    local pid=$1 child
+    _pid_matches_current_kernel "$pid" && return 0
+
+    for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+        _pid_or_children_match_current_kernel "$child" && return 0
+    done
+    return 1
+}
+
+_collect_current_kernel_pids_from_tree() {
+    local pid=$1 child
+    _pid_matches_current_kernel "$pid" && printf '%s\n' "$pid"
+
+    for child in $(pgrep -P "$pid" 2>/dev/null || true); do
+        _collect_current_kernel_pids_from_tree "$child"
+    done
+}
+
+_clash_tmux_session_current_kernel_pids() {
+    local session=$1 pane_pid
+    command -v tmux >/dev/null || return 1
+    tmux has-session -t "$session" 2>/dev/null || return 1
+
+    while IFS= read -r pane_pid; do
+        [ -n "$pane_pid" ] || continue
+        _collect_current_kernel_pids_from_tree "$pane_pid"
+    done < <(tmux list-panes -t "$session" -F '#{pane_pid}' 2>/dev/null) |
+        awk 'NF && !seen[$0]++'
+}
+
+_terminate_current_kernel_pids() {
+    local pid
+    [ "$#" -gt 0 ] || return 0
+
+    for pid in "$@"; do
+        _pid_matches_current_kernel "$pid" && kill -TERM "$pid" 2>/dev/null || true
+    done
+    sleep 0.2
+    for pid in "$@"; do
+        _pid_matches_current_kernel "$pid" && kill -KILL "$pid" 2>/dev/null || true
+    done
+}
+
+_clash_tmux_kill_session() {
+    local session=$1
+    local kernel_pids=()
+    mapfile -t kernel_pids < <(_clash_tmux_session_current_kernel_pids "$session" 2>/dev/null || true)
+    tmux kill-session -t "$session" 2>/dev/null || return 1
+    _terminate_current_kernel_pids "${kernel_pids[@]}"
+}
+
+_clash_tmux_session_has_current_kernel() {
+    local session=$1 pane_pid
+    command -v tmux >/dev/null || return 1
+    tmux has-session -t "$session" 2>/dev/null || return 1
+
+    while IFS= read -r pane_pid; do
+        [ -n "$pane_pid" ] || continue
+        _pid_or_children_match_current_kernel "$pane_pid" && return 0
+    done < <(tmux list-panes -t "$session" -F '#{pane_pid}' 2>/dev/null)
+    return 1
+}
+
 _pid_matches_current_kernel() {
     local pid=$1 expected_starttime=${2:-} exe starttime
     [ -n "$pid" ] && [ -d "/proc/$pid" ] || return 1
@@ -165,15 +233,28 @@ _clash_adapter_tmux_start() {
 }
 
 _clash_adapter_tmux_stop() {
-    local session
+    local session legacy_session
     session=$(_clash_tmux_session)
-    tmux has-session -t "$session" 2>/dev/null || return 0
-    tmux kill-session -t "$session" 2>/dev/null
+    tmux has-session -t "$session" 2>/dev/null &&
+        _clash_tmux_kill_session "$session"
+
+    legacy_session=$(_clash_legacy_tmux_session)
+    [ "$legacy_session" = "$session" ] && return 0
+    _clash_tmux_session_has_current_kernel "$legacy_session" &&
+        _clash_tmux_kill_session "$legacy_session"
+
+    return 0
 }
 
 _clash_adapter_tmux_is_active() {
+    local session legacy_session
     command -v tmux >/dev/null || return 1
-    tmux has-session -t "$(_clash_tmux_session)" 2>/dev/null
+    session=$(_clash_tmux_session)
+    tmux has-session -t "$session" 2>/dev/null && return 0
+
+    legacy_session=$(_clash_legacy_tmux_session)
+    [ "$legacy_session" = "$session" ] && return 1
+    _clash_tmux_session_has_current_kernel "$legacy_session"
 }
 
 _clash_adapter_nohup_start() {

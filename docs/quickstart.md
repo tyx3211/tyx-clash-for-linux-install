@@ -136,7 +136,19 @@ clashsub update 1 --convert
 - `clashsub update`：更新订阅。
 - `clashupgrade`：升级 mihomo / clash 内核。
 
-日常更新本项目直接执行：
+旧 `nosudo-tmux` 分支、旧 `master` 或早期中间版安装用户，第一次升级到当前 `main` 前建议先从新源码目录执行迁移：
+
+```bash
+git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git
+cd tyx-clash-for-linux-install
+bash migrate.sh --target "$HOME/clashctl"
+source "$HOME/clashctl/scripts/cmd/clashctl.sh"
+clashstatus --all
+```
+
+迁移默认不停止内核、不启动内核、不修改当前 shell 的代理变量。确认状态后，再按需执行 `clashrestart --mode tmux`。
+
+已迁移到新版后，日常更新本项目直接执行：
 
 ```bash
 clashctl update-self
@@ -157,6 +169,8 @@ clashctl update-self --ref main
 ```bash
 clashctl update-self --source "$HOME/src/clash-shell/tyx-clash-for-linux-install"
 ```
+
+如果不迁移而选择重装，请先备份 `config/`、旧 `resources/mixin.yaml`、`resources/clashctl.yaml`、`resources/profiles.yaml`、`resources/profiles/`、`resources/config.yaml`、`resources/runtime.yaml` 和 `.env`。重装后，旧 `mixin.yaml` 放到 `config/mixin.yaml`，旧 `clashctl.yaml` 放到 `config/clashctl.yaml`，旧 `profiles.yaml` 放到 `config/subscriptions.yaml`，订阅 profile 文件继续放回 `resources/profiles/`。
 
 ## 关闭和卸载
 

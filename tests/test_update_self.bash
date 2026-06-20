@@ -148,6 +148,10 @@ legacy_dir="$update_tmp/legacy"
 mkdir -p "$legacy_dir/resources" "$legacy_dir/scripts/cmd"
 printf 'legacy-mixin\n' >"$legacy_dir/resources/mixin.yaml"
 printf 'legacy-script\n' >"$legacy_dir/scripts/cmd/clashctl.sh"
+printf 'stale\n' >"$legacy_dir/placeholder_start1"
+mkdir -p "$legacy_dir/.github"
+printf 'stale\n' >"$legacy_dir/.github/config.yml"
+printf 'stale\n' >"$legacy_dir/.editorconfig"
 (
     cd "$source_dir"
     CLASHCTL_NO_RC=1 bash update.sh --target "$legacy_dir" >/dev/null
@@ -156,6 +160,12 @@ printf 'legacy-script\n' >"$legacy_dir/scripts/cmd/clashctl.sh"
     fail "legacy migration should preserve mixin.yaml"
 [ -f "$legacy_dir/.clashctl-install-root" ] ||
     fail "legacy migration should add install marker"
+[ ! -e "$legacy_dir/placeholder_start1" ] ||
+    fail "legacy migration should remove obsolete placeholder files"
+[ ! -e "$legacy_dir/.github" ] ||
+    fail "legacy migration should remove obsolete project metadata directories"
+[ ! -e "$legacy_dir/.editorconfig" ] ||
+    fail "legacy migration should remove obsolete project metadata files"
 
 not_install_dir="$update_tmp/not-install"
 mkdir -p "$not_install_dir"

@@ -14,6 +14,7 @@ _copy_install_payload() {
         LICENSE
         README.md
         install.sh
+        migrate.sh
         uninstall.sh
         update.sh
         scripts

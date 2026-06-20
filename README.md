@@ -431,7 +431,33 @@ $ clashtun off
 
 `clashsub update` 更新订阅，`clashupgrade` 升级内核，二者都不会更新本项目的 shell 脚本。
 
-已安装环境可以直接从 GitHub 更新当前 fork 的 `main` 分支：
+### 旧版用户先迁移
+
+如果安装目录来自旧 `nosudo-tmux` 分支、旧 `master`，或者 `~/clashctl` 根目录里还带有 `.git`、`placeholder_start1`、旧 `resources/mixin.yaml` 布局，推荐先从新源码目录执行一次迁移：
+
+```bash
+git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git
+cd tyx-clash-for-linux-install
+bash migrate.sh --target "$HOME/clashctl"
+source "$HOME/clashctl/scripts/cmd/clashctl.sh"
+clashstatus --all
+```
+
+`migrate.sh` 默认不停止内核、不启动内核、不修改当前 shell 代理变量。它会原地刷新脚本、写入 `resources/install-state.yaml`、把旧 `resources/mixin.yaml` / `resources/clashctl.yaml` / `resources/profiles.yaml` 复制到新版 `config/` 布局，并清理旧项目遗留文件。确认迁移结果后，再按需执行：
+
+```bash
+clashrestart --mode tmux
+```
+
+如果希望迁移后自动重启，可以显式指定：
+
+```bash
+bash migrate.sh --target "$HOME/clashctl" --restart-mode tmux
+```
+
+### 已迁移后的日常更新
+
+已迁移到新版后，可以直接从 GitHub 更新当前 fork 的 `main` 分支：
 
 ```bash
 clashctl update-self
@@ -454,6 +480,35 @@ clashctl update-self --source "$HOME/src/clash-shell/tyx-clash-for-linux-install
 ```
 
 该操作只刷新脚本、service 模板和文档资产，不覆盖 `config/`、`resources/install-state.yaml`、`resources/config.yaml`、`resources/runtime.yaml`、订阅 profiles、日志和运行状态。旧安装目录如果已有 `.env`，会继续保留并只做兼容性更新；旧安装目录如果还在使用 `resources/mixin.yaml`、`resources/clashctl.yaml`、`resources/profiles.yaml`，这些文件也会原样保留。
+
+### 如果选择重装
+
+不建议为了升级先卸载旧目录。如果确实想全新安装，至少先备份这些文件或目录：
+
+```bash
+mkdir -p "$HOME/clashctl-backup"
+cp -a "$HOME/clashctl/.env" "$HOME/clashctl-backup/" 2>/dev/null || true
+cp -a "$HOME/clashctl/config" "$HOME/clashctl-backup/config" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/mixin.yaml" "$HOME/clashctl-backup/mixin.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/clashctl.yaml" "$HOME/clashctl-backup/clashctl.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/profiles.yaml" "$HOME/clashctl-backup/profiles.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/profiles" "$HOME/clashctl-backup/profiles" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/config.yaml" "$HOME/clashctl-backup/config.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/runtime.yaml" "$HOME/clashctl-backup/runtime.yaml" 2>/dev/null || true
+```
+
+重装后，推荐按新版布局恢复：
+
+```bash
+mkdir -p "$HOME/clashctl/config" "$HOME/clashctl/resources"
+cp -a "$HOME/clashctl-backup/config/." "$HOME/clashctl/config/" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/mixin.yaml" "$HOME/clashctl/config/mixin.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/clashctl.yaml" "$HOME/clashctl/config/clashctl.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/profiles.yaml" "$HOME/clashctl/config/subscriptions.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/profiles" "$HOME/clashctl/resources/profiles" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/config.yaml" "$HOME/clashctl/resources/config.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/runtime.yaml" "$HOME/clashctl/resources/runtime.yaml" 2>/dev/null || true
+```
 
 安装目录默认不携带 `.git`，`update-self` 也不会使用安装目录里的 git 仓库。旧安装目录如果已经带有 `.git`，可以在确认没有把它当作个人配置仓库后手工删除：
 
