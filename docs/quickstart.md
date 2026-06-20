@@ -102,10 +102,12 @@ http://localhost:9090/ui
 
 旧安装执行 `clashctl update-self` 后不会自动改已有控制口，实际地址以 `clashui` 输出或当前 `mixin.yaml` 为准。如需迁移到 9090，可以手工编辑 `~/clashctl/config/mixin.yaml` 或旧兼容路径 `~/clashctl/resources/mixin.yaml` 里的 `external-controller`。
 
-如果启动时报 `external-controller` 端口冲突，脚本只会给出建议空闲端口，不会自动改配置。可以用 VS Code Remote、vim 或其他编辑器直接修改 `mixin.yaml`，修改后执行：
+如果启动时报 `external-controller` 端口冲突，脚本只会给出建议空闲端口，不会自动改配置。可以用 VS Code Remote、vim 或其他编辑器直接修改 `~/clashctl/config/mixin.yaml`，旧兼容安装则可能是 `~/clashctl/resources/mixin.yaml`。修改后执行：
 
 ```bash
 clashmixin -m
+# 或
+clashctl mixin -m
 ```
 
 ## 订阅管理
@@ -142,7 +144,7 @@ clashsub update 1 --convert
 - `clashsub update`：更新订阅。
 - `clashupgrade`：升级 mihomo / clash 内核。
 
-旧 `nosudo-tmux` 分支、旧 `master`、[`legacy-nosudo-tmux`](https://github.com/tyx3211/tyx-clash-for-linux-install/tree/legacy-nosudo-tmux) 这个 tag 及以前版本，或者还没执行过 `migrate.sh` 的中间版安装，第一次升级到当前 `main` 前建议先迁移。完整步骤见 [旧版迁移指南](legacy-migration.md)。
+旧 `nosudo-tmux` 分支、旧 `master`、[`legacy-nosudo-tmux`](https://github.com/tyx3211/tyx-clash-for-linux-install/tree/legacy-nosudo-tmux) 这个 tag 及以前版本，或者还没执行过 `migrate.sh` 的中间版安装，第一次升级到当前 `main` 前建议先迁移，不要先卸载旧安装目录。完整步骤见 [旧版迁移指南](legacy-migration.md)。
 
 已迁移到新版后，日常更新本项目直接执行：
 

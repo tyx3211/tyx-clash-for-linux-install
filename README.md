@@ -436,7 +436,7 @@ $ clashtun off
 
 ### 旧版用户先迁移
 
-如果安装目录来自旧 `nosudo-tmux` 分支、旧 `master`、[`legacy-nosudo-tmux`](https://github.com/tyx3211/tyx-clash-for-linux-install/tree/legacy-nosudo-tmux) 这个 tag 及以前版本，或者 `~/clashctl` 里还带有 `.git`、`placeholder_start1`、旧 `resources/mixin.yaml` 布局，都按旧版处理。
+如果记得安装来源：旧 `nosudo-tmux` 分支、旧 `master`、[`legacy-nosudo-tmux`](https://github.com/tyx3211/tyx-clash-for-linux-install/tree/legacy-nosudo-tmux) 这个 tag 及以前版本，都按旧版处理。只看本地目录时，如果 `~/clashctl` 里还带有 `.git`、`placeholder_start1` 或旧 `resources/mixin.yaml` 布局，也按旧版处理；如果知道自己还没有执行过 `migrate.sh`，同样先按旧版迁移。
 
 旧版用户请先阅读 [旧版迁移指南](docs/legacy-migration.md)，从新源码目录执行 `migrate.sh`。不建议先卸载旧安装目录，也不建议直接重装覆盖。
 

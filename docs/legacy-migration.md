@@ -4,11 +4,14 @@
 
 ## 什么情况算旧版
 
-符合下面任意一种情况，都建议先按本文执行迁移：
+如果记得安装来源，符合下面任意一种情况，都建议先按本文执行迁移：
 
 - 安装目录来自旧 `nosudo-tmux` 分支。
 - 安装目录来自旧 `master` 分支。
 - 安装目录对应 [`legacy-nosudo-tmux`](https://github.com/tyx3211/tyx-clash-for-linux-install/tree/legacy-nosudo-tmux) 这个 tag 及以前的版本。
+
+如果只看本地安装目录，符合下面任意一种情况，也按旧版处理：
+
 - 安装目录里还存在 `placeholder_start1`。
 - `~/clashctl` 根目录里带有历史遗留的 `.git`。
 - 主要配置还在 `~/clashctl/resources/mixin.yaml`、`resources/clashctl.yaml`、`resources/profiles.yaml`。
@@ -67,6 +70,8 @@ bash migrate.sh --target "$HOME/clashctl" --move-legacy-config
 ```bash
 bash migrate.sh --target "$HOME/clashctl" --move-legacy-config --force-remove-legacy-config
 ```
+
+`--force-remove-legacy-config` 会在内容不一致时删除旧 `resources/` 配置文件。执行前建议先备份或手工 `diff`，确认 `config/` 才是唯一准配置。
 
 ## 迁移后自动重启
 
@@ -139,6 +144,8 @@ clashctl update-self --source "$HOME/src/clash-shell/tyx-clash-for-linux-install
 CLASH_BASE_DIR="$HOME/experiment/clashctl-new" bash install.sh --init tmux
 ```
 
+普通旧版升级仍应优先走原地 `migrate.sh`。只有明确选择重装时，才考虑卸载、清理旧目录或复用旧安装目录。
+
 如果必须复用旧安装目录，至少先备份关键文件：
 
 ```bash
@@ -153,18 +160,29 @@ cp -a "$HOME/clashctl/resources/config.yaml" "$HOME/clashctl-backup/config.yaml"
 cp -a "$HOME/clashctl/resources/runtime.yaml" "$HOME/clashctl-backup/runtime.yaml" 2>/dev/null || true
 ```
 
-重装后按新版布局恢复：
+重装后按新版布局恢复。下面命令优先恢复新版 `config/` 目录；旧 `resources/` 单文件只在目标配置不存在时补齐，避免用旧副本覆盖较新的 `config/` 配置：
 
 ```bash
 mkdir -p "$HOME/clashctl/config" "$HOME/clashctl/resources"
-cp -a "$HOME/clashctl-backup/config/." "$HOME/clashctl/config/" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/mixin.yaml" "$HOME/clashctl/config/mixin.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/clashctl.yaml" "$HOME/clashctl/config/clashctl.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/profiles.yaml" "$HOME/clashctl/config/subscriptions.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/profiles" "$HOME/clashctl/resources/profiles" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/config.yaml" "$HOME/clashctl/resources/config.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/runtime.yaml" "$HOME/clashctl/resources/runtime.yaml" 2>/dev/null || true
+
+if [ -d "$HOME/clashctl-backup/config" ]; then
+  cp -a "$HOME/clashctl-backup/config/." "$HOME/clashctl/config/"
+fi
+
+[ -e "$HOME/clashctl/config/mixin.yaml" ] || cp -a "$HOME/clashctl-backup/mixin.yaml" "$HOME/clashctl/config/mixin.yaml" 2>/dev/null || true
+[ -e "$HOME/clashctl/config/clashctl.yaml" ] || cp -a "$HOME/clashctl-backup/clashctl.yaml" "$HOME/clashctl/config/clashctl.yaml" 2>/dev/null || true
+[ -e "$HOME/clashctl/config/subscriptions.yaml" ] || cp -a "$HOME/clashctl-backup/profiles.yaml" "$HOME/clashctl/config/subscriptions.yaml" 2>/dev/null || true
+
+mkdir -p "$HOME/clashctl/resources/profiles"
+if [ -d "$HOME/clashctl-backup/profiles" ]; then
+  cp -a "$HOME/clashctl-backup/profiles/." "$HOME/clashctl/resources/profiles/"
+fi
+
+[ -e "$HOME/clashctl/resources/config.yaml" ] || cp -a "$HOME/clashctl-backup/config.yaml" "$HOME/clashctl/resources/config.yaml" 2>/dev/null || true
+[ -e "$HOME/clashctl/resources/runtime.yaml" ] || cp -a "$HOME/clashctl-backup/runtime.yaml" "$HOME/clashctl/resources/runtime.yaml" 2>/dev/null || true
 ```
+
+备份里的 `.env` 不建议直接覆盖新安装生成的 `.env`。它主要是安装前默认值和旧版本兼容入口；需要保留下载代理、固定版本等本机字段时，建议用编辑器或 `diff -u "$HOME/clashctl/.env" "$HOME/clashctl-backup/.env"` 手工合并。
 
 恢复后执行：
 

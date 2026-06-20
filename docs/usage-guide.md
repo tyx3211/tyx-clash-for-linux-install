@@ -303,6 +303,6 @@ http://localhost:9090/ui
 
 如果使用 VS Code Remote-SSH，也可以直接在 VS Code 里转发远端 `9090` 端口。
 
-旧安装执行 `clashctl update-self` 后不会自动改已有 `mixin.yaml`，因此旧安装可能仍在使用 `127.0.0.1:23571` 或其他自定义端口。实际地址以 `clashui` 输出或当前 `mixin.yaml` 为准。如需迁移到 9090，手工修改 `external-controller` 后执行 `clashmixin -m`。
+旧安装执行 `clashctl update-self` 后不会自动改已有 `mixin.yaml`，因此旧安装可能仍在使用 `127.0.0.1:23571` 或其他自定义端口。实际地址以 `clashui` 输出或当前 `mixin.yaml` 为准。如需迁移到 9090，手工修改 `external-controller` 后执行 `clashmixin -m` 或 `clashctl mixin -m`。
 
-启动前会检查 `external-controller` 控制端口。如果该端口被其他进程占用，脚本只报错并提示一个空闲端口；不会自动写入 `mixin.yaml`，也不会自动合并配置。我们需要手工改 `~/clashctl/config/mixin.yaml`，旧兼容安装则可能是 `~/clashctl/resources/mixin.yaml`，然后执行 `clashmixin -m`。
+启动前会检查 `external-controller` 控制端口。如果该端口被其他进程占用，脚本只报错并提示一个空闲端口；不会自动写入 `mixin.yaml`，也不会自动合并配置。我们需要手工改 `~/clashctl/config/mixin.yaml`，旧兼容安装则可能是 `~/clashctl/resources/mixin.yaml`，然后执行 `clashmixin -m` 或 `clashctl mixin -m`。
