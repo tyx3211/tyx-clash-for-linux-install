@@ -129,4 +129,29 @@ upgrade_setu_tmp=$(make_test_tmpdir "clash-upgrade-setu")
     clashupgrade >"$upgrade_setu_tmp/out"
 )
 
+set_u_tmp=$(make_test_tmpdir "clash-set-u-entrypoints")
+(
+    set -eu
+    . "$CLASHCTL_SH"
+
+    clashhelp() { printf 'help\n' >>"$set_u_tmp/calls"; }
+    tunstatus() { printf 'tunstatus\n' >>"$set_u_tmp/calls"; return 0; }
+    _sub_list() { printf 'sub-list\n' >>"$set_u_tmp/calls"; }
+    _get_secret() { printf 'secret\n'; }
+    _okcat() { printf '%s\n' "$*" >>"$set_u_tmp/calls"; }
+    less() { printf 'less %s\n' "$1" >>"$set_u_tmp/calls"; }
+
+    clashctl
+    clashsub
+    clashsecret
+    clashtun
+    clashmixin
+) || fail "public clashctl entrypoints should support no-argument calls under set -u"
+grep -qx 'help' "$set_u_tmp/calls" ||
+    fail "no-argument clashctl should show help under set -u"
+grep -qx 'sub-list' "$set_u_tmp/calls" ||
+    fail "no-argument clashsub should list subscriptions under set -u"
+grep -qx 'tunstatus' "$set_u_tmp/calls" ||
+    fail "no-argument clashtun should show status under set -u"
+
 pass "clashctl safety checks"

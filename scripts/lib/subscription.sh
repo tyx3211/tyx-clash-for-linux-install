@@ -1,5 +1,5 @@
 function clashsub() {
-    case "$1" in
+    case "${1:-}" in
     add)
         shift
         _sub_add "$@"
@@ -9,7 +9,7 @@ function clashsub() {
         _sub_del "$@"
         ;;
     list | ls | '')
-        shift
+        (($#)) && shift
         _sub_list "$@"
         ;;
     use)

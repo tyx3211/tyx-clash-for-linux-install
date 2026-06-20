@@ -35,7 +35,13 @@ _restore_tun_mixin() {
     [ -f "$backup" ] || return 0
     /bin/mv -f "$backup" "$CLASH_CONFIG_MIXIN"
     _merge_config || return 1
-    [ "$restart_after_restore" = true ] && _clash_service_start systemd >/dev/null
+    if [ "$restart_after_restore" = true ]; then
+        _clash_service_start systemd >/dev/null || {
+            _failcat "Tun 配置已回滚，但 systemd 内核恢复启动失败"
+            return 1
+        }
+    fi
+    return 0
 }
 
 tunstatus() {
@@ -88,7 +94,11 @@ tunon() {
                 return 1
             }
             _clash_service_stop systemd >/dev/null
-            _clash_service_start systemd >/dev/null
+            _clash_service_start systemd >/dev/null || {
+                _restore_tun_mixin "$backup" "$was_active"
+                _failcat 'Tun 模式开启失败，请检查代理内核日志'
+                return 1
+            }
             sleep 1
             tunstatus >&/dev/null || {
                 _restore_tun_mixin "$backup" "$was_active"
@@ -142,7 +152,7 @@ tunoff() {
 }
 
 function clashtun() {
-    case "$1" in
+    case "${1:-}" in
     -h | --help)
         cat <<EOF
 

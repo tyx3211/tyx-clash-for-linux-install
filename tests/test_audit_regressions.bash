@@ -263,8 +263,11 @@ assert_file_not_contains "$COMMON_SH" 'pkill -KILL -x subconverter' \
 assert_file_contains "$COMMON_SH" 'newPort=\$\(_get_random_port\) \|\| return 1' \
     "random port allocation failures should propagate to callers"
 
-assert_file_contains "$COMMON_SH" 'external-controller 端口写入失败' \
-    "external-controller mixin write failures should propagate to callers"
+assert_file_contains "$COMMON_SH" '建议改 mixin\.yaml 中的 external-controller' \
+    "external-controller conflicts should tell users to edit mixin.yaml explicitly"
+
+assert_file_not_contains "$COMMON_SH" 'external-controller = "' \
+    "external-controller conflict handling should not rewrite mixin.yaml automatically"
 
 assert_file_contains "$COMMON_SH" '_detect_subconverter_port \|\| return 1' \
     "subconverter port detection failures should stop conversion startup"

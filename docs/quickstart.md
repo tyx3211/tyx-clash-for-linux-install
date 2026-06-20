@@ -102,6 +102,12 @@ http://localhost:9090/ui
 
 旧安装执行 `clashctl update-self` 后不会自动改已有控制口，实际地址以 `clashui` 输出或当前 `mixin.yaml` 为准。如需迁移到 9090，可以手工编辑 `config/mixin.yaml` 或旧兼容路径 `resources/mixin.yaml` 里的 `external-controller`。
 
+如果启动时报 `external-controller` 端口冲突，脚本只会给出建议空闲端口，不会自动改配置。修改 `mixin.yaml` 后执行：
+
+```bash
+clashmixin -m
+```
+
 ## 订阅管理
 
 添加并立即使用订阅：
@@ -136,7 +142,7 @@ clashsub update 1 --convert
 - `clashsub update`：更新订阅。
 - `clashupgrade`：升级 mihomo / clash 内核。
 
-旧 `nosudo-tmux` 分支、旧 `master` 或早期中间版安装用户，第一次升级到当前 `main` 前建议先从新源码目录执行迁移：
+旧 `nosudo-tmux` 分支、旧 `master` 或早期中间版安装用户，第一次升级到当前 `main` 前建议先从新源码目录执行迁移。旧 no-sudo tmux 版本的边界 tag 是 [`legacy-nosudo-tmux`](https://github.com/tyx3211/tyx-clash-for-linux-install/tree/legacy-nosudo-tmux)，这个 tag 及以前的安装都按旧版处理：
 
 ```bash
 git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git
@@ -146,7 +152,13 @@ source "$HOME/clashctl/scripts/cmd/clashctl.sh"
 clashstatus --all
 ```
 
-迁移默认不停止内核、不启动内核、不修改当前 shell 的代理变量。确认状态后，再按需执行 `clashrestart --mode tmux`。
+迁移默认不停止内核、不启动内核、不修改当前 shell 的代理变量。确认状态后，再按需执行 `clashrestart`。不带 `--mode` 时会优先重启当前活跃托管模式；明确要切换模式时再用 `clashrestart --mode tmux|nohup|systemd`。
+
+如果希望旧配置不再留在 `resources/`，可以使用：
+
+```bash
+bash migrate.sh --target "$HOME/clashctl" --move-legacy-config
+```
 
 已迁移到新版后，日常更新本项目直接执行：
 

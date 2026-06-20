@@ -78,6 +78,19 @@ _read_env_value() {
     _expand_path "$value"
 }
 
+_read_env_value_any() {
+    local file=$1 key value
+    shift
+
+    for key in "$@"; do
+        value=$(_read_env_value "$file" "$key" 2>/dev/null || true)
+        [ -n "$value" ] || continue
+        printf '%s\n' "$value"
+        return 0
+    done
+    return 1
+}
+
 _read_state_value() {
     local root=$1 key=$2
     _load_install_state_lib
@@ -88,7 +101,7 @@ _read_install_dir_value() {
     local root=$1 value=
 
     value=$(_read_state_value "$root" install_dir 2>/dev/null || true)
-    [ -n "$value" ] || value=$(_read_env_value "$root/.env" CLASH_BASE_DIR 2>/dev/null || true)
+    [ -n "$value" ] || value=$(_read_env_value_any "$root/.env" CLASH_BASE_DIR CLASHCTL_HOME 2>/dev/null || true)
     [ -n "$value" ] || return 1
     printf '%s\n' "$value"
 }
@@ -97,7 +110,19 @@ _read_target_metadata() {
     local root=$1 key=$2 env_key=$3 value=
 
     value=$(_read_state_value "$root" "$key" 2>/dev/null || true)
-    [ -n "$value" ] || value=$(_read_env_value "$root/.env" "$env_key" 2>/dev/null || true)
+    if [ -z "$value" ]; then
+        case "$env_key" in
+        KERNEL_NAME)
+            value=$(_read_env_value_any "$root/.env" KERNEL_NAME CLASHCTL_KERNEL 2>/dev/null || true)
+            ;;
+        CLASH_BASE_DIR)
+            value=$(_read_env_value_any "$root/.env" CLASH_BASE_DIR CLASHCTL_HOME 2>/dev/null || true)
+            ;;
+        *)
+            value=$(_read_env_value "$root/.env" "$env_key" 2>/dev/null || true)
+            ;;
+        esac
+    fi
     [ -n "$value" ] || return 1
     printf '%s\n' "$value"
 }
@@ -412,7 +437,20 @@ if [ -f "$env_path" ] && [ -f "$SOURCE_DIR/.env" ]; then
         *=*)
             key=${line%%=*}
             [[ $key =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
-            grep -qE "^${key}=" "$env_path" || printf '%s\n' "$line" >>"$env_path"
+            case "$key" in
+            CLASH_BASE_DIR)
+                grep -qE '^(CLASH_BASE_DIR|CLASHCTL_HOME)=' "$env_path" || printf '%s\n' "$line" >>"$env_path"
+                ;;
+            KERNEL_NAME)
+                grep -qE '^(KERNEL_NAME|CLASHCTL_KERNEL)=' "$env_path" || printf '%s\n' "$line" >>"$env_path"
+                ;;
+            CLASH_SUB_UA)
+                grep -qE '^(CLASH_SUB_UA|CLASHCTL_SUB_UA)=' "$env_path" || printf '%s\n' "$line" >>"$env_path"
+                ;;
+            *)
+                grep -qE "^${key}=" "$env_path" || printf '%s\n' "$line" >>"$env_path"
+                ;;
+            esac
             ;;
         esac
     done <"$SOURCE_DIR/.env"

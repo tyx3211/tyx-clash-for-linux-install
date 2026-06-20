@@ -115,6 +115,39 @@ bash -c '
 ' -- "$env_parse_repo" >/dev/null 2>&1 ||
     fail "clashctl should ignore non-whitelisted .env variables such as PATH"
 
+upstream_env_parse_tmp=$(make_test_tmpdir "clash-upstream-env-parse")
+upstream_env_parse_repo="$upstream_env_parse_tmp/repo"
+cp -a "$TEST_ROOT/." "$upstream_env_parse_repo"
+rm -f "$upstream_env_parse_repo/resources/install-state.yaml"
+cat >"$upstream_env_parse_repo/.env" <<EOF
+CLASHCTL_HOME=$upstream_env_parse_repo
+CLASHCTL_KERNEL=clash
+CLASHCTL_SUB_UA=legacy-agent
+INIT_TYPE=nohup
+EOF
+bash -c '
+    . "$1/scripts/cmd/clashctl.sh" || exit 1
+    [ "$CLASH_BASE_DIR" = "$1" ] || exit 2
+    [ "$KERNEL_NAME" = clash ] || exit 3
+    [ "$CLASH_SUB_UA" = legacy-agent ] || exit 4
+    [ "$INIT_TYPE" = nohup ] || exit 5
+' -- "$upstream_env_parse_repo" >/dev/null 2>&1 ||
+    fail "clashctl should parse legacy upstream CLASHCTL_HOME / CLASHCTL_KERNEL env names"
+
+env_empty_base_tmp=$(make_test_tmpdir "clash-env-empty-base")
+env_empty_base_repo="$env_empty_base_tmp/repo"
+cp -a "$TEST_ROOT/." "$env_empty_base_repo"
+rm -f "$env_empty_base_repo/resources/install-state.yaml"
+cat >"$env_empty_base_repo/.env" <<EOF
+KERNEL_NAME=mihomo
+CLASH_BASE_DIR=
+INIT_TYPE=tmux
+EOF
+bash -c '. "$1/scripts/cmd/clashctl.sh"' -- "$env_empty_base_repo" >"$env_empty_base_tmp/out" 2>"$env_empty_base_tmp/err" &&
+    fail "clashctl should reject an empty CLASH_BASE_DIR from legacy .env"
+grep -q 'critical runtime variable is empty: CLASH_BASE_DIR' "$env_empty_base_tmp/err" ||
+    fail "empty CLASH_BASE_DIR failure should name the invalid runtime variable"
+
 env_state_tmp=$(make_test_tmpdir "clash-env-state")
 env_state_repo="$env_state_tmp/repo"
 cp -a "$TEST_ROOT/." "$env_state_repo"
@@ -211,20 +244,21 @@ bash -c '
 ' -- "$state_env_override_repo" "$state_env_override_other" >/dev/null 2>&1 ||
     fail "install-state.yaml should take precedence over ambient install identity environment variables"
 
-ext_write_tmp=$(make_test_tmpdir "clash-ext-write-fail")
-ext_write_repo="$ext_write_tmp/repo"
-cp -a "$TEST_ROOT/." "$ext_write_repo"
-cat >"$ext_write_repo/.env" <<EOF
+ext_conflict_tmp=$(make_test_tmpdir "clash-ext-conflict-readonly")
+ext_conflict_repo="$ext_conflict_tmp/repo"
+cp -a "$TEST_ROOT/." "$ext_conflict_repo"
+cat >"$ext_conflict_repo/.env" <<EOF
 KERNEL_NAME=mihomo
-CLASH_BASE_DIR=$ext_write_repo
+CLASH_BASE_DIR=$ext_conflict_repo
 INIT_TYPE=tmux
 EOF
-cat >"$ext_write_tmp/yq" <<'EOF'
+cat >"$ext_conflict_tmp/yq" <<EOF
 #!/usr/bin/env bash
-if [ "$1" = "-i" ]; then
-    exit 9
+if [ "\${1:-}" = "-i" ]; then
+    printf 'yq-write\n' >>"$ext_conflict_tmp/calls"
+    exit 0
 fi
-case "$1" in
+case "\${1:-}" in
 '.external-controller // ""')
     printf '%s\n' '127.0.0.1:9090'
     ;;
@@ -233,28 +267,34 @@ case "$1" in
     ;;
 esac
 EOF
-chmod +x "$ext_write_tmp/yq"
+chmod +x "$ext_conflict_tmp/yq"
 (
     set +e
-    . "$ext_write_repo/scripts/cmd/clashctl.sh"
-    BIN_YQ="$ext_write_tmp/yq"
-    CLASH_CONFIG_RUNTIME="$ext_write_tmp/runtime.yaml"
-    CLASH_CONFIG_MIXIN="$ext_write_tmp/mixin.yaml"
+    . "$ext_conflict_repo/scripts/cmd/clashctl.sh"
+    BIN_YQ="$ext_conflict_tmp/yq"
+    CLASH_CONFIG_RUNTIME="$ext_conflict_tmp/runtime.yaml"
+    CLASH_CONFIG_MIXIN="$ext_conflict_tmp/mixin.yaml"
     printf '{}\n' >"$CLASH_CONFIG_RUNTIME"
     printf '{}\n' >"$CLASH_CONFIG_MIXIN"
     _is_port_used() { return 0; }
     curl() { return 1; }
     _get_secret() { :; }
     _get_random_port() { printf '%s\n' 19090; }
-    _merge_config() { printf 'merge\n' >>"$ext_write_tmp/calls"; }
-    _failcat() { :; }
+    _merge_config() { printf 'merge\n' >>"$ext_conflict_tmp/calls"; }
+    _failcat() { printf '%s\n' "$*" >>"$ext_conflict_tmp/fail.log"; }
 
-    _detect_ext_addr
+    _ensure_ext_addr_available
     status=$?
     [ "$status" -ne 0 ] ||
-        fail "_detect_ext_addr should fail when it cannot persist the new external-controller port"
-    [ ! -e "$ext_write_tmp/calls" ] ||
-        fail "_detect_ext_addr should not merge config after yq -i fails"
+        fail "_ensure_ext_addr_available should fail when external-controller port is occupied by another process"
+    ! grep -q '^yq-write$' "$ext_conflict_tmp/calls" 2>/dev/null ||
+        fail "_ensure_ext_addr_available should not write mixin.yaml automatically"
+    ! grep -q '^merge$' "$ext_conflict_tmp/calls" 2>/dev/null ||
+        fail "_ensure_ext_addr_available should not merge config after external-controller conflict"
+    grep -q '建议改' "$ext_conflict_tmp/fail.log" ||
+        fail "_ensure_ext_addr_available should suggest editing mixin.yaml"
+    grep -q '19090' "$ext_conflict_tmp/fail.log" ||
+        fail "_ensure_ext_addr_available should include a suggested free external-controller port"
 )
 
 assert_file_contains "$PROXY_SH" '^function clashproxy\(\)' \

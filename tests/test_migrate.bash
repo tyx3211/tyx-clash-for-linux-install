@@ -42,6 +42,12 @@ grep -qx 'install_dir: "'$legacy_dir'"' "$legacy_dir/resources/install-state.yam
     fail "migrate should copy legacy profiles.yaml into config/subscriptions.yaml"
 [ "$(cat "$legacy_dir/resources/runtime.yaml")" = "legacy-runtime" ] ||
     fail "migrate should preserve runtime.yaml"
+[ -f "$legacy_dir/resources/mixin.yaml" ] ||
+    fail "default migration should keep legacy mixin.yaml in resources/"
+[ -f "$legacy_dir/resources/clashctl.yaml" ] ||
+    fail "default migration should keep legacy clashctl.yaml in resources/"
+[ -f "$legacy_dir/resources/profiles.yaml" ] ||
+    fail "default migration should keep legacy profiles.yaml in resources/"
 grep -q 'function clashctl' "$legacy_dir/scripts/cmd/clashctl.sh" ||
     fail "migrate should refresh installed command scripts"
 [ ! -e "$legacy_dir/placeholder_start1" ] ||
@@ -53,5 +59,82 @@ grep -q 'function clashctl' "$legacy_dir/scripts/cmd/clashctl.sh" ||
 
 bash "$MIGRATE_SH" --help >/dev/null ||
     fail "migrate should expose a help page"
+
+legacy_home_source="$migrate_tmp/legacy-home-source"
+legacy_home_target="$migrate_tmp/legacy-home-target"
+mkdir -p "$legacy_home_source" "$legacy_home_target/resources" "$legacy_home_target/scripts/cmd"
+cat >"$legacy_home_source/.env" <<EOF
+CLASHCTL_HOME=$legacy_home_target
+EOF
+cat >"$legacy_home_target/.env" <<EOF
+CLASHCTL_HOME=$legacy_home_target
+CLASHCTL_KERNEL=clash
+INIT_TYPE=nohup
+EOF
+printf 'legacy-mixin\n' >"$legacy_home_target/resources/mixin.yaml"
+printf 'legacy-script\n' >"$legacy_home_target/scripts/cmd/clashctl.sh"
+CLASHCTL_MIGRATE_SKIP_STATUS=1 bash "$MIGRATE_SH" --source "$TEST_ROOT" --target "$legacy_home_target" >/dev/null
+grep -qx 'kernel_name: "clash"' "$legacy_home_target/resources/install-state.yaml" ||
+    fail "migrate should preserve legacy upstream CLASHCTL_KERNEL through update.sh"
+
+legacy_move_dir="$migrate_tmp/legacy-move"
+mkdir -p "$legacy_move_dir/resources/profiles" "$legacy_move_dir/scripts/cmd"
+cat >"$legacy_move_dir/.env" <<EOF
+CLASH_BASE_DIR=$legacy_move_dir
+KERNEL_NAME=mihomo
+INIT_TYPE=tmux
+EOF
+printf 'move-mixin\n' >"$legacy_move_dir/resources/mixin.yaml"
+printf 'move-sidecar\n' >"$legacy_move_dir/resources/clashctl.yaml"
+printf 'move-profiles\n' >"$legacy_move_dir/resources/profiles.yaml"
+printf 'script\n' >"$legacy_move_dir/scripts/cmd/clashctl.sh"
+
+CLASHCTL_MIGRATE_SKIP_STATUS=1 bash "$MIGRATE_SH" --target "$legacy_move_dir" --source "$TEST_ROOT" --move-legacy-config >/dev/null
+
+[ "$(cat "$legacy_move_dir/config/mixin.yaml")" = "move-mixin" ] ||
+    fail "--move-legacy-config should move mixin.yaml into config/"
+[ "$(cat "$legacy_move_dir/config/clashctl.yaml")" = "move-sidecar" ] ||
+    fail "--move-legacy-config should move clashctl.yaml into config/"
+[ "$(cat "$legacy_move_dir/config/subscriptions.yaml")" = "move-profiles" ] ||
+    fail "--move-legacy-config should move profiles.yaml into config/subscriptions.yaml"
+[ ! -e "$legacy_move_dir/resources/mixin.yaml" ] ||
+    fail "--move-legacy-config should remove legacy resources/mixin.yaml"
+[ ! -e "$legacy_move_dir/resources/clashctl.yaml" ] ||
+    fail "--move-legacy-config should remove legacy resources/clashctl.yaml"
+[ ! -e "$legacy_move_dir/resources/profiles.yaml" ] ||
+    fail "--move-legacy-config should remove legacy resources/profiles.yaml"
+
+legacy_conflict_dir="$migrate_tmp/legacy-conflict"
+mkdir -p "$legacy_conflict_dir/resources" "$legacy_conflict_dir/config" "$legacy_conflict_dir/scripts/cmd"
+cat >"$legacy_conflict_dir/.env" <<EOF
+CLASH_BASE_DIR=$legacy_conflict_dir
+KERNEL_NAME=mihomo
+INIT_TYPE=tmux
+EOF
+printf 'legacy-value\n' >"$legacy_conflict_dir/resources/mixin.yaml"
+printf 'config-value\n' >"$legacy_conflict_dir/config/mixin.yaml"
+printf 'script\n' >"$legacy_conflict_dir/scripts/cmd/clashctl.sh"
+CLASHCTL_MIGRATE_SKIP_STATUS=1 bash "$MIGRATE_SH" --target "$legacy_conflict_dir" --source "$TEST_ROOT" --move-legacy-config >/dev/null 2>&1 &&
+    fail "--move-legacy-config should reject divergent legacy and config files without force"
+[ -f "$legacy_conflict_dir/resources/mixin.yaml" ] ||
+    fail "failed --move-legacy-config should preserve divergent legacy source"
+
+CLASHCTL_MIGRATE_SKIP_STATUS=1 bash "$MIGRATE_SH" --target "$legacy_conflict_dir" --source "$TEST_ROOT" --move-legacy-config --force-remove-legacy-config >/dev/null
+[ "$(cat "$legacy_conflict_dir/config/mixin.yaml")" = "config-value" ] ||
+    fail "--force-remove-legacy-config should not overwrite existing config/mixin.yaml"
+[ ! -e "$legacy_conflict_dir/resources/mixin.yaml" ] ||
+    fail "--force-remove-legacy-config should delete divergent legacy source only when explicit"
+
+legacy_bad_dest_dir="$migrate_tmp/legacy-bad-dest"
+mkdir -p "$legacy_bad_dest_dir/resources" "$legacy_bad_dest_dir/config/mixin.yaml" "$legacy_bad_dest_dir/scripts/cmd"
+cat >"$legacy_bad_dest_dir/.env" <<EOF
+CLASH_BASE_DIR=$legacy_bad_dest_dir
+KERNEL_NAME=mihomo
+INIT_TYPE=tmux
+EOF
+printf 'legacy-value\n' >"$legacy_bad_dest_dir/resources/mixin.yaml"
+printf 'script\n' >"$legacy_bad_dest_dir/scripts/cmd/clashctl.sh"
+CLASHCTL_MIGRATE_SKIP_STATUS=1 bash "$MIGRATE_SH" --target "$legacy_bad_dest_dir" --source "$TEST_ROOT" >/dev/null 2>&1 &&
+    fail "default migration should reject existing non-file config destinations"
 
 pass "one-shot migration checks"

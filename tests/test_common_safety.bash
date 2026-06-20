@@ -33,4 +33,10 @@ assert_file_contains "$COMMON_SH" 'FILE_LOG="\$\{CLASH_RESOURCES_DIR\}/\$\{KERNE
 assert_file_contains "$COMMON_SH" 'FILE_PID="\$\{CLASH_RESOURCES_DIR\}/\$\{KERNEL_NAME\}\.pid"' \
     "common.sh should initialize FILE_PID for nohup pid tracking"
 
+assert_file_contains "$COMMON_SH" '_clashctl_validate_runtime_paths\(\)' \
+    "common.sh should validate critical runtime path variables after initialization"
+
+assert_file_contains "$COMMON_SH" 'CLASH_BASE_DIR CLASH_RESOURCES_DIR CLASH_CONFIG_RUNTIME CLASH_CONFIG_MIXIN FILE_LOG FILE_PID BIN_KERNEL BIN_YQ' \
+    "runtime path validation should cover critical executable, config, log and pid variables"
+
 pass "common safety checks"

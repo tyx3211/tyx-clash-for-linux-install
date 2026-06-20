@@ -160,6 +160,11 @@ command -v crontab >&/dev/null && {
     [ -n "$current_cron" ] && printf '%s\n' "$current_cron" | grep -Fv "$CLASHCTL_CRON_TAG" | crontab -
 }
 
+[ ! -d "$CLASH_BASE_REAL/.git" ] ||
+    printf '📢 检测到安装根目录 Git 仓库，将随卸载删除：%s/.git\n' "$CLASH_BASE_REAL" >&2
+[ ! -d "$CLASH_BASE_REAL/config/.git" ] ||
+    printf '📢 检测到配置目录 Git 仓库，将随卸载删除：%s/config/.git\n' "$CLASH_BASE_REAL" >&2
+
 /usr/bin/rm -rf "$CLASH_BASE_REAL"
 
 echo '✨' '已卸载，相关配置已清除'

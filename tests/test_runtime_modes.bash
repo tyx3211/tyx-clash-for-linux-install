@@ -122,8 +122,8 @@ mode_tmp=$(make_test_tmpdir "clash-runtime-mode")
     _detect_proxy_port() {
         printf 'detect-proxy\n' >>"$mode_tmp/calls"
     }
-    _detect_ext_addr() {
-        printf 'detect-ext\n' >>"$mode_tmp/calls"
+    _ensure_ext_addr_available() {
+        printf 'ensure-ext\n' >>"$mode_tmp/calls"
         EXT_IP=127.0.0.1
         EXT_PORT=9090
     }
@@ -132,7 +132,9 @@ mode_tmp=$(make_test_tmpdir "clash-runtime-mode")
     _unset_system_proxy() { :; }
     _okcat() { :; }
     _failcat() { printf '%s\n' "$*" >>"$mode_tmp/fail.log"; }
-    curl() { return 0; }
+    clashstatus() {
+        [ "${tmux_active:-false}" = true ] || [ "${nohup_active:-false}" = true ]
+    }
     sleep() { :; }
 
     _clash_adapter_tmux_start() {
@@ -171,7 +173,7 @@ mode_tmp=$(make_test_tmpdir "clash-runtime-mode")
     grep -qx 'tmux-start' "$mode_tmp/calls" ||
         fail "clashon --mode tmux should call tmux adapter"
     awk '
-        $0 == "detect-ext" && !seen_start { seen_detect=NR }
+        $0 == "ensure-ext" && !seen_start { seen_detect=NR }
         $0 == "tmux-start" && !seen_start { seen_start=NR }
         END { exit (seen_detect && seen_start && seen_detect < seen_start) ? 0 : 1 }
     ' "$mode_tmp/calls" ||
@@ -211,20 +213,95 @@ restart_ext_tmp=$(make_test_tmpdir "clash-restart-ext")
     _get_active_mode() { return 1; }
     _get_default_service_mode() { printf '%s\n' tmux; }
     _merge_config() { printf 'merge\n' >>"$restart_ext_tmp/calls"; }
-    _detect_ext_addr() { printf 'detect-ext\n' >>"$restart_ext_tmp/calls"; }
+    _ensure_ext_addr_available() { printf 'ensure-ext\n' >>"$restart_ext_tmp/calls"; }
     _clash_service_stop() { printf 'stop-%s\n' "$1" >>"$restart_ext_tmp/calls"; }
     _clash_service_start() { printf 'start-%s\n' "$1" >>"$restart_ext_tmp/calls"; }
+    clashstatus() { printf 'status\n' >>"$restart_ext_tmp/calls"; return 0; }
     sleep() { :; }
 
     _merge_config_restart || fail "_merge_config_restart should succeed with stubbed service operations"
 )
 awk '
     $0 == "merge" { merge=NR }
-    $0 == "detect-ext" { detect=NR }
+    $0 == "ensure-ext" { detect=NR }
     $0 == "start-tmux" { start=NR }
     END { exit (merge && detect && start && merge < detect && detect < start) ? 0 : 1 }
 ' "$restart_ext_tmp/calls" ||
     fail "_merge_config_restart should detect external-controller conflicts before restarting"
+
+on_active_conflict_tmp=$(make_test_tmpdir "clash-on-active-conflict")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    _get_active_mode() { printf '%s\n' tmux; return 0; }
+    _detect_proxy_port() { printf 'detect-proxy\n' >>"$on_active_conflict_tmp/calls"; }
+    _ensure_ext_addr_available() { printf 'ensure-ext\n' >>"$on_active_conflict_tmp/calls"; return 1; }
+    _clash_service_start() { printf 'start-%s\n' "$1" >>"$on_active_conflict_tmp/calls"; }
+    _okcat() { printf '%s\n' "$*" >>"$on_active_conflict_tmp/ok.log"; }
+    _failcat() { printf '%s\n' "$*" >>"$on_active_conflict_tmp/fail.log"; }
+
+    clashon --mode nohup
+    status=$?
+    [ "$status" -ne 0 ] ||
+        fail "clashon should reject a different mode when another mode is already active"
+    [ ! -e "$on_active_conflict_tmp/calls" ] ||
+        fail "clashon should reject active mode conflicts before port checks or adapter start"
+    grep -q 'clashrestart --mode nohup' "$on_active_conflict_tmp/fail.log" ||
+        fail "clashon active mode conflict should tell users to use clashrestart"
+)
+
+restart_health_tmp=$(make_test_tmpdir "clash-restart-health")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    _has_current_proxy_env() { return 1; }
+    _get_active_mode() { return 1; }
+    _get_default_service_mode() { printf '%s\n' tmux; }
+    _merge_config() { printf 'merge\n' >>"$restart_health_tmp/calls"; }
+    _ensure_ext_addr_available() { printf 'ensure-ext\n' >>"$restart_health_tmp/calls"; }
+    _clash_service_stop() { printf 'stop-%s\n' "$1" >>"$restart_health_tmp/calls"; }
+    _clash_service_start() { printf 'start-%s\n' "$1" >>"$restart_health_tmp/calls"; }
+    clashstatus() { printf 'status\n' >>"$restart_health_tmp/calls"; return 1; }
+    _failcat() { printf '%s\n' "$*" >>"$restart_health_tmp/fail.log"; }
+    sleep() { SECONDS=$((SECONDS + 10)); }
+
+    _merge_config_restart
+    status=$?
+    [ "$status" -ne 0 ] ||
+        fail "_merge_config_restart should fail when the restarted kernel never becomes healthy"
+    grep -qx 'stop-tmux' "$restart_health_tmp/calls" ||
+        fail "_merge_config_restart should stop the adapter after restart health check failure"
+    grep -q '重启后健康检查失败' "$restart_health_tmp/fail.log" ||
+        fail "_merge_config_restart should report restart health check failure clearly"
+)
+
+restart_secret_tmp=$(make_test_tmpdir "clash-restart-secret")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    _has_current_proxy_env() { return 1; }
+    _get_active_mode() { printf '%s\n' tmux; return 0; }
+    _detect_ext_addr() { EXT_PORT=23571; }
+    _merge_config() { printf 'merge\n' >>"$restart_secret_tmp/calls"; }
+    _ensure_ext_addr_available() { printf 'ensure-ext %s\n' "${1:-}" >>"$restart_secret_tmp/calls"; }
+    _clash_service_stop() { printf 'stop-%s\n' "$1" >>"$restart_secret_tmp/calls"; }
+    _clash_service_start() { printf 'start-%s\n' "$1" >>"$restart_secret_tmp/calls"; }
+    clashstatus() { printf 'status\n' >>"$restart_secret_tmp/calls"; return 0; }
+    sleep() { :; }
+
+    _merge_config_restart || fail "_merge_config_restart should support secret changes while the old kernel is still active"
+)
+awk '
+    $0 == "merge" { merge=NR }
+    $0 == "ensure-ext 23571" { ensure=NR }
+    $0 == "stop-tmux" { stop=NR }
+    $0 == "start-tmux" { start=NR }
+    END { exit (merge && ensure && stop && start && merge < ensure && ensure < stop && stop < start) ? 0 : 1 }
+' "$restart_secret_tmp/calls" ||
+    fail "_merge_config_restart should allow the old active external-controller port while checking the new runtime"
 
 no_conflict_tmp=$(make_test_tmpdir "clash-no-conflict-return")
 (
@@ -306,6 +383,106 @@ EOF
         fail "_detect_ext_addr should preserve the external-controller port"
 )
 
+numeric_ext_tmp=$(make_test_tmpdir "clash-numeric-ext")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    BIN_YQ="$numeric_ext_tmp/yq"
+    CLASH_CONFIG_RUNTIME="$numeric_ext_tmp/runtime.yaml"
+    cat >"$BIN_YQ" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+'.external-controller // ""')
+    printf '23571\n'
+    ;;
+*)
+    printf '\n'
+    ;;
+esac
+EOF
+    chmod +x "$BIN_YQ"
+    printf '{}\n' >"$CLASH_CONFIG_RUNTIME"
+
+    _detect_ext_addr || fail "_detect_ext_addr should accept numeric-only external-controller values"
+    [ "$EXT_IP" = 127.0.0.1 ] ||
+        fail "_detect_ext_addr should treat numeric-only external-controller values as loopback ports"
+    [ "$EXT_PORT" = 23571 ] ||
+        fail "_detect_ext_addr should preserve numeric-only external-controller ports"
+)
+
+ext_yq_fail_tmp=$(make_test_tmpdir "clash-ext-yq-fail")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    BIN_YQ="$ext_yq_fail_tmp/yq"
+    CLASH_CONFIG_RUNTIME="$ext_yq_fail_tmp/runtime.yaml"
+    cat >"$BIN_YQ" <<'EOF'
+#!/usr/bin/env bash
+exit 7
+EOF
+    chmod +x "$BIN_YQ"
+    printf '{}\n' >"$CLASH_CONFIG_RUNTIME"
+    _failcat() { printf '%s\n' "$*" >>"$ext_yq_fail_tmp/fail.log"; }
+
+    _detect_ext_addr
+    status=$?
+    [ "$status" -ne 0 ] ||
+        fail "_detect_ext_addr should fail when yq cannot read runtime.yaml"
+    grep -q 'external-controller 读取失败' "$ext_yq_fail_tmp/fail.log" ||
+        fail "_detect_ext_addr should report yq read failures clearly"
+)
+
+status_read_only_tmp=$(make_test_tmpdir "clash-status-read-only")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    BIN_YQ="$status_read_only_tmp/yq"
+    CLASH_CONFIG_RUNTIME="$status_read_only_tmp/runtime.yaml"
+    CLASH_CONFIG_MIXIN="$status_read_only_tmp/mixin.yaml"
+    cat >"$BIN_YQ" <<EOF
+#!/usr/bin/env bash
+if [ "\$1" = "-i" ]; then
+    printf 'yq-write\n' >>"$status_read_only_tmp/calls"
+    exit 0
+fi
+case "\$1" in
+'.external-controller // ""')
+    printf '192.0.2.10:19090\n'
+    ;;
+*)
+    printf '\n'
+    ;;
+esac
+EOF
+    chmod +x "$BIN_YQ"
+    printf '{}\n' >"$CLASH_CONFIG_RUNTIME"
+    printf '{}\n' >"$CLASH_CONFIG_MIXIN"
+
+    _get_active_mode() { printf '%s\n' tmux; return 0; }
+    _clash_service_is_active() { return 0; }
+    _get_secret() { :; }
+    _merge_config() { printf 'merge\n' >>"$status_read_only_tmp/calls"; }
+    curl() {
+        printf '%s\n' "$*" >>"$status_read_only_tmp/calls"
+        return 1
+    }
+    _failcat() { printf '%s\n' "$*" >>"$status_read_only_tmp/fail.log"; }
+
+    clashstatus >/dev/null 2>&1
+    status=$?
+    [ "$status" -ne 0 ] ||
+        fail "clashstatus should fail when API probe fails"
+    grep -q 'http://192.0.2.10:19090/version' "$status_read_only_tmp/calls" ||
+        fail "clashstatus should probe the configured external-controller host"
+    ! grep -q '^yq-write$' "$status_read_only_tmp/calls" ||
+        fail "clashstatus should not write mixin.yaml"
+    ! grep -q '^merge$' "$status_read_only_tmp/calls" ||
+        fail "clashstatus should not merge config"
+)
+
 orphan_restart_tmp=$(make_test_tmpdir "clash-orphan-restart")
 (
     set +e
@@ -325,6 +502,41 @@ awk '
 ' "$orphan_restart_tmp/calls" ||
     fail "clashrestart should terminate exact current-install orphan kernels before starting the target mode"
 
+log_path_tmp=$(make_test_tmpdir "clash-log-path")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    _failcat() { printf '%s\n' "$*" >>"$log_path_tmp/fail.log"; }
+    FILE_LOG=
+    _clash_service_log >/dev/null 2>&1
+    status=$?
+    [ "$status" -ne 0 ] ||
+        fail "clashlog should fail when FILE_LOG is empty"
+    grep -q '日志路径未初始化' "$log_path_tmp/fail.log" ||
+        fail "clashlog should print a clear error when FILE_LOG is empty"
+)
+
+status_ext_fail_tmp=$(make_test_tmpdir "clash-status-ext-fail")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    _get_active_mode() { printf '%s\n' tmux; return 0; }
+    _clash_service_is_active() { return 0; }
+    _detect_ext_addr() { printf 'detect-ext\n' >>"$status_ext_fail_tmp/calls"; return 1; }
+    _get_secret() { :; }
+    curl() { printf 'curl\n' >>"$status_ext_fail_tmp/calls"; return 0; }
+    _failcat() { printf '%s\n' "$*" >>"$status_ext_fail_tmp/fail.log"; }
+
+    clashstatus >/dev/null 2>&1
+    status=$?
+    [ "$status" -ne 0 ] ||
+        fail "clashstatus should fail when external-controller detection fails"
+    ! grep -q '^curl$' "$status_ext_fail_tmp/calls" ||
+        fail "clashstatus should not call curl after external-controller detection fails"
+)
+
 on_ext_fail_tmp=$(make_test_tmpdir "clash-on-ext-fail")
 (
     set +e
@@ -332,7 +544,7 @@ on_ext_fail_tmp=$(make_test_tmpdir "clash-on-ext-fail")
 
     INIT_TYPE=tmux
     _detect_proxy_port() { printf 'detect-proxy\n' >>"$on_ext_fail_tmp/calls"; }
-    _detect_ext_addr() { printf 'detect-ext\n' >>"$on_ext_fail_tmp/calls"; return 1; }
+    _ensure_ext_addr_available() { printf 'ensure-ext\n' >>"$on_ext_fail_tmp/calls"; return 1; }
     _get_active_mode() { return 1; }
     _clash_service_start() { printf 'start-%s\n' "$1" >>"$on_ext_fail_tmp/calls"; return 0; }
     clashstatus() { return 0; }
@@ -361,7 +573,7 @@ rollback_tmp=$(make_test_tmpdir "clash-runtime-rollback")
     printf '{}\n' >"$CLASH_CONFIG_RUNTIME"
 
     _detect_proxy_port() { :; }
-    _detect_ext_addr() { :; }
+    _ensure_ext_addr_available() { :; }
     _okcat() { :; }
     _failcat() { printf '%s\n' "$*" >>"$rollback_tmp/fail.log"; }
     clashstatus() { return 1; }
@@ -416,6 +628,40 @@ tun_tmp=$(make_test_tmpdir "clash-runtime-tun")
     [ "$status" -ne 0 ] || fail "tunon should require active systemd mode"
     grep -q 'clashrestart --mode systemd' "$tun_tmp/fail.log" ||
         fail "tunon should tell user to restart with systemd mode"
+)
+
+tun_restore_tmp=$(make_test_tmpdir "clash-tun-restore")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    CLASH_CONFIG_MIXIN="$tun_restore_tmp/mixin.yaml"
+    printf 'new\n' >"$CLASH_CONFIG_MIXIN"
+    printf 'old\n' >"$tun_restore_tmp/backup.yaml"
+    _merge_config() { printf 'merge\n' >>"$tun_restore_tmp/calls"; }
+    _clash_service_start() {
+        printf 'start-%s\n' "$1" >>"$tun_restore_tmp/calls"
+        return 1
+    }
+    _failcat() { printf '%s\n' "$*" >>"$tun_restore_tmp/fail.log"; }
+
+    _restore_tun_mixin "$tun_restore_tmp/backup.yaml" false
+    status=$?
+    [ "$status" -eq 0 ] ||
+        fail "_restore_tun_mixin should succeed when no service restart is requested"
+    [ "$(cat "$CLASH_CONFIG_MIXIN")" = "old" ] ||
+        fail "_restore_tun_mixin should restore the mixin content"
+    ! grep -q '^start-systemd$' "$tun_restore_tmp/calls" ||
+        fail "_restore_tun_mixin should not start systemd when restart_after_restore=false"
+
+    printf 'newer\n' >"$CLASH_CONFIG_MIXIN"
+    printf 'older\n' >"$tun_restore_tmp/backup2.yaml"
+    _restore_tun_mixin "$tun_restore_tmp/backup2.yaml" true
+    status=$?
+    [ "$status" -ne 0 ] ||
+        fail "_restore_tun_mixin should fail when requested systemd restart fails"
+    grep -q 'Tun 配置已回滚，但 systemd 内核恢复启动失败' "$tun_restore_tmp/fail.log" ||
+        fail "_restore_tun_mixin should report failed systemd restart after rollback"
 )
 
 pass "runtime mode checks"

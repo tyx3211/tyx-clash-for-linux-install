@@ -65,7 +65,7 @@ _clashctl_parse_env_file() {
 
         [[ $key =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
         case "$key" in
-        KERNEL_NAME | CLASH_BASE_DIR | CLASH_CONFIG_URL | INIT_TYPE | CLASH_INSTALLED_INIT_TYPE | CLASHCTL_CONFIG_GIT | CLASHCTL_DOWNLOAD_TIMEOUT | CLASHCTL_SUB_TIMEOUT | CLASH_SUB_UA | ZIP_UI | URL_GH_PROXY | URL_CLASH_UI | VERSION_MIHOMO | VERSION_YQ | VERSION_SUBCONVERTER | SUBCONVERTER_REPO)
+        KERNEL_NAME | CLASHCTL_KERNEL | CLASH_BASE_DIR | CLASHCTL_HOME | CLASH_CONFIG_URL | INIT_TYPE | CLASH_INSTALLED_INIT_TYPE | CLASHCTL_CONFIG_GIT | CLASHCTL_DOWNLOAD_TIMEOUT | CLASHCTL_SUB_TIMEOUT | CLASH_SUB_UA | CLASHCTL_SUB_UA | ZIP_UI | URL_GH_PROXY | URL_CLASH_UI | VERSION_MIHOMO | VERSION_YQ | VERSION_SUBCONVERTER | SUBCONVERTER_REPO)
             ;;
         *)
             continue
@@ -79,6 +79,18 @@ _clashctl_parse_env_file() {
         \'*\')
             value=${value#\'}
             value=${value%\'}
+            ;;
+        esac
+
+        case "$key" in
+        CLASHCTL_KERNEL)
+            key=KERNEL_NAME
+            ;;
+        CLASHCTL_HOME)
+            key=CLASH_BASE_DIR
+            ;;
+        CLASHCTL_SUB_UA)
+            key=CLASH_SUB_UA
             ;;
         esac
 
@@ -213,6 +225,32 @@ CLASH_PROFILES_LOG="${CLASH_RESOURCES_DIR}/profiles.log"
 INSTALL_MARKER="${CLASH_BASE_DIR}/.clashctl-install-root"
 CLASHCTL_CRON_TAG="# clashctl-auto-update"
 
+_clashctl_validate_runtime_paths() {
+    local name value
+    for name in CLASH_BASE_DIR CLASH_RESOURCES_DIR CLASH_CONFIG_RUNTIME CLASH_CONFIG_MIXIN FILE_LOG FILE_PID BIN_KERNEL BIN_YQ; do
+        value=${!name-}
+        [ -n "$value" ] || {
+            printf 'clashctl: critical runtime variable is empty: %s\n' "$name" >&2
+            return 1
+        }
+    done
+
+    case "$CLASH_BASE_DIR" in
+    /*)
+        [ "$CLASH_BASE_DIR" != "/" ] || {
+            printf 'clashctl: CLASH_BASE_DIR must not be / \n' >&2
+            return 1
+        }
+        ;;
+    *)
+        printf 'clashctl: CLASH_BASE_DIR must be an absolute path: %s\n' "$CLASH_BASE_DIR" >&2
+        return 1
+        ;;
+    esac
+}
+
+_clashctl_validate_runtime_paths || { return 1 2>/dev/null || exit 1; }
+
 _is_port_used() {
     local port=$1
     { ss -tunl 2>/dev/null || netstat -tunl; } | grep -qs ":${port}\b"
@@ -257,53 +295,92 @@ _get_local_ip() {
     echo "$local_ip"
 }
 
-function _detect_ext_addr() {
-    local ext_addr ext_ip write_ip
-    ext_addr=$("$BIN_YQ" '.external-controller // ""' "$CLASH_CONFIG_RUNTIME")
-    case "$ext_addr" in
+_format_http_url() {
+    local host=$1 port=$2 path=${3:-}
+
+    case "$host" in
     *:*)
-        ext_ip=${ext_addr%:*}
-        EXT_PORT=${ext_addr##*:}
+        case "$host" in
+        \[*\])
+            ;;
+        *)
+            host="[$host]"
+            ;;
+        esac
         ;;
+    esac
+    printf 'http://%s:%s%s\n' "$host" "$port" "$path"
+}
+
+function _detect_ext_addr() {
+    local ext_addr ext_ip
+    ext_addr=$("$BIN_YQ" '.external-controller // ""' "$CLASH_CONFIG_RUNTIME") || {
+        _failcat "external-controller 读取失败：$CLASH_CONFIG_RUNTIME"
+        return 1
+    }
+    case "$ext_addr" in
     "")
         ext_ip=127.0.0.1
         EXT_PORT=9090
         ;;
+    *:*)
+        ext_ip=${ext_addr%:*}
+        EXT_PORT=${ext_addr##*:}
+        ;;
     *)
-        ext_ip=$ext_addr
-        EXT_PORT=9090
+        if [[ $ext_addr =~ ^[0-9]+$ ]]; then
+            ext_ip=127.0.0.1
+            EXT_PORT=$ext_addr
+        else
+            ext_ip=$ext_addr
+            EXT_PORT=9090
+        fi
         ;;
     esac
 
-    [ -n "$EXT_PORT" ] || EXT_PORT=9090
+    [[ $EXT_PORT =~ ^[0-9]+$ ]] || {
+        _failcat "external-controller 端口无效：${EXT_PORT:-<empty>}（来自 $CLASH_CONFIG_RUNTIME）"
+        return 1
+    }
+
+    EXT_CONFIG_HOST=$ext_ip
+    [ -n "$EXT_CONFIG_HOST" ] || EXT_CONFIG_HOST=127.0.0.1
     case "$ext_ip" in
     "" | localhost)
-        EXT_IP=127.0.0.1
+        ext_ip=127.0.0.1
         ;;
+    esac
+
+    case "$ext_ip" in
     0.0.0.0 | "*")
         EXT_IP=$(_get_local_ip)
+        EXT_API_HOST=127.0.0.1
         ;;
     *)
         EXT_IP=$ext_ip
+        EXT_API_HOST=$ext_ip
         ;;
     esac
+    [ -n "$EXT_API_HOST" ] || EXT_API_HOST=127.0.0.1
+    return 0
+}
 
-    write_ip=$ext_ip
-    [ -n "$write_ip" ] || write_ip=127.0.0.1
+_ext_api_url() {
+    local path=${1:-}
+    _format_http_url "${EXT_API_HOST:-${EXT_IP:-127.0.0.1}}" "$EXT_PORT" "$path"
+}
+
+_ensure_ext_addr_available() {
+    local allowed_occupied_port=${1:-}
+
+    _detect_ext_addr || return 1
+
     _is_port_used "$EXT_PORT" && {
-        local secret="$(_get_secret)"
-        local auth_args=()
-        [ -n "$secret" ] && auth_args=(-H "Authorization: Bearer $secret")
-        curl --silent --fail --noproxy "*" "${auth_args[@]}" "http://127.0.0.1:${EXT_PORT}/version" >/dev/null && return 0
+        [ -n "$allowed_occupied_port" ] && [ "$EXT_PORT" = "$allowed_occupied_port" ] && return 0
         local newPort
         newPort=$(_get_random_port) || return 1
-        _failcat '🎯' "端口冲突：[external-controller] ${EXT_PORT} 🎲 随机分配 $newPort"
-        EXT_PORT=$newPort
-        "$BIN_YQ" -i ".external-controller = \"$write_ip:$newPort\"" "$CLASH_CONFIG_MIXIN" || {
-            _failcat "external-controller 端口写入失败：$CLASH_CONFIG_MIXIN"
-            return 1
-        }
-        _merge_config || return 1
+        _failcat '🎯' "端口冲突：[external-controller] ${EXT_PORT} 已被其他进程占用，建议改 mixin.yaml 中的 external-controller 为 ${EXT_CONFIG_HOST}:$newPort 后执行 clashmixin -m"
+        return 1
     }
     return 0
 }

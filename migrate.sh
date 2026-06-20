@@ -7,6 +7,8 @@ target=
 source_dir=
 restart_mode=
 status_check=true
+move_legacy_config=false
+force_remove_legacy_config=false
 
 _die() {
     printf '📢 %s\n' "$1" >&2
@@ -63,7 +65,11 @@ _read_env_value() {
         value=${value%\'}
         ;;
     esac
-    [ "$key" = CLASH_BASE_DIR ] && value=$(_expand_path "$value")
+    case "$key" in
+    CLASH_BASE_DIR | CLASHCTL_HOME)
+        value=$(_expand_path "$value")
+        ;;
+    esac
     printf '%s\n' "$value"
 }
 
@@ -72,6 +78,7 @@ _find_target_from_env() {
     for candidate in "$THIS_MIGRATE_DIR/.env" "$HOME/clashctl/.env"; do
         [ -f "$candidate" ] || continue
         _read_env_value "$candidate" CLASH_BASE_DIR && return 0
+        _read_env_value "$candidate" CLASHCTL_HOME && return 0
     done
     return 1
 }
@@ -95,9 +102,20 @@ Usage:
 默认行为：
   - 原地刷新旧安装目录中的项目脚本。
   - 写入 resources/install-state.yaml。
-  - 将旧 resources/mixin.yaml、resources/clashctl.yaml、resources/profiles.yaml 迁移到 config/。
+  - 默认将旧 resources/mixin.yaml、resources/clashctl.yaml、resources/profiles.yaml 复制到 config/，并保留旧位置文件。
   - 清理旧项目遗留文件，如 placeholder_start1、.github、.editorconfig。
   - 不停止内核，不启动内核，不修改当前 shell 的代理变量。
+
+Options:
+  --move-legacy-config
+      将旧 resources/mixin.yaml、resources/clashctl.yaml、resources/profiles.yaml 移动到 config/，
+      或在目标文件已存在且内容相同时删除旧位置文件。
+      若目标文件已存在且内容不同，默认拒绝，避免误删。
+  --force-remove-legacy-config
+      配合 --move-legacy-config 使用。目标 config 文件已存在且和旧 resources 文件不同时，
+      保留 config 文件并删除旧 resources 文件。
+  --skip-status
+      迁移结束后不执行 clashstatus --all。
 
 如果传入 --restart-mode，则迁移完成后执行：
   source <install_dir>/scripts/cmd/clashctl.sh
@@ -136,6 +154,12 @@ while (($#)); do
     --skip-status)
         status_check=false
         ;;
+    --move-legacy-config)
+        move_legacy_config=true
+        ;;
+    --force-remove-legacy-config)
+        force_remove_legacy_config=true
+        ;;
     -h | --help)
         _print_help
         exit 0
@@ -149,6 +173,8 @@ done
 
 [ "${CLASHCTL_MIGRATE_SKIP_STATUS:-0}" = 1 ] && status_check=false
 _validate_mode "$restart_mode"
+[ "$force_remove_legacy_config" = false ] || [ "$move_legacy_config" = true ] ||
+    _die "--force-remove-legacy-config 需要配合 --move-legacy-config 使用"
 
 [ -n "$source_dir" ] || source_dir=$THIS_MIGRATE_DIR
 source_dir=$(_canonical_dir "$source_dir") || _die "源码目录不存在：$source_dir"
@@ -166,16 +192,44 @@ target=$(_canonical_dir "$target") || _die "安装目录不存在：$target"
 printf '⏳ 正在迁移安装目录：%s\n' "$target"
 bash "$source_dir/update.sh" --target "$target" --source "$source_dir"
 
+[ ! -L "$target/config" ] || _die "配置目录不能是符号链接：$target/config"
 mkdir -p "$target/config"
-if [ ! -e "$target/config/mixin.yaml" ] && [ -f "$target/resources/mixin.yaml" ]; then
-    cp -a "$target/resources/mixin.yaml" "$target/config/mixin.yaml"
-fi
-if [ ! -e "$target/config/clashctl.yaml" ] && [ -f "$target/resources/clashctl.yaml" ]; then
-    cp -a "$target/resources/clashctl.yaml" "$target/config/clashctl.yaml"
-fi
-if [ ! -e "$target/config/subscriptions.yaml" ] && [ -f "$target/resources/profiles.yaml" ]; then
-    cp -a "$target/resources/profiles.yaml" "$target/config/subscriptions.yaml"
-fi
+
+_migrate_legacy_config_file() {
+    local src=$1 dest=$2
+
+    [ -e "$src" ] || [ -L "$src" ] || return 0
+    [ ! -L "$src" ] || _die "拒绝迁移符号链接旧配置：$src"
+    [ ! -L "$dest" ] || _die "拒绝覆盖符号链接配置：$dest"
+    [ -f "$src" ] || _die "旧配置不是普通文件：$src"
+
+    if [ "$move_legacy_config" = true ]; then
+        if [ ! -e "$dest" ]; then
+            mv "$src" "$dest"
+            return 0
+        fi
+        [ -f "$dest" ] || _die "目标配置不是普通文件：$dest"
+        if cmp -s "$src" "$dest"; then
+            rm -f "$src"
+            return 0
+        fi
+        if [ "$force_remove_legacy_config" = true ]; then
+            rm -f "$src"
+            return 0
+        fi
+        _die "目标配置已存在且与旧配置不同，拒绝删除旧文件：$src -> $dest；确认以 config/ 为准时可追加 --force-remove-legacy-config"
+    fi
+
+    if [ -e "$dest" ]; then
+        [ -f "$dest" ] || _die "目标配置不是普通文件：$dest"
+        return 0
+    fi
+    cp -a "$src" "$dest"
+}
+
+_migrate_legacy_config_file "$target/resources/mixin.yaml" "$target/config/mixin.yaml"
+_migrate_legacy_config_file "$target/resources/clashctl.yaml" "$target/config/clashctl.yaml"
+_migrate_legacy_config_file "$target/resources/profiles.yaml" "$target/config/subscriptions.yaml"
 
 if [ -n "$restart_mode" ]; then
     # shellcheck disable=SC1091
@@ -193,7 +247,7 @@ cat <<EOF
 下一步建议：
   source "$target/scripts/cmd/clashctl.sh"
   clashstatus --all
-  clashrestart --mode tmux
+  clashrestart
 
 如果当前代理连接承载着远程会话，建议先只执行前两条，确认后再重启。
 EOF

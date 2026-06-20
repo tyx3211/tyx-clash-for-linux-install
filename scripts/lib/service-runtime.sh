@@ -1,5 +1,5 @@
 _validate_service_mode() {
-    case "$1" in
+    case "${1:-}" in
     tmux | nohup | systemd)
         return 0
         ;;
@@ -324,7 +324,10 @@ _clash_adapter_systemd_start() {
         _failcat "systemd 服务未注册或不属于当前安装，请先 sudo bash install.sh --init systemd"
         return 1
     }
-    _systemctl start "$KERNEL_NAME"
+    _systemctl start "$KERNEL_NAME" || {
+        _failcat "systemd 服务启动失败：请确认当前用户有 root 或免密 sudo 的 systemctl 权限"
+        return 1
+    }
 }
 
 _clash_adapter_systemd_stop() {
@@ -407,10 +410,26 @@ _clash_service_stop() {
 }
 
 _clash_service_log() {
+    [ -n "${FILE_LOG:-}" ] || {
+        _failcat "日志路径未初始化，请重新 source 安装目录中的 clashctl.sh"
+        return 1
+    }
+    [ -f "$FILE_LOG" ] || {
+        _failcat "日志文件不存在：$FILE_LOG"
+        return 1
+    }
     less <"$FILE_LOG" "$@"
 }
 
 _clash_service_follow_log() {
+    [ -n "${FILE_LOG:-}" ] || {
+        _failcat "日志路径未初始化，请重新 source 安装目录中的 clashctl.sh"
+        return 1
+    }
+    [ -f "$FILE_LOG" ] || {
+        _failcat "日志文件不存在：$FILE_LOG"
+        return 1
+    }
     tail -f -n 0 "$FILE_LOG" "$@"
 }
 
@@ -462,8 +481,6 @@ EOF
         return 0
     }
 
-    _detect_proxy_port || return 1
-    _detect_ext_addr || return 1
     active=$(_get_active_mode 2>/dev/null)
     active_status=$?
     if [ "$active_status" -eq 0 ]; then
@@ -479,7 +496,10 @@ EOF
         return 1
     fi
 
-    _clash_service_start "$mode" >/dev/null 2>&1 || {
+    _detect_proxy_port || return 1
+    _ensure_ext_addr_available || return 1
+
+    _clash_service_start "$mode" >/dev/null || {
         _failcat "启动失败：无法以 $mode 模式启动"
         return 1
     }
@@ -657,8 +677,9 @@ EOF
         _failcat "内核未运行"
         return 1
     }
-    _detect_ext_addr
-    local api="http://${EXT_IP}:${EXT_PORT}/version"
+    _detect_ext_addr || return 1
+    local api
+    api=$(_ext_api_url /version)
     local secret="$(_get_secret)"
     local auth_args=()
     [ -n "$secret" ] && auth_args=(-H "Authorization: Bearer $secret")

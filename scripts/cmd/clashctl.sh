@@ -28,7 +28,7 @@ _clashctl_source_lib "$THIS_SCRIPT_DIR/../lib/subscription.sh" || { return 1 2>/
 unset -f _clashctl_source_lib
 
 function clashctl() {
-    case "$1" in
+    case "${1:-}" in
     on)
         shift
         clashon "$@"

@@ -220,6 +220,24 @@ grep -qx 'default_mode: "tmux"' "$legacy_env_dir/resources/install-state.yaml" |
 [ ! -e "$legacy_env_dir/.env" ] ||
     fail "legacy migration should not create .env when the target did not already have one"
 
+legacy_upstream_env_dir="$update_tmp/legacy-upstream-env"
+mkdir -p "$legacy_upstream_env_dir/resources" "$legacy_upstream_env_dir/scripts/cmd"
+cat >"$legacy_upstream_env_dir/.env" <<EOF
+CLASHCTL_HOME=$legacy_upstream_env_dir
+CLASHCTL_KERNEL=clash
+INIT_TYPE=nohup
+EOF
+printf 'legacy-mixin\n' >"$legacy_upstream_env_dir/resources/mixin.yaml"
+printf 'legacy-script\n' >"$legacy_upstream_env_dir/scripts/cmd/clashctl.sh"
+(
+    cd "$source_dir"
+    CLASHCTL_NO_RC=1 bash update.sh --target "$legacy_upstream_env_dir" >/dev/null
+)
+grep -qx 'kernel_name: "clash"' "$legacy_upstream_env_dir/resources/install-state.yaml" ||
+    fail "legacy upstream .env migration should preserve CLASHCTL_KERNEL as kernel_name"
+grep -qx 'default_mode: "nohup"' "$legacy_upstream_env_dir/resources/install-state.yaml" ||
+    fail "legacy upstream .env migration should preserve INIT_TYPE as default_mode"
+
 legacy_fail_dir="$update_tmp/legacy-fail"
 legacy_other_dir="$update_tmp/legacy-other"
 mkdir -p "$legacy_fail_dir/resources" "$legacy_fail_dir/scripts/cmd" "$legacy_other_dir"

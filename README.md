@@ -88,7 +88,7 @@ clashctl update-self
   `config/mixin.yaml` 只放会参与 mihomo/clash 合并的配置；
   `config/clashctl.yaml` 只放 `clashctl` 的 sidecar 配置，不再把私有键混进运行时配置。
 - 适合人工维护的配置集中在 `config/`，可选用 git 管理；运行时生成物继续放在 `resources/`。
-- 自动检测端口占用情况，在冲突时随机分配可用端口。
+- 自动检测代理端口占用情况，并在冲突时为代理端口随机分配可用端口；`external-controller` 控制端口冲突时只提示建议端口，不自动改用户配置。
 - 在需要时调用 [subconverter](https://github.com/tindy2013/subconverter) 进行本地订阅转换。
 - 默认 no-sudo / tmux 模式不提供 Tun；显式选择 `systemd` 模式时支持 Tun。
 
@@ -316,6 +316,7 @@ clashproxy mode --help
 ## 🌐 Web 控制台
 
 - 新安装默认控制端口为 `127.0.0.1:9090`。旧安装执行 `clashctl update-self` 后不会自动改已有 `mixin.yaml`，实际端口以 `clashui` 输出或当前 `mixin.yaml` 为准。
+- 如果 `external-controller` 控制端口被其他进程占用，启动命令会失败并给出建议端口。请手工修改 `config/mixin.yaml` 里的 `external-controller`，然后执行 `clashmixin -m`；旧兼容安装也可能需要修改 `resources/mixin.yaml`。
 - `clashui` 会输出控制台入口地址；默认推荐通过 SSH 端口转发访问。
 - 当控制口绑定 `127.0.0.1` / `localhost` 时，`clashui` 只输出本机地址和 SSH 转发示例，不提示公网地址或开放防火墙端口。
 - 如需远程访问面板，请确保 `secret` 与客户端保持一致。
@@ -433,7 +434,9 @@ $ clashtun off
 
 ### 旧版用户先迁移
 
-如果安装目录来自旧 `nosudo-tmux` 分支、旧 `master`，或者 `~/clashctl` 根目录里还带有 `.git`、`placeholder_start1`、旧 `resources/mixin.yaml` 布局，推荐先从新源码目录执行一次迁移：
+如果安装目录来自旧 `nosudo-tmux` 分支、旧 `master`，或者 `~/clashctl` 根目录里还带有 `.git`、`placeholder_start1`、旧 `resources/mixin.yaml` 布局，推荐先从新源码目录执行一次迁移。
+
+旧 no-sudo tmux 版本的边界 tag 是 [`legacy-nosudo-tmux`](https://github.com/tyx3211/tyx-clash-for-linux-install/tree/legacy-nosudo-tmux)。这个 tag 及以前的安装，以及之后没有跑过 `migrate.sh` 的中间版安装，都按旧版处理：
 
 ```bash
 git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git
@@ -446,10 +449,24 @@ clashstatus --all
 `migrate.sh` 默认不停止内核、不启动内核、不修改当前 shell 代理变量。它会原地刷新脚本、写入 `resources/install-state.yaml`、把旧 `resources/mixin.yaml` / `resources/clashctl.yaml` / `resources/profiles.yaml` 复制到新版 `config/` 布局，并清理旧项目遗留文件。确认迁移结果后，再按需执行：
 
 ```bash
-clashrestart --mode tmux
+clashrestart
 ```
 
-如果希望迁移后自动重启，可以显式指定：
+`clashrestart` 不带 `--mode` 时，会优先重启当前活跃托管模式；没有活跃模式时才按默认模式启动。如果我们明确要切换模式，再使用 `clashrestart --mode tmux|nohup|systemd`。
+
+如果希望旧配置从 `resources/` 移走，不在旧位置保留副本，可以执行：
+
+```bash
+bash migrate.sh --target "$HOME/clashctl" --move-legacy-config
+```
+
+如果之前已经执行过默认迁移，且 `config/` 和旧 `resources/` 文件内容不同，`--move-legacy-config` 会拒绝删除旧文件。确认以后以 `config/` 为准时，再显式追加：
+
+```bash
+bash migrate.sh --target "$HOME/clashctl" --move-legacy-config --force-remove-legacy-config
+```
+
+如果希望迁移后自动重启，可以显式指定目标模式：
 
 ```bash
 bash migrate.sh --target "$HOME/clashctl" --restart-mode tmux

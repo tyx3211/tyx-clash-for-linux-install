@@ -1,8 +1,10 @@
 function clashui() {
     _detect_ext_addr || return 1
     clashstatus >&/dev/null || clashon >/dev/null || return 1
+    _detect_ext_addr || return 1
     local local_ip=$EXT_IP
-    local local_address="http://${local_ip}:${EXT_PORT}/ui"
+    local local_address
+    local_address=$(_format_http_url "$local_ip" "$EXT_PORT" /ui)
     case "$local_ip" in
     127.* | localhost | ::1)
         printf "\n"
@@ -23,7 +25,8 @@ function clashui() {
 
     local query_url='api64.ipify.org' # ifconfig.me
     local public_ip=$(curl -s --noproxy "*" --location --max-time 2 $query_url)
-    local public_address="http://${public_ip:-公网}:${EXT_PORT}/ui"
+    local public_address
+    public_address=$(_format_http_url "${public_ip:-公网}" "$EXT_PORT" /ui)
     printf "\n"
     printf "╔═══════════════════════════════════════════════╗\n"
     printf "║                %s                  ║\n" "$(_okcat 'Web 控制台')"
@@ -131,8 +134,28 @@ _merge_config() {
     /usr/bin/rm -f "$runtime_backup"
 }
 
+_restore_runtime_after_restart_failure() {
+    local backup=$1 mode=$2 was_active=$3
+
+    if [ -f "$backup" ]; then
+        /bin/mv -f "$backup" "$CLASH_CONFIG_RUNTIME"
+    else
+        /usr/bin/rm -f "$CLASH_CONFIG_RUNTIME"
+    fi
+
+    if [ "$was_active" = true ]; then
+        _clash_service_start "$mode" >/dev/null 2>&1 || {
+            _failcat "旧运行时配置已恢复，但 $mode 内核恢复启动失败"
+            return 1
+        }
+    fi
+    return 0
+}
+
 _merge_config_restart() {
-    local had_proxy_env=false mode active_status
+    local had_proxy_env=false mode active_status was_active=false allowed_ext_port=
+    local runtime_restart_backup="${CLASH_CONFIG_RUNTIME}.restart.bak.$$"
+
     _has_current_proxy_env && had_proxy_env=true
     mode=$(_get_active_mode 2>/dev/null)
     active_status=$?
@@ -140,25 +163,55 @@ _merge_config_restart() {
         _failcat "检测到多个托管模式同时运行，请先手动清理后再刷新配置"
         return 1
     }
-    [ "$active_status" -ne 0 ] && mode=$(_get_default_service_mode)
-
-    _merge_config || return 1
-    _detect_ext_addr || return 1
-    _clash_service_stop "$mode" >/dev/null 2>&1 || true
-    sleep 0.1
-    _clash_service_start "$mode" >/dev/null || return 1
-    sleep 0.1
-
-    if [ "$had_proxy_env" = true ]; then
-        _set_system_proxy || return 1
+    if [ "$active_status" -eq 0 ]; then
+        was_active=true
+        _detect_ext_addr || return 1
+        allowed_ext_port=$EXT_PORT
+    else
+        mode=$(_get_default_service_mode)
     fi
-    return 0
+
+    [ -f "$CLASH_CONFIG_RUNTIME" ] && cat "$CLASH_CONFIG_RUNTIME" >"$runtime_restart_backup"
+
+    _merge_config || {
+        /usr/bin/rm -f "$runtime_restart_backup"
+        return 1
+    }
+    _ensure_ext_addr_available "$allowed_ext_port" || {
+        _restore_runtime_after_restart_failure "$runtime_restart_backup" "$mode" false >/dev/null 2>&1 || true
+        return 1
+    }
+    [ "$was_active" = true ] && _clash_service_stop "$mode" >/dev/null 2>&1 || true
+    sleep 0.1
+    _clash_service_start "$mode" >/dev/null || {
+        _restore_runtime_after_restart_failure "$runtime_restart_backup" "$mode" "$was_active" >/dev/null 2>&1 || true
+        _failcat "配置已合并，但内核无法以 $mode 模式重启"
+        return 1
+    }
+
+    local deadline=$((SECONDS + 5))
+    while [ "$SECONDS" -le "$deadline" ]; do
+        clashstatus >&/dev/null && {
+            if [ "$had_proxy_env" = true ]; then
+                _set_system_proxy || return 1
+            fi
+            /usr/bin/rm -f "$runtime_restart_backup"
+            return 0
+        }
+        sleep 0.2
+    done
+
+    _clash_service_stop "$mode" >/dev/null 2>&1 || true
+    _clear_service_state
+    _restore_runtime_after_restart_failure "$runtime_restart_backup" "$mode" "$was_active" >/dev/null 2>&1 || true
+    _failcat "配置已合并，但内核重启后健康检查失败：请执行 clashlog 查看日志"
+    return 1
 }
 _get_secret() {
     "$BIN_YQ" '.secret // ""' "$CLASH_CONFIG_RUNTIME"
 }
 function clashsecret() {
-    case "$1" in
+    case "${1:-}" in
     -h | --help)
         cat <<EOF
 
@@ -200,7 +253,7 @@ EOF
     esac
 }
 function clashmixin() {
-    case "$1" in
+    case "${1:-}" in
     -h | --help)
         cat <<EOF
 
@@ -276,8 +329,8 @@ EOF
         esac
     done
 
-    _detect_ext_addr || return 1
     clashstatus >&/dev/null || clashon >/dev/null || return 1
+    _detect_ext_addr || return 1
     _okcat '⏳' "请求内核升级..."
     local follow_pid=
     [ "$log_flag" = true ] && {
@@ -290,7 +343,7 @@ EOF
             --noproxy "*" \
             --location \
             -H "Authorization: Bearer $(_get_secret)" \
-            "http://${EXT_IP}:${EXT_PORT}/upgrade?channel=$channel"
+            "$(_ext_api_url "/upgrade?channel=$channel")"
     )
     [ -n "$follow_pid" ] && kill "$follow_pid" >/dev/null 2>&1
 
