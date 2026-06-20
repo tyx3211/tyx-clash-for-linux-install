@@ -27,4 +27,10 @@ assert_file_contains "$COMMON_SH" 'fail_count|for .*attempt|while .*100' \
 assert_file_not_contains "$COMMON_SH" 'BIN_SUBCONVERTER_STOP=.*pkill -9 -f' \
     "subconverter stop command should not be stored as an unquoted pkill -f string"
 
+assert_file_contains "$COMMON_SH" 'FILE_LOG="\$\{CLASH_RESOURCES_DIR\}/\$\{KERNEL_NAME\}\.log"' \
+    "common.sh should initialize FILE_LOG for clashlog and tmux/nohup redirection"
+
+assert_file_contains "$COMMON_SH" 'FILE_PID="\$\{CLASH_RESOURCES_DIR\}/\$\{KERNEL_NAME\}\.pid"' \
+    "common.sh should initialize FILE_PID for nohup pid tracking"
+
 pass "common safety checks"

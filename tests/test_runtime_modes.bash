@@ -275,6 +275,56 @@ EOF
         fail "no-conflict detection should not merge config"
 )
 
+empty_ext_host_tmp=$(make_test_tmpdir "clash-empty-ext-host")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    BIN_YQ="$empty_ext_host_tmp/yq"
+    CLASH_CONFIG_RUNTIME="$empty_ext_host_tmp/runtime.yaml"
+    CLASH_CONFIG_MIXIN="$empty_ext_host_tmp/mixin.yaml"
+    cat >"$BIN_YQ" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+'.external-controller // ""')
+    printf ':41907\n'
+    ;;
+*)
+    printf '\n'
+    ;;
+esac
+EOF
+    chmod +x "$BIN_YQ"
+    printf '{}\n' >"$CLASH_CONFIG_RUNTIME"
+    printf '{}\n' >"$CLASH_CONFIG_MIXIN"
+    _is_port_used() { return 1; }
+
+    _detect_ext_addr || fail "_detect_ext_addr should accept controller values with an empty host"
+    [ "$EXT_IP" = 127.0.0.1 ] ||
+        fail "_detect_ext_addr should normalize an empty external-controller host to 127.0.0.1"
+    [ "$EXT_PORT" = 41907 ] ||
+        fail "_detect_ext_addr should preserve the external-controller port"
+)
+
+orphan_restart_tmp=$(make_test_tmpdir "clash-orphan-restart")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    _get_active_mode() { return 1; }
+    _current_kernel_pids() { printf '1234\n'; }
+    _terminate_current_kernel_pids() { printf 'terminate %s\n' "$*" >>"$orphan_restart_tmp/calls"; }
+    clashon() { printf 'on %s\n' "$*" >>"$orphan_restart_tmp/calls"; }
+
+    clashrestart --mode tmux || fail "clashrestart should recover from exact current-install orphan kernel processes"
+)
+awk '
+    $0 == "terminate 1234" { terminate=NR }
+    $0 == "on --mode tmux" { on=NR }
+    END { exit (terminate && on && terminate < on) ? 0 : 1 }
+' "$orphan_restart_tmp/calls" ||
+    fail "clashrestart should terminate exact current-install orphan kernels before starting the target mode"
+
 on_ext_fail_tmp=$(make_test_tmpdir "clash-on-ext-fail")
 (
     set +e

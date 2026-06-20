@@ -194,6 +194,8 @@ CLASH_CONFIG_SIDECAR=$(_clashctl_first_existing_path "${CLASH_CONFIG_DIR}/clashc
 CLASH_CONFIG_RUNTIME="${CLASH_RESOURCES_DIR}/runtime.yaml"
 CLASH_CONFIG_TEMP="${CLASH_RESOURCES_DIR}/temp.yaml"
 CLASH_SERVICE_STATE="${CLASH_RESOURCES_DIR}/service-state.yaml"
+FILE_LOG="${CLASH_RESOURCES_DIR}/${KERNEL_NAME}.log"
+FILE_PID="${CLASH_RESOURCES_DIR}/${KERNEL_NAME}.pid"
 
 BIN_BASE_DIR="${CLASH_BASE_DIR}/bin"
 BIN_KERNEL="${BIN_BASE_DIR}/$KERNEL_NAME"
@@ -256,21 +258,48 @@ _get_local_ip() {
 }
 
 function _detect_ext_addr() {
-    local ext_addr=$("$BIN_YQ" '.external-controller // ""' "$CLASH_CONFIG_RUNTIME")
-    local ext_ip=${ext_addr%%:*}
-    EXT_IP=$ext_ip
-    EXT_PORT=${ext_addr##*:}
-    [ "$ext_ip" = '0.0.0.0' ] && EXT_IP=$(_get_local_ip)
+    local ext_addr ext_ip write_ip
+    ext_addr=$("$BIN_YQ" '.external-controller // ""' "$CLASH_CONFIG_RUNTIME")
+    case "$ext_addr" in
+    *:*)
+        ext_ip=${ext_addr%:*}
+        EXT_PORT=${ext_addr##*:}
+        ;;
+    "")
+        ext_ip=127.0.0.1
+        EXT_PORT=9090
+        ;;
+    *)
+        ext_ip=$ext_addr
+        EXT_PORT=9090
+        ;;
+    esac
+
+    [ -n "$EXT_PORT" ] || EXT_PORT=9090
+    case "$ext_ip" in
+    "" | localhost)
+        EXT_IP=127.0.0.1
+        ;;
+    0.0.0.0 | "*")
+        EXT_IP=$(_get_local_ip)
+        ;;
+    *)
+        EXT_IP=$ext_ip
+        ;;
+    esac
+
+    write_ip=$ext_ip
+    [ -n "$write_ip" ] || write_ip=127.0.0.1
     _is_port_used "$EXT_PORT" && {
         local secret="$(_get_secret)"
         local auth_args=()
         [ -n "$secret" ] && auth_args=(-H "Authorization: Bearer $secret")
-        curl --silent --fail --noproxy "*" "${auth_args[@]}" "127.0.0.1:${EXT_PORT}/version" >/dev/null && return 0
+        curl --silent --fail --noproxy "*" "${auth_args[@]}" "http://127.0.0.1:${EXT_PORT}/version" >/dev/null && return 0
         local newPort
         newPort=$(_get_random_port) || return 1
         _failcat '🎯' "端口冲突：[external-controller] ${EXT_PORT} 🎲 随机分配 $newPort"
         EXT_PORT=$newPort
-        "$BIN_YQ" -i ".external-controller = \"$ext_ip:$newPort\"" "$CLASH_CONFIG_MIXIN" || {
+        "$BIN_YQ" -i ".external-controller = \"$write_ip:$newPort\"" "$CLASH_CONFIG_MIXIN" || {
             _failcat "external-controller 端口写入失败：$CLASH_CONFIG_MIXIN"
             return 1
         }
