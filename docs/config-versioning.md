@@ -84,19 +84,9 @@ git init
 git status
 ```
 
-旧版本无损更新上来时，可能还没有 `config/` 目录，旧配置仍在 `resources/mixin.yaml`、`resources/clashctl.yaml`、`resources/profiles.yaml`。当前脚本会继续兼容这些旧路径。想迁移到新目录时，可以先停止内核，再手工复制：
+旧版本无损更新上来时，可能还没有 `config/` 目录，旧配置仍在 `resources/mixin.yaml`、`resources/clashctl.yaml`、`resources/profiles.yaml`。当前脚本会继续兼容这些旧路径，但推荐按 [旧版迁移指南](legacy-migration.md) 执行 `migrate.sh`，由脚本统一迁移到新版布局。
 
-```bash
-clashoff
-mkdir -p "$HOME/clashctl/config"
-cp -n "$HOME/clashctl/resources/mixin.yaml" "$HOME/clashctl/config/mixin.yaml"
-cp -n "$HOME/clashctl/resources/clashctl.yaml" "$HOME/clashctl/config/clashctl.yaml"
-cp -n "$HOME/clashctl/resources/profiles.yaml" "$HOME/clashctl/config/subscriptions.yaml"
-. "$HOME/clashctl/scripts/cmd/clashctl.sh"
-clashmixin -m
-```
-
-`cp -n` 不会覆盖已经存在的新配置文件。迁移确认无误后，再决定是否保留旧文件备份。
+迁移完成后，再进入 `config/` 初始化配置仓库即可。
 
 ## update-self 会保留什么
 

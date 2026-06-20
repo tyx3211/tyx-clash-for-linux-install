@@ -100,9 +100,9 @@ ssh -L 9090:127.0.0.1:9090 user@remote-host
 http://localhost:9090/ui
 ```
 
-旧安装执行 `clashctl update-self` 后不会自动改已有控制口，实际地址以 `clashui` 输出或当前 `mixin.yaml` 为准。如需迁移到 9090，可以手工编辑 `config/mixin.yaml` 或旧兼容路径 `resources/mixin.yaml` 里的 `external-controller`。
+旧安装执行 `clashctl update-self` 后不会自动改已有控制口，实际地址以 `clashui` 输出或当前 `mixin.yaml` 为准。如需迁移到 9090，可以手工编辑 `~/clashctl/config/mixin.yaml` 或旧兼容路径 `~/clashctl/resources/mixin.yaml` 里的 `external-controller`。
 
-如果启动时报 `external-controller` 端口冲突，脚本只会给出建议空闲端口，不会自动改配置。修改 `mixin.yaml` 后执行：
+如果启动时报 `external-controller` 端口冲突，脚本只会给出建议空闲端口，不会自动改配置。可以用 VS Code Remote、vim 或其他编辑器直接修改 `mixin.yaml`，修改后执行：
 
 ```bash
 clashmixin -m
@@ -142,23 +142,7 @@ clashsub update 1 --convert
 - `clashsub update`：更新订阅。
 - `clashupgrade`：升级 mihomo / clash 内核。
 
-旧 `nosudo-tmux` 分支、旧 `master` 或早期中间版安装用户，第一次升级到当前 `main` 前建议先从新源码目录执行迁移。旧 no-sudo tmux 版本的边界 tag 是 [`legacy-nosudo-tmux`](https://github.com/tyx3211/tyx-clash-for-linux-install/tree/legacy-nosudo-tmux)，这个 tag 及以前的安装都按旧版处理：
-
-```bash
-git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git
-cd tyx-clash-for-linux-install
-bash migrate.sh --target "$HOME/clashctl"
-source "$HOME/clashctl/scripts/cmd/clashctl.sh"
-clashstatus --all
-```
-
-迁移默认不停止内核、不启动内核、不修改当前 shell 的代理变量。确认状态后，再按需执行 `clashrestart`。不带 `--mode` 时会优先重启当前活跃托管模式；明确要切换模式时再用 `clashrestart --mode tmux|nohup|systemd`。
-
-如果希望旧配置不再留在 `resources/`，可以使用：
-
-```bash
-bash migrate.sh --target "$HOME/clashctl" --move-legacy-config
-```
+旧 `nosudo-tmux` 分支、旧 `master`、[`legacy-nosudo-tmux`](https://github.com/tyx3211/tyx-clash-for-linux-install/tree/legacy-nosudo-tmux) 这个 tag 及以前版本，或者还没执行过 `migrate.sh` 的中间版安装，第一次升级到当前 `main` 前建议先迁移。完整步骤见 [旧版迁移指南](legacy-migration.md)。
 
 已迁移到新版后，日常更新本项目直接执行：
 
@@ -182,7 +166,7 @@ clashctl update-self --ref main
 clashctl update-self --source "$HOME/src/clash-shell/tyx-clash-for-linux-install"
 ```
 
-如果不迁移而选择重装，请先备份 `config/`、旧 `resources/mixin.yaml`、`resources/clashctl.yaml`、`resources/profiles.yaml`、`resources/profiles/`、`resources/config.yaml`、`resources/runtime.yaml` 和 `.env`。重装后，旧 `mixin.yaml` 放到 `config/mixin.yaml`，旧 `clashctl.yaml` 放到 `config/clashctl.yaml`，旧 `profiles.yaml` 放到 `config/subscriptions.yaml`，订阅 profile 文件继续放回 `resources/profiles/`。
+如果不迁移而选择重装，请先按 [旧版迁移指南：如果选择重装](legacy-migration.md#如果选择重装) 备份关键文件，再按新版布局恢复。
 
 ## 关闭和卸载
 

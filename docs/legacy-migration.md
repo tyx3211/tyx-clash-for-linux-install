@@ -1,0 +1,194 @@
+# 旧版迁移指南
+
+本文说明从旧 `nosudo-tmux`、旧 `master` 或早期中间版安装迁移到当前 `main` 的推荐方式。迁移目标是原地刷新脚本和文档，同时保留订阅、`mixin.yaml`、sidecar 配置、运行时配置和日志。
+
+## 什么情况算旧版
+
+符合下面任意一种情况，都建议先按本文执行迁移：
+
+- 安装目录来自旧 `nosudo-tmux` 分支。
+- 安装目录来自旧 `master` 分支。
+- 安装目录对应 [`legacy-nosudo-tmux`](https://github.com/tyx3211/tyx-clash-for-linux-install/tree/legacy-nosudo-tmux) 这个 tag 及以前的版本。
+- 安装目录里还存在 `placeholder_start1`。
+- `~/clashctl` 根目录里带有历史遗留的 `.git`。
+- 主要配置还在 `~/clashctl/resources/mixin.yaml`、`resources/clashctl.yaml`、`resources/profiles.yaml`。
+- 已经从中间版无损更新过脚本，但还没有执行过 `migrate.sh`。
+
+旧版不要先卸载。直接卸载或覆盖安装更容易丢掉订阅、mixin 配置和已经调好的运行时配置。
+
+## 推荐迁移方式
+
+从新的源码目录执行迁移：
+
+```bash
+git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git
+cd tyx-clash-for-linux-install
+bash migrate.sh --target "$HOME/clashctl"
+source "$HOME/clashctl/scripts/cmd/clashctl.sh"
+clashstatus --all
+```
+
+`migrate.sh` 默认只做原地迁移：
+
+- 不停止当前内核。
+- 不启动新的内核。
+- 不修改当前 shell 的代理环境变量。
+- 刷新安装目录里的项目脚本、service 模板和文档。
+- 写入 `resources/install-state.yaml`。
+- 将旧 `resources/mixin.yaml` 复制到 `config/mixin.yaml`。
+- 将旧 `resources/clashctl.yaml` 复制到 `config/clashctl.yaml`。
+- 将旧 `resources/profiles.yaml` 复制到 `config/subscriptions.yaml`。
+- 清理 `placeholder_start1`、`.github`、`.editorconfig` 等旧项目遗留文件。
+
+确认状态后，再按需重启：
+
+```bash
+clashrestart
+```
+
+`clashrestart` 不带 `--mode` 时，会优先重启当前活跃托管模式；没有活跃模式时才按默认模式启动。明确要切换模式时，再使用：
+
+```bash
+clashrestart --mode tmux
+clashrestart --mode nohup
+clashrestart --mode systemd
+```
+
+## 迁移后移走旧配置
+
+默认迁移会保留旧 `resources/` 下的配置副本，便于回看和排错。如果希望旧配置从 `resources/` 移走，不在旧位置保留副本，可以执行：
+
+```bash
+bash migrate.sh --target "$HOME/clashctl" --move-legacy-config
+```
+
+如果之前已经执行过默认迁移，且 `config/` 和旧 `resources/` 文件内容不同，`--move-legacy-config` 会拒绝删除旧文件。确认以后以 `config/` 为准时，再显式追加：
+
+```bash
+bash migrate.sh --target "$HOME/clashctl" --move-legacy-config --force-remove-legacy-config
+```
+
+## 迁移后自动重启
+
+远程会话依赖当前代理链路时，不建议迁移脚本里直接重启。更稳妥的做法是先执行默认迁移，确认 `clashstatus --all` 后，再手动执行 `clashrestart`。
+
+如果明确希望迁移后自动重启，可以显式指定目标模式：
+
+```bash
+bash migrate.sh --target "$HOME/clashctl" --restart-mode tmux
+```
+
+## 迁移后检查
+
+```bash
+source "$HOME/clashctl/scripts/cmd/clashctl.sh"
+clashstatus --all
+clashstatus
+clashui
+ls -la "$HOME/clashctl/config"
+```
+
+新版推荐的长期配置位置是：
+
+```text
+~/clashctl/config/
+  mixin.yaml
+  clashctl.yaml
+  subscriptions.yaml
+```
+
+运行时生成物和本机状态继续放在：
+
+```text
+~/clashctl/resources/
+  install-state.yaml
+  config.yaml
+  runtime.yaml
+  profiles/
+```
+
+## 已迁移后的日常更新
+
+迁移完成后，日常更新本项目脚本和文档直接执行：
+
+```bash
+clashctl update-self
+```
+
+指定分支或 tag：
+
+```bash
+clashctl update-self --ref main
+```
+
+如果已经手工 `git pull` 了源码仓库，也可以从本地源码刷新安装目录：
+
+```bash
+bash update.sh --target "$HOME/clashctl"
+# 或
+clashctl update-self --source "$HOME/src/clash-shell/tyx-clash-for-linux-install"
+```
+
+项目更新不会停止内核、不会启动内核、不会覆盖 `config/`、订阅、`resources/install-state.yaml`、`resources/config.yaml`、`resources/runtime.yaml`、日志和 pid 状态。
+
+## 如果选择重装
+
+不建议为了升级先卸载旧目录。如果确实要全新安装，优先选择一个不存在的新目录：
+
+```bash
+CLASH_BASE_DIR="$HOME/experiment/clashctl-new" bash install.sh --init tmux
+```
+
+如果必须复用旧安装目录，至少先备份关键文件：
+
+```bash
+mkdir -p "$HOME/clashctl-backup"
+cp -a "$HOME/clashctl/.env" "$HOME/clashctl-backup/" 2>/dev/null || true
+cp -a "$HOME/clashctl/config" "$HOME/clashctl-backup/config" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/mixin.yaml" "$HOME/clashctl-backup/mixin.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/clashctl.yaml" "$HOME/clashctl-backup/clashctl.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/profiles.yaml" "$HOME/clashctl-backup/profiles.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/profiles" "$HOME/clashctl-backup/profiles" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/config.yaml" "$HOME/clashctl-backup/config.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl/resources/runtime.yaml" "$HOME/clashctl-backup/runtime.yaml" 2>/dev/null || true
+```
+
+重装后按新版布局恢复：
+
+```bash
+mkdir -p "$HOME/clashctl/config" "$HOME/clashctl/resources"
+cp -a "$HOME/clashctl-backup/config/." "$HOME/clashctl/config/" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/mixin.yaml" "$HOME/clashctl/config/mixin.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/clashctl.yaml" "$HOME/clashctl/config/clashctl.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/profiles.yaml" "$HOME/clashctl/config/subscriptions.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/profiles" "$HOME/clashctl/resources/profiles" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/config.yaml" "$HOME/clashctl/resources/config.yaml" 2>/dev/null || true
+cp -a "$HOME/clashctl-backup/runtime.yaml" "$HOME/clashctl/resources/runtime.yaml" 2>/dev/null || true
+```
+
+恢复后执行：
+
+```bash
+source "$HOME/clashctl/scripts/cmd/clashctl.sh"
+clashmixin -m
+clashstatus --all
+```
+
+## 关于旧 `.git`
+
+默认安装目录 `~/clashctl` 不是项目 git 仓库。旧版本安装目录如果已经在根目录带有 `.git`，通常是历史全量复制遗留。确认没有把它当作个人配置仓库后，可以手工删除：
+
+```bash
+rm -rf "$HOME/clashctl/.git"
+```
+
+不建议在安装目录根启用 git 管理配置。该目录包含脚本、二进制、订阅展开结果、运行时配置、日志和 pid 状态。真正适合版本管理的是 `config/` 下的源配置，详细说明见 [配置版本管理](config-versioning.md)。
+
+## 迁移后的心智变化
+
+- 默认仍然是 tmux 用户态，不需要 sudo。
+- `config/mixin.yaml` 是参与 mihomo / clash 运行时合并的源配置。
+- `config/clashctl.yaml` 是 `clashctl` 自己使用的 sidecar 配置。
+- `config/subscriptions.yaml` 记录订阅索引，订阅展开后的 profile 文件仍在 `resources/profiles/`。
+- `resources/runtime.yaml` 是合并后生成的运行时配置，不建议手工维护。
+- Tun 不属于 no-sudo 路线，需要注册 systemd 服务并执行 `clashrestart --mode systemd`。

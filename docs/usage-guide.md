@@ -277,89 +277,9 @@ CLASHCTL_NO_RC=1 CLASHCTL_NO_QUIT=1 bash install.sh --init tmux
 
 ## 从 nosudo-tmux 迁移
 
-旧 `nosudo-tmux` 分支已经退役。旧分支、旧 `master` 或早期中间版安装用户，建议重新 clone 当前 `main` 后执行一次迁移，不要先卸载旧安装目录。
+旧 `nosudo-tmux` 分支已经退役。旧 `nosudo-tmux`、旧 `master`、[`legacy-nosudo-tmux`](https://github.com/tyx3211/tyx-clash-for-linux-install/tree/legacy-nosudo-tmux) 这个 tag 及以前版本，或者还没有执行过 `migrate.sh` 的早期中间版安装，都建议先按 [旧版迁移指南](legacy-migration.md) 原地迁移，不要先卸载旧安装目录。
 
-旧 no-sudo tmux 版本的边界 tag 是 [`legacy-nosudo-tmux`](https://github.com/tyx3211/tyx-clash-for-linux-install/tree/legacy-nosudo-tmux)。这个 tag 及以前的安装，以及之后没有跑过 `migrate.sh` 的中间版安装，都按旧版处理。
-
-推荐迁移命令：
-
-```bash
-git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git clash-for-linux-install
-cd clash-for-linux-install
-bash migrate.sh --target "$HOME/clashctl"
-source "$HOME/clashctl/scripts/cmd/clashctl.sh"
-clashstatus --all
-```
-
-`migrate.sh` 默认只做原地迁移，不停止内核、不启动内核、不修改当前 shell 的代理变量。它会：
-
-- 刷新安装目录里的项目脚本、模板和文档。
-- 写入 `resources/install-state.yaml`。
-- 默认将旧 `resources/mixin.yaml` 复制到 `config/mixin.yaml`。
-- 默认将旧 `resources/clashctl.yaml` 复制到 `config/clashctl.yaml`。
-- 默认将旧 `resources/profiles.yaml` 复制到 `config/subscriptions.yaml`。
-- 清理 `placeholder_start1`、`.github`、`.editorconfig` 等旧项目遗留文件。
-
-如果希望旧配置不再留在 `resources/`，使用移动模式：
-
-```bash
-bash migrate.sh --target "$HOME/clashctl" --move-legacy-config
-```
-
-移动模式下，如果目标 `config/` 文件已存在且和旧 `resources/` 文件内容不同，脚本会拒绝删除旧文件。确认以后以 `config/` 为准时，再显式追加强制删除：
-
-```bash
-bash migrate.sh --target "$HOME/clashctl" --move-legacy-config --force-remove-legacy-config
-```
-
-如果迁移后要立即重启，可以显式指定：
-
-```bash
-bash migrate.sh --target "$HOME/clashctl" --restart-mode tmux
-```
-
-远程会话依赖当前代理链路时，不建议迁移脚本里直接重启。先执行默认迁移，确认 `clashstatus --all` 后，再手动执行：
-
-```bash
-clashrestart
-```
-
-`clashrestart` 不带 `--mode` 时会优先重启当前活跃托管模式；明确要切换模式时再用 `clashrestart --mode tmux|nohup|systemd`。
-
-如果想做全新安装，请先选择一个不存在的新目录：
-
-```bash
-CLASH_BASE_DIR="$HOME/experiment/clashctl-new" bash install.sh --init tmux
-```
-
-如果必须复用旧安装目录，至少先备份：
-
-```bash
-mkdir -p "$HOME/clashctl-backup"
-cp -a "$HOME/clashctl/.env" "$HOME/clashctl-backup/" 2>/dev/null || true
-cp -a "$HOME/clashctl/config" "$HOME/clashctl-backup/config" 2>/dev/null || true
-cp -a "$HOME/clashctl/resources/mixin.yaml" "$HOME/clashctl-backup/mixin.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl/resources/clashctl.yaml" "$HOME/clashctl-backup/clashctl.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl/resources/profiles.yaml" "$HOME/clashctl-backup/profiles.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl/resources/profiles" "$HOME/clashctl-backup/profiles" 2>/dev/null || true
-cp -a "$HOME/clashctl/resources/config.yaml" "$HOME/clashctl-backup/config.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl/resources/runtime.yaml" "$HOME/clashctl-backup/runtime.yaml" 2>/dev/null || true
-```
-
-重装后按新版布局恢复：
-
-```bash
-mkdir -p "$HOME/clashctl/config" "$HOME/clashctl/resources"
-cp -a "$HOME/clashctl-backup/config/." "$HOME/clashctl/config/" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/mixin.yaml" "$HOME/clashctl/config/mixin.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/clashctl.yaml" "$HOME/clashctl/config/clashctl.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/profiles.yaml" "$HOME/clashctl/config/subscriptions.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/profiles" "$HOME/clashctl/resources/profiles" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/config.yaml" "$HOME/clashctl/resources/config.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/runtime.yaml" "$HOME/clashctl/resources/runtime.yaml" 2>/dev/null || true
-```
-
-迁移时需要注意：
+迁移后的心智变化：
 
 - 默认仍然是 tmux 用户态，不需要 sudo。
 - `config/clashctl.yaml` 是新增的 sidecar 配置。
@@ -385,4 +305,4 @@ http://localhost:9090/ui
 
 旧安装执行 `clashctl update-self` 后不会自动改已有 `mixin.yaml`，因此旧安装可能仍在使用 `127.0.0.1:23571` 或其他自定义端口。实际地址以 `clashui` 输出或当前 `mixin.yaml` 为准。如需迁移到 9090，手工修改 `external-controller` 后执行 `clashmixin -m`。
 
-启动前会检查 `external-controller` 控制端口。如果该端口被其他进程占用，脚本只报错并提示一个空闲端口；不会自动写入 `mixin.yaml`，也不会自动合并配置。我们需要手工改 `config/mixin.yaml`，旧兼容安装则可能是 `resources/mixin.yaml`，然后执行 `clashmixin -m`。
+启动前会检查 `external-controller` 控制端口。如果该端口被其他进程占用，脚本只报错并提示一个空闲端口；不会自动写入 `mixin.yaml`，也不会自动合并配置。我们需要手工改 `~/clashctl/config/mixin.yaml`，旧兼容安装则可能是 `~/clashctl/resources/mixin.yaml`，然后执行 `clashmixin -m`。

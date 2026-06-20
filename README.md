@@ -75,7 +75,7 @@ clashctl update-self
 
 `git clone` 得到的是安装源目录；默认安装目录 `~/clashctl` 不是项目 git 仓库，也不需要 `.git`。如果希望版本管理个人配置，推荐只在 `~/clashctl/config` 下建立 git 仓库。安装时可以使用 `bash install.sh --config-git` 或 `CLASHCTL_CONFIG_GIT=1 bash install.sh` 自动执行 `git init`。
 
-更多新手说明见 [快速上手教程](docs/quickstart.md)。运行托管模式、订阅、项目更新和迁移细节见 [当前版本使用指南](docs/usage-guide.md)。配置 Git 管理见 [配置版本管理](docs/config-versioning.md)。
+更多新手说明见 [快速上手教程](docs/quickstart.md)。运行托管模式、订阅和项目更新见 [当前版本使用指南](docs/usage-guide.md)。旧版升级见 [旧版迁移指南](docs/legacy-migration.md)。配置 Git 管理见 [配置版本管理](docs/config-versioning.md)。
 
 ## ✨ 功能特性
 
@@ -107,6 +107,7 @@ clashctl update-self
 - [Fork 差异与分支策略](docs/fork-differences.md)
 - [快速上手教程](docs/quickstart.md)
 - [当前版本使用指南](docs/usage-guide.md)
+- [旧版迁移指南](docs/legacy-migration.md)
 - [手工端到端检查清单](docs/manual-e2e-checklist.md)
 
 ## ✅ no-sudo 使用补充
@@ -316,7 +317,7 @@ clashproxy mode --help
 ## 🌐 Web 控制台
 
 - 新安装默认控制端口为 `127.0.0.1:9090`。旧安装执行 `clashctl update-self` 后不会自动改已有 `mixin.yaml`，实际端口以 `clashui` 输出或当前 `mixin.yaml` 为准。
-- 如果 `external-controller` 控制端口被其他进程占用，启动命令会失败并给出建议端口。请手工修改 `config/mixin.yaml` 里的 `external-controller`，然后执行 `clashmixin -m`；旧兼容安装也可能需要修改 `resources/mixin.yaml`。
+- 如果 `external-controller` 控制端口被其他进程占用，启动命令会失败并给出建议端口。请手工修改 `~/clashctl/config/mixin.yaml` 里的 `external-controller`，然后执行 `clashmixin -m`；旧兼容安装也可能需要修改 `~/clashctl/resources/mixin.yaml`。
 - `clashui` 会输出控制台入口地址；默认推荐通过 SSH 端口转发访问。
 - 当控制口绑定 `127.0.0.1` / `localhost` 时，`clashui` 只输出本机地址和 SSH 转发示例，不提示公网地址或开放防火墙端口。
 - 如需远程访问面板，请确保 `secret` 与客户端保持一致。
@@ -361,9 +362,10 @@ $ clashmixin -r
 😼 查看运行时配置
 ```
 
-- `config/mixin.yaml` 只用于和原始订阅做深度合并，生成 `resources/runtime.yaml`。
+- `mixin.yaml` 默认位于 `~/clashctl/config/mixin.yaml`，只用于和原始订阅做深度合并，生成 `resources/runtime.yaml`。
 - `config/clashctl.yaml` 是 sidecar 配置，不会参与 mihomo/clash 的运行时合并。
-- 修改 `mixin.yaml` 之后，如果不想进入编辑器，直接执行 `clashmixin -m` 即可显式 merge 并刷新内核；该命令不会打开 `less` 或其他查看器。
+- 除了 `clashmixin -e`，也鼓励直接用 VS Code Remote、vim 或其他编辑器修改 `~/clashctl/config/mixin.yaml`。直接编辑后记得执行 `clashmixin -m` 或 `clashctl mixin -m`，显式合并并刷新内核。
+- 如果不想进入编辑器，直接执行 `clashmixin -m` 即可显式 merge 并刷新内核；该命令不会打开 `less` 或其他查看器。
 - 如果当前终端已经开启了代理变量，`clashmixin -m` 在刷新后会按新的 runtime 端口重新写入当前终端环境变量，避免端口变更后变量过期。
 
 ## 📦 订阅管理
@@ -434,43 +436,9 @@ $ clashtun off
 
 ### 旧版用户先迁移
 
-如果安装目录来自旧 `nosudo-tmux` 分支、旧 `master`，或者 `~/clashctl` 根目录里还带有 `.git`、`placeholder_start1`、旧 `resources/mixin.yaml` 布局，推荐先从新源码目录执行一次迁移。
+如果安装目录来自旧 `nosudo-tmux` 分支、旧 `master`、[`legacy-nosudo-tmux`](https://github.com/tyx3211/tyx-clash-for-linux-install/tree/legacy-nosudo-tmux) 这个 tag 及以前版本，或者 `~/clashctl` 里还带有 `.git`、`placeholder_start1`、旧 `resources/mixin.yaml` 布局，都按旧版处理。
 
-旧 no-sudo tmux 版本的边界 tag 是 [`legacy-nosudo-tmux`](https://github.com/tyx3211/tyx-clash-for-linux-install/tree/legacy-nosudo-tmux)。这个 tag 及以前的安装，以及之后没有跑过 `migrate.sh` 的中间版安装，都按旧版处理：
-
-```bash
-git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git
-cd tyx-clash-for-linux-install
-bash migrate.sh --target "$HOME/clashctl"
-source "$HOME/clashctl/scripts/cmd/clashctl.sh"
-clashstatus --all
-```
-
-`migrate.sh` 默认不停止内核、不启动内核、不修改当前 shell 代理变量。它会原地刷新脚本、写入 `resources/install-state.yaml`、把旧 `resources/mixin.yaml` / `resources/clashctl.yaml` / `resources/profiles.yaml` 复制到新版 `config/` 布局，并清理旧项目遗留文件。确认迁移结果后，再按需执行：
-
-```bash
-clashrestart
-```
-
-`clashrestart` 不带 `--mode` 时，会优先重启当前活跃托管模式；没有活跃模式时才按默认模式启动。如果我们明确要切换模式，再使用 `clashrestart --mode tmux|nohup|systemd`。
-
-如果希望旧配置从 `resources/` 移走，不在旧位置保留副本，可以执行：
-
-```bash
-bash migrate.sh --target "$HOME/clashctl" --move-legacy-config
-```
-
-如果之前已经执行过默认迁移，且 `config/` 和旧 `resources/` 文件内容不同，`--move-legacy-config` 会拒绝删除旧文件。确认以后以 `config/` 为准时，再显式追加：
-
-```bash
-bash migrate.sh --target "$HOME/clashctl" --move-legacy-config --force-remove-legacy-config
-```
-
-如果希望迁移后自动重启，可以显式指定目标模式：
-
-```bash
-bash migrate.sh --target "$HOME/clashctl" --restart-mode tmux
-```
+旧版用户请先阅读 [旧版迁移指南](docs/legacy-migration.md)，从新源码目录执行 `migrate.sh`。不建议先卸载旧安装目录，也不建议直接重装覆盖。
 
 ### 已迁移后的日常更新
 
@@ -500,40 +468,7 @@ clashctl update-self --source "$HOME/src/clash-shell/tyx-clash-for-linux-install
 
 ### 如果选择重装
 
-不建议为了升级先卸载旧目录。如果确实想全新安装，至少先备份这些文件或目录：
-
-```bash
-mkdir -p "$HOME/clashctl-backup"
-cp -a "$HOME/clashctl/.env" "$HOME/clashctl-backup/" 2>/dev/null || true
-cp -a "$HOME/clashctl/config" "$HOME/clashctl-backup/config" 2>/dev/null || true
-cp -a "$HOME/clashctl/resources/mixin.yaml" "$HOME/clashctl-backup/mixin.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl/resources/clashctl.yaml" "$HOME/clashctl-backup/clashctl.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl/resources/profiles.yaml" "$HOME/clashctl-backup/profiles.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl/resources/profiles" "$HOME/clashctl-backup/profiles" 2>/dev/null || true
-cp -a "$HOME/clashctl/resources/config.yaml" "$HOME/clashctl-backup/config.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl/resources/runtime.yaml" "$HOME/clashctl-backup/runtime.yaml" 2>/dev/null || true
-```
-
-重装后，推荐按新版布局恢复：
-
-```bash
-mkdir -p "$HOME/clashctl/config" "$HOME/clashctl/resources"
-cp -a "$HOME/clashctl-backup/config/." "$HOME/clashctl/config/" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/mixin.yaml" "$HOME/clashctl/config/mixin.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/clashctl.yaml" "$HOME/clashctl/config/clashctl.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/profiles.yaml" "$HOME/clashctl/config/subscriptions.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/profiles" "$HOME/clashctl/resources/profiles" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/config.yaml" "$HOME/clashctl/resources/config.yaml" 2>/dev/null || true
-cp -a "$HOME/clashctl-backup/runtime.yaml" "$HOME/clashctl/resources/runtime.yaml" 2>/dev/null || true
-```
-
-安装目录默认不携带 `.git`，`update-self` 也不会使用安装目录里的 git 仓库。旧安装目录如果已经带有 `.git`，可以在确认没有把它当作个人配置仓库后手工删除：
-
-```bash
-rm -rf "$HOME/clashctl/.git"
-```
-
-不建议直接在安装目录根启用 git 来管理配置，因为 `.env`、`resources/install-state.yaml`、订阅 profiles、运行时配置和日志都属于本机状态或运行时数据。如需版本管理偏好配置，建议只在 `config/` 下建立私有仓库。细节见 [配置版本管理](docs/config-versioning.md)。
+不建议为了升级先卸载旧目录。确实要重装时，请先按 [旧版迁移指南：如果选择重装](docs/legacy-migration.md#如果选择重装) 备份关键文件，再按新版布局恢复。
 
 ## ⬆️ 升级内核
 
