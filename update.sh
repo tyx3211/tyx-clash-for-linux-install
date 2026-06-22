@@ -247,10 +247,40 @@ _reject_managed_symlinks() {
 }
 
 _validate_source_tree() {
-    local source=$1 path full found
+    local source=$1 path full found required_file
+    local required_files=(
+        update.sh
+        install.sh
+        uninstall.sh
+        migrate.sh
+        scripts/preflight.sh
+        scripts/cmd/clashctl.sh
+        scripts/cmd/common.sh
+        scripts/cmd/clashctl.fish
+        scripts/lib/config.sh
+        scripts/lib/install-state.sh
+        scripts/lib/path-env.sh
+        scripts/lib/proxy.sh
+        scripts/lib/runtime-config.sh
+        scripts/lib/service-runtime.sh
+        scripts/lib/subscription.sh
+        scripts/lib/tun.sh
+        scripts/install/archive-safe.sh
+        scripts/install/service-render.sh
+        scripts/install/rc.sh
+        scripts/init/systemd.sh
+        scripts/init/OpenRC.sh
+        scripts/init/SysVinit.sh
+        scripts/init/runit.sh
+    )
 
     [ -f "$source/update.sh" ] && [ -d "$source/scripts/cmd" ] && [ -f "$source/scripts/lib/install-state.sh" ] ||
         _die "源码目录不像 tyx-clash-for-linux-install 仓库：$source"
+
+    for required_file in "${required_files[@]}"; do
+        [ -f "$source/$required_file" ] ||
+            _die "源码目录缺少必需文件：$source/$required_file"
+    done
 
     for path in "${managed_paths[@]}"; do
         full="$source/$path"

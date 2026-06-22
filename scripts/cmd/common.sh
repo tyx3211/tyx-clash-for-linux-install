@@ -1,5 +1,16 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034
+_CLASHCTL_PATH_ENV_LIB="$THIS_SCRIPT_DIR/../lib/path-env.sh"
+[ -r "$_CLASHCTL_PATH_ENV_LIB" ] || {
+    printf 'clashctl: missing required library: %s\n' "$_CLASHCTL_PATH_ENV_LIB" >&2
+    return 1 2>/dev/null || exit 1
+}
+. "$_CLASHCTL_PATH_ENV_LIB" || {
+    printf 'clashctl: failed to source library: %s\n' "$_CLASHCTL_PATH_ENV_LIB" >&2
+    return 1 2>/dev/null || exit 1
+}
+unset _CLASHCTL_PATH_ENV_LIB
+
 _CLASHCTL_INSTALL_STATE_LIB="$THIS_SCRIPT_DIR/../lib/install-state.sh"
 [ -r "$_CLASHCTL_INSTALL_STATE_LIB" ] || {
     printf 'clashctl: missing required library: %s\n' "$_CLASHCTL_INSTALL_STATE_LIB" >&2

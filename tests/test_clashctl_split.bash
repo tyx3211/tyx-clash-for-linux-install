@@ -22,6 +22,9 @@ assert_file_contains "$CLASHCTL_SH" '^_clashctl_source_lib\(\)' \
 assert_file_contains "$CLASHCTL_SH" '_clashctl_source_lib "\$THIS_SCRIPT_DIR/common\.sh"' \
     "clashctl should source common helpers through the guarded helper"
 
+assert_file_contains "$COMMON_SH" '_CLASHCTL_PATH_ENV_LIB=' \
+    "common helpers should source path-env directly instead of relying on install-state transitive loading"
+
 assert_file_contains "$CLASHCTL_SH" '_clashctl_source_lib "\$THIS_SCRIPT_DIR/\.\./lib/proxy\.sh"' \
     "clashctl should source proxy helpers from scripts/lib"
 assert_file_contains "$CLASHCTL_SH" '_clashctl_source_lib "\$THIS_SCRIPT_DIR/\.\./lib/service-runtime\.sh"' \

@@ -105,6 +105,7 @@ clashctl update-self
 - [当前版本使用指南](docs/usage-guide.md)
 - [旧版迁移指南](docs/legacy-migration.md)
 - [手工端到端检查清单](docs/manual-e2e-checklist.md)
+- [开发测试说明](docs/development-testing.md)
 
 ## ✅ no-sudo 使用补充
 

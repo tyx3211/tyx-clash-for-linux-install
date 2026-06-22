@@ -418,6 +418,22 @@ bash "$TEST_ROOT/update.sh" --target "$source_missing_env_install_dir" --source 
 grep -q 'function clashctl' "$source_missing_env_install_dir/scripts/cmd/clashctl.sh" ||
     fail "source without .env should still refresh managed scripts"
 
+source_missing_required_dir="$update_tmp/source-missing-required"
+source_missing_required_install_dir="$update_tmp/source-missing-required-install"
+cp -a "$TEST_ROOT/." "$source_missing_required_dir"
+mkdir -p "$source_missing_required_install_dir/resources" "$source_missing_required_install_dir/scripts/cmd"
+printf 'tyx-clash-for-linux-install\n' >"$source_missing_required_install_dir/.clashctl-install-root"
+printf 'mixin\n' >"$source_missing_required_install_dir/resources/mixin.yaml"
+printf 'installed-script\n' >"$source_missing_required_install_dir/scripts/cmd/clashctl.sh"
+rm -f "$source_missing_required_dir/scripts/install/rc.sh"
+bash "$TEST_ROOT/update.sh" --target "$source_missing_required_install_dir" --source "$source_missing_required_dir" \
+    >"$update_tmp/source-missing-required.out" 2>"$update_tmp/source-missing-required.err" &&
+    fail "update should reject source directories missing required runtime modules"
+grep -q 'scripts/install/rc.sh' "$update_tmp/source-missing-required.err" ||
+    fail "missing required module rejection should name scripts/install/rc.sh"
+grep -qx 'installed-script' "$source_missing_required_install_dir/scripts/cmd/clashctl.sh" ||
+    fail "rejected source missing required modules should not refresh target scripts"
+
 git_preserve_source_dir="$update_tmp/git-preserve-source"
 git_preserve_install_dir="$update_tmp/git-preserve-install"
 cp -a "$TEST_ROOT/." "$git_preserve_source_dir"

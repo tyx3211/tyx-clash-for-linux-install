@@ -57,6 +57,7 @@ _path_env_read_path_value FILE KEY
 - [x] 运行本任务测试：
 
 ```bash
+bash tests/test_path_env.bash
 bash tests/test_common_safety.bash
 bash tests/test_migrate.bash
 bash tests/test_update_self.bash
@@ -115,6 +116,7 @@ _runtime_config_controller RUNTIME_FILE
 - [x] 运行本任务测试：
 
 ```bash
+bash tests/test_runtime_config.bash
 bash tests/test_runtime_modes.bash
 bash tests/test_clashctl_behaviour.bash
 ```
@@ -199,6 +201,7 @@ git commit -m "refactor: tighten shell helper scopes"
 - [x] 运行全量验证并提交：
 
 ```bash
+bash tests/test_preflight_split.bash
 bash -n install.sh update.sh migrate.sh uninstall.sh scripts/cmd/*.sh scripts/lib/*.sh scripts/install/*.sh scripts/preflight.sh tests/*.bash tests/lib/*.bash
 for t in tests/test_*.bash; do bash "$t"; done
 git diff --check
