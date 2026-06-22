@@ -111,6 +111,16 @@
 
    不在第一批强行抽象，因为各业务回滚语义不同。
 
+   本轮复审结论：暂缓新增 `scripts/lib/atomic-file.sh`。当前重复主要停留在 `mktemp`、备份文件、`mv -f` 这些低层形态上，但真实失败恢复语义并不相同：
+
+   - `scripts/lib/config.sh` 的 runtime 回滚需要判断原内核是否运行，并在失败时恢复或重启托管模式。
+   - `scripts/lib/subscription.sh` 的订阅切换需要同时恢复订阅元信息和 base 配置，并区分目标文件原本是否存在。
+   - `scripts/lib/tun.sh` 的回滚要恢复 mixin、重新合并 runtime，并按 systemd 活跃状态重启服务。
+   - `update.sh` 的回滚面向整个安装目录，必须处理托管路径、旧项目遗留文件、临时下载目录和 staging 目录。
+   - `migrate.sh` 的回滚面向旧版配置搬迁计划，必须按 copy/move/remove/keep 的迁移动作还原。
+
+   因此这轮不抽统一 atomic helper。后续只有在新增多个“同目录临时文件 -> 校验 -> 原子替换单个目标文件”的同构调用点时，再考虑抽一个只处理低层文件替换、不接管业务回滚的 helper。
+
 ## 验收标准
 
 每一批改动至少满足：

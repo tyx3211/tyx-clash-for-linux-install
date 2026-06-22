@@ -227,10 +227,11 @@ git commit -m "refactor: split install preflight modules"
 
 **步骤：**
 
-- [ ] 对比配置合并、订阅更新、Tun、update、migrate 的回滚语义。
-- [ ] 写出是否抽象的短结论，更新 `docs/shell-refactor-spec.md`。
-- [ ] 如果抽象，先补测试，再实现。
-- [ ] 如果暂缓，只提交文档决策。
+- [x] 对比配置合并、订阅更新、Tun、update、migrate 的回滚语义。
+- [x] 写出是否抽象的短结论，更新 `docs/shell-refactor-spec.md`。
+- [x] 当前结论为暂缓抽象；只提交文档决策。
+
+**结论：** 暂缓新增 `scripts/lib/atomic-file.sh`。这些代码块的低层文件动作相似，但业务回滚语义不同；强行抽象会让错误处理和恢复路径更隐蔽。后续只在出现多个同构的“同目录临时文件校验后替换单文件”调用点时再抽低层 helper。
 
 ## 每批复审要求
 
