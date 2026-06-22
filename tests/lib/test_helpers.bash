@@ -4,6 +4,33 @@ set -u
 
 TEST_ROOT=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd -P)
 
+TEST_TMP_ROOT=${TEST_TMP_BASE:-/tmp/tyx}
+TEST_RUN_TMP_DIR=${TEST_RUN_TMP_DIR:-}
+
+_cleanup_test_tmpdir() {
+    local status=$?
+
+    if [ "${TEST_KEEP_TMP:-0}" != 1 ] && [ -n "${TEST_RUN_TMP_DIR:-}" ]; then
+        case "$TEST_RUN_TMP_DIR" in
+        "" | "/" | "$HOME" | "$HOME/" | . | .. | ./* | ../*)
+            ;;
+        "$TEST_TMP_ROOT"/clash-test-run.*)
+            /usr/bin/rm -rf "$TEST_RUN_TMP_DIR" 2>/dev/null || true
+            ;;
+        esac
+    fi
+
+    return "$status"
+}
+
+_init_test_tmpdir() {
+    mkdir -p "$TEST_TMP_ROOT"
+    TEST_RUN_TMP_DIR=$(mktemp -d "$TEST_TMP_ROOT/clash-test-run.XXXXXX") || exit 1
+    trap _cleanup_test_tmpdir EXIT INT TERM
+}
+
+_init_test_tmpdir
+
 fail() {
     printf 'not ok - %s\n' "$1" >&2
     exit 1
@@ -51,7 +78,7 @@ extract_function() {
 
 make_test_tmpdir() {
     local name=$1
-    local base=${TEST_TMP_BASE:-/tmp/tyx}
+    local base=${TEST_RUN_TMP_DIR:-$TEST_TMP_ROOT}
 
     mkdir -p "$base"
     mktemp -d "${base}/${name}.XXXXXX"
