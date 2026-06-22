@@ -44,11 +44,23 @@ assert_file_contains "$SUBSCRIPTION_SH" 'env\(PROFILE_URL\)' \
 assert_file_contains "$SUBSCRIPTION_SH" 'PROFILE_ID=\$id' \
     "clashsub should pass subscription id into yq through environment"
 
+assert_file_contains "$SUBSCRIPTION_SH" 'local profile_path url use' \
+    "subscription delete helper should keep use as a local variable"
+
+assert_file_contains "$SUBSCRIPTION_SH" 'local profile_backup=.*had_profile=false use' \
+    "subscription update helper should keep use as a local variable"
+
 assert_file_contains "$TUN_SH" 'clashtun\(\)' \
     "clashctl should keep a tun command entry point"
 
 assert_file_not_contains "$FISH_SH" 'eval ' \
     "fish wrapper should not use eval to generate fixed command wrappers"
+
+assert_file_contains "$PREFLIGHT_SH" '^_preflight_escape_sed_repl\(\)' \
+    "preflight should keep sed replacement escaping as a top-level helper"
+
+assert_file_not_contains "$PREFLIGHT_SH" '^[[:space:]]*_escape_sed_repl\(\)' \
+    "preflight should not define helper functions inside _install_service"
 
 proxy_args_tmp=$(make_test_tmpdir "clash-proxy-args")
 (

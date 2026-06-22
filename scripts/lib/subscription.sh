@@ -150,7 +150,7 @@ _sub_del() {
         read -r id
         [ -z "$id" ] && _error_quit "订阅 id 不能为空"
     }
-    local profile_path url
+    local profile_path url use
     profile_path=$(_get_path_by_id "$id") || _error_quit "订阅 id 不存在，请检查"
     url=$(_get_url_by_id "$id")
     use=$("$BIN_YQ" '.use // ""' "$CLASH_PROFILES_META")
@@ -328,7 +328,7 @@ _sub_update() {
     转换日志：$BIN_SUBCONVERTER_LOG"
         return 1
     }
-    local profile_backup="${profile_path}.update.bak.$$" had_profile=false
+    local profile_backup="${profile_path}.update.bak.$$" had_profile=false use
     [ -f "$profile_path" ] && {
         /bin/cp -f "$profile_path" "$profile_backup" || return 1
         had_profile=true

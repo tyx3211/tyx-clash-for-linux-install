@@ -673,6 +673,10 @@ _append_service_functions() {
     return 0
 }
 
+_preflight_escape_sed_repl() {
+    printf '%s' "$1" | sed -e 's/[#&\\]/\\&/g'
+}
+
 _install_service() {
     local kernel_desc="$KERNEL_NAME Daemon, A[nother] Clash Kernel."
 
@@ -680,21 +684,17 @@ _install_service() {
     local cmd_arg="-d ${CLASH_RESOURCES_DIR} -f ${CLASH_CONFIG_RUNTIME}"
     local cmd_full="${BIN_KERNEL} -d ${CLASH_RESOURCES_DIR} -f ${CLASH_CONFIG_RUNTIME}"
 
-    _escape_sed_repl() {
-        printf '%s' "$1" | sed -e 's/[#&\\]/\\&/g'
-    }
-
     [ -n "$service_src" ] && {
         local sed_cmd_path sed_cmd_arg sed_cmd_full sed_log_file sed_pid_file
         local sed_kernel_name sed_kernel_desc sed_run_as_user
-        sed_cmd_path=$(_escape_sed_repl "$cmd_path")
-        sed_cmd_arg=$(_escape_sed_repl "$cmd_arg")
-        sed_cmd_full=$(_escape_sed_repl "$cmd_full")
-        sed_log_file=$(_escape_sed_repl "$FILE_LOG")
-        sed_pid_file=$(_escape_sed_repl "$FILE_PID")
-        sed_kernel_name=$(_escape_sed_repl "$KERNEL_NAME")
-        sed_kernel_desc=$(_escape_sed_repl "$kernel_desc")
-        sed_run_as_user=$(_escape_sed_repl "${service_run_as_user:-}")
+        sed_cmd_path=$(_preflight_escape_sed_repl "$cmd_path")
+        sed_cmd_arg=$(_preflight_escape_sed_repl "$cmd_arg")
+        sed_cmd_full=$(_preflight_escape_sed_repl "$cmd_full")
+        sed_log_file=$(_preflight_escape_sed_repl "$FILE_LOG")
+        sed_pid_file=$(_preflight_escape_sed_repl "$FILE_PID")
+        sed_kernel_name=$(_preflight_escape_sed_repl "$KERNEL_NAME")
+        sed_kernel_desc=$(_preflight_escape_sed_repl "$kernel_desc")
+        sed_run_as_user=$(_preflight_escape_sed_repl "${service_run_as_user:-}")
         /usr/bin/install -D -m 755 "$service_src" "$service_target" || return 1
         if ((${#service_add[@]})); then
             "${service_add[@]}" || return 1
@@ -711,7 +711,7 @@ _install_service() {
             "$service_target" || return 1
     }
     local sed_installed_init
-    sed_installed_init=$(_escape_sed_repl "CLASH_INSTALLED_INIT_TYPE=\${CLASH_INSTALLED_INIT_TYPE:-${INIT_TYPE}}")
+    sed_installed_init=$(_preflight_escape_sed_repl "CLASH_INSTALLED_INIT_TYPE=\${CLASH_INSTALLED_INIT_TYPE:-${INIT_TYPE}}")
     sed -i \
         -e "s#^CLASH_INSTALLED_INIT_TYPE=.*#${sed_installed_init}#g" \
         "$CLASH_CMD_DIR/clashctl.sh" "$CLASH_CMD_DIR/common.sh"
