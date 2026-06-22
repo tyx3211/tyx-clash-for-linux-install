@@ -136,7 +136,7 @@
 推荐验证命令：
 
 ```bash
-bash -n install.sh update.sh migrate.sh uninstall.sh scripts/cmd/*.sh scripts/lib/*.sh scripts/preflight.sh tests/*.bash tests/lib/*.bash
+bash -n install.sh update.sh migrate.sh uninstall.sh scripts/cmd/*.sh scripts/lib/*.sh scripts/install/*.sh scripts/preflight.sh tests/*.bash tests/lib/*.bash
 for t in tests/test_*.bash; do bash "$t"; done
 git diff --check
 ```

@@ -47,14 +47,14 @@ _path_env_read_path_value FILE KEY
 
 **步骤：**
 
-- [ ] 读取现有 `_expand_path` 和 `_read_env_value` 的所有实现，列出差异。
-- [ ] 在 `tests/test_common_safety.bash` 或新增测试中覆盖：拒绝未白名单键、支持 `~/x`、支持 `$HOME/x`、不执行命令替换、不改变 `PATH`。
-- [ ] 创建 `scripts/lib/path-env.sh`，只放纯 helper，不读取全局状态。
-- [ ] 将 `scripts/lib/install-state.sh` 改为 source 新 helper。
-- [ ] 将 `scripts/cmd/common.sh` 改为 source 新 helper。
-- [ ] 将 `update.sh`、`migrate.sh`、`uninstall.sh` 改为 source 新 helper；如果脚本可能在旧安装目录中运行，先用相对自身路径寻找 helper。
-- [ ] 删除重复的本地 `_expand_path` / `_read_env_value` 实现。
-- [ ] 运行本任务测试：
+- [x] 读取现有 `_expand_path` 和 `_read_env_value` 的所有实现，列出差异。
+- [x] 在 `tests/test_common_safety.bash` 或新增测试中覆盖：拒绝未白名单键、支持 `~/x`、支持 `$HOME/x`、不执行命令替换、不改变 `PATH`。
+- [x] 创建 `scripts/lib/path-env.sh`，只放纯 helper，不读取全局状态。
+- [x] 将 `scripts/lib/install-state.sh` 改为 source 新 helper。
+- [x] 将 `scripts/cmd/common.sh` 改为 source 新 helper。
+- [x] 将 `update.sh`、`migrate.sh`、`uninstall.sh` 改为 source 新 helper；如果脚本可能在旧安装目录中运行，先用相对自身路径寻找 helper。
+- [x] 删除重复的本地 `_expand_path` / `_read_env_value` 实现。
+- [x] 运行本任务测试：
 
 ```bash
 bash tests/test_common_safety.bash
@@ -62,7 +62,7 @@ bash tests/test_migrate.bash
 bash tests/test_update_self.bash
 ```
 
-- [ ] 运行全量验证：
+- [x] 运行全量验证：
 
 ```bash
 bash -n install.sh update.sh migrate.sh uninstall.sh scripts/cmd/*.sh scripts/lib/*.sh scripts/preflight.sh tests/*.bash tests/lib/*.bash
@@ -70,7 +70,7 @@ for t in tests/test_*.bash; do bash "$t"; done
 git diff --check
 ```
 
-- [ ] 提交：
+- [x] 提交：
 
 ```bash
 git add scripts tests
@@ -107,19 +107,19 @@ _runtime_config_controller RUNTIME_FILE
 
 **步骤：**
 
-- [ ] 为 `runtime.yaml` 不存在、`yq` 失败、字段缺失、字段存在分别补测试。
-- [ ] 新增或改造 `runtime-config` helper。
-- [ ] 替换 `scripts/lib/proxy.sh` 的 `_get_runtime_proxy_ports`。
-- [ ] 替换 `scripts/lib/service-runtime.sh` 的端口探测读取逻辑。
-- [ ] 确认 `clashproxy on` 在读取失败时不导出默认端口变量。
-- [ ] 运行本任务测试：
+- [x] 为 `runtime.yaml` 不存在、`yq` 失败、字段缺失、字段存在分别补测试。
+- [x] 新增或改造 `runtime-config` helper。
+- [x] 替换 `scripts/lib/proxy.sh` 的 `_get_runtime_proxy_ports`。
+- [x] 替换 `scripts/lib/service-runtime.sh` 的端口探测读取逻辑。
+- [x] 确认 `clashproxy on` 在读取失败时不导出默认端口变量。
+- [x] 运行本任务测试：
 
 ```bash
 bash tests/test_runtime_modes.bash
 bash tests/test_clashctl_behaviour.bash
 ```
 
-- [ ] 运行全量验证并提交：
+- [x] 运行全量验证并提交：
 
 ```bash
 bash -n install.sh update.sh migrate.sh uninstall.sh scripts/cmd/*.sh scripts/lib/*.sh scripts/preflight.sh tests/*.bash tests/lib/*.bash
@@ -142,10 +142,10 @@ git commit -m "refactor: centralize runtime port parsing"
 
 **步骤：**
 
-- [ ] 将 `scripts/lib/subscription.sh` 中的 `use=` 改为局部变量。
-- [ ] 将 `_escape_sed_repl` 从 `_install_service` 内移动到顶层，并改名为安装期前缀，例如 `_preflight_escape_sed_repl`。
-- [ ] 确认替换后没有旧函数名残留。
-- [ ] 运行：
+- [x] 将 `scripts/lib/subscription.sh` 中的 `use=` 改为局部变量。
+- [x] 将 `_escape_sed_repl` 从 `_install_service` 内移动到顶层，并改名为安装期前缀，例如 `_preflight_escape_sed_repl`。
+- [x] 确认替换后没有旧函数名残留。
+- [x] 运行：
 
 ```bash
 rg -n "^[[:space:]]*use=|_escape_sed_repl" scripts
@@ -153,7 +153,7 @@ bash tests/test_clashctl_behaviour.bash
 bash tests/test_rendered_install.bash
 ```
 
-- [ ] 运行全量验证并提交：
+- [x] 运行全量验证并提交：
 
 ```bash
 bash -n install.sh update.sh migrate.sh uninstall.sh scripts/cmd/*.sh scripts/lib/*.sh scripts/preflight.sh tests/*.bash tests/lib/*.bash
@@ -169,8 +169,8 @@ git commit -m "refactor: tighten shell helper scopes"
 
 **文件：**
 
-- Create: `scripts/install/args.sh`
-- Create: `scripts/install/downloads.sh`
+- Deferred: `scripts/install/args.sh`
+- Deferred: `scripts/install/downloads.sh`
 - Create: `scripts/install/archive-safe.sh`
 - Create: `scripts/install/service-render.sh`
 - Create: `scripts/install/rc.sh`
@@ -189,14 +189,14 @@ git commit -m "refactor: tighten shell helper scopes"
 
 **步骤：**
 
-- [ ] 先移动归档安全函数到 `scripts/install/archive-safe.sh`，替换 `preflight.sh` 调用。
-- [ ] 运行安装渲染测试，确认归档安全测试仍覆盖。
-- [ ] 移动 service 渲染函数到 `scripts/install/service-render.sh`。
-- [ ] 运行安装渲染测试。
-- [ ] 移动 shell rc 相关函数到 `scripts/install/rc.sh`。
-- [ ] 运行安装渲染测试。
-- [ ] 再评估是否移动下载和参数解析；如果移动会扩大风险，可以在下一批处理。
-- [ ] 运行全量验证并提交：
+- [x] 先移动归档安全函数到 `scripts/install/archive-safe.sh`，替换 `preflight.sh` 调用。
+- [x] 运行安装渲染测试，确认归档安全测试仍覆盖。
+- [x] 移动 service 渲染函数到 `scripts/install/service-render.sh`。
+- [x] 运行安装渲染测试。
+- [x] 移动 shell rc 相关函数到 `scripts/install/rc.sh`。
+- [x] 运行安装渲染测试。
+- [x] 再评估是否移动下载和参数解析；当前结论是暂缓，以避免暴露更多隐式全局状态。
+- [x] 运行全量验证并提交：
 
 ```bash
 bash -n install.sh update.sh migrate.sh uninstall.sh scripts/cmd/*.sh scripts/lib/*.sh scripts/install/*.sh scripts/preflight.sh tests/*.bash tests/lib/*.bash
