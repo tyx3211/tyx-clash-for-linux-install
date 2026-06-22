@@ -470,23 +470,9 @@ _clash_service_follow_log() {
 }
 
 _detect_proxy_port() {
-    local mixed_port http_port socks_port
-    mixed_port=$("$BIN_YQ" '.mixed-port // ""' "$CLASH_CONFIG_RUNTIME") || {
-        _failcat "mixed-port 读取失败：$CLASH_CONFIG_RUNTIME"
-        return 1
-    }
-    http_port=$("$BIN_YQ" '.port // ""' "$CLASH_CONFIG_RUNTIME") || {
-        _failcat "port 读取失败：$CLASH_CONFIG_RUNTIME"
-        return 1
-    }
-    socks_port=$("$BIN_YQ" '.socks-port // ""' "$CLASH_CONFIG_RUNTIME") || {
-        _failcat "socks-port 读取失败：$CLASH_CONFIG_RUNTIME"
-        return 1
-    }
-    [ -z "$mixed_port" ] && [ -z "$http_port" ] && [ -z "$socks_port" ] && {
-        http_port=$DEFAULT_HTTP_PORT
-        socks_port=$DEFAULT_SOCKS_PORT
-    }
+    local ports mixed_port http_port socks_port
+    ports=$(_runtime_config_read_ports "$CLASH_CONFIG_RUNTIME") || return 1
+    IFS='|' read -r mixed_port http_port socks_port <<<"$ports"
 
     local newPort count=0
     local isActive=false

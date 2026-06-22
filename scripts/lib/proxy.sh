@@ -95,27 +95,32 @@ _warn_global_auto_proxy_still_enabled() {
 }
 
 _get_runtime_proxy_ports() {
-    local mixed_port http_port socks_port
-    mixed_port=$("$BIN_YQ" '.mixed-port // ""' "$CLASH_CONFIG_RUNTIME")
-    http_port=$("$BIN_YQ" '.port // ""' "$CLASH_CONFIG_RUNTIME")
-    socks_port=$("$BIN_YQ" '.socks-port // ""' "$CLASH_CONFIG_RUNTIME")
+    local ports mixed_port http_port socks_port
 
-    [ -z "$http_port" ] && http_port=$mixed_port
-    [ -z "$socks_port" ] && socks_port=$mixed_port
-    [ -z "$http_port" ] && http_port=$DEFAULT_HTTP_PORT
-    [ -z "$socks_port" ] && socks_port=$DEFAULT_SOCKS_PORT
+    ports=$(_runtime_config_read_ports "$CLASH_CONFIG_RUNTIME") || return 1
+    IFS='|' read -r mixed_port http_port socks_port <<<"$ports"
+    [ -n "$http_port" ] || http_port=$mixed_port
+    [ -n "$socks_port" ] || socks_port=$mixed_port
+    [ -n "$http_port" ] || http_port=${DEFAULT_HTTP_PORT:-7890}
+    [ -n "$socks_port" ] || socks_port=${DEFAULT_SOCKS_PORT:-7891}
 
     printf '%s %s\n' "$http_port" "$socks_port"
 }
 
 _set_system_proxy() {
-    local http_port socks_port
-    read -r http_port socks_port <<<"$(_get_runtime_proxy_ports)"
+    local ports http_port socks_port
+    ports=$(_get_runtime_proxy_ports) || return 1
+    read -r http_port socks_port <<<"$ports"
 
-    local auth=$("$BIN_YQ" '.authentication[0] // ""' "$CLASH_CONFIG_RUNTIME")
+    local auth
+    auth=$("$BIN_YQ" '.authentication[0] // ""' "$CLASH_CONFIG_RUNTIME") || {
+        _failcat "authentication 读取失败：$CLASH_CONFIG_RUNTIME"
+        return 1
+    }
     [ -n "$auth" ] && auth=$auth@
 
-    local bind_addr=$(_get_bind_addr)
+    local bind_addr
+    bind_addr=$(_get_bind_addr) || return 1
     local http_proxy_addr="http://${auth}${bind_addr}:${http_port}"
     local socks_proxy_addr="socks5h://${auth}${bind_addr}:${socks_port}"
     local no_proxy_addr="localhost,127.0.0.1,::1"
@@ -153,10 +158,10 @@ watch_proxy() {
         return 0
         ;;
     silent)
-        _set_system_proxy
+        _set_system_proxy || return 1
         ;;
     verbose)
-        _set_system_proxy
+        _set_system_proxy || return 1
         _okcat '已按 sidecar 配置自动开启系统代理'
         ;;
     esac
@@ -222,11 +227,9 @@ EOF
             _failcat "未知参数：${action_arg:-$extra_arg}"
             return 1
         }
+        _set_system_proxy || return 1
         if [ "$global" = true ]; then
             _proxy_set_global_enable true || return 1
-        fi
-        _set_system_proxy
-        if [ "$global" = true ]; then
             _okcat '已为当前终端开启代理，并开启全局自动代理'
         else
             _okcat '已为当前终端开启代理'

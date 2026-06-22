@@ -11,6 +11,17 @@ _CLASHCTL_INSTALL_STATE_LIB="$THIS_SCRIPT_DIR/../lib/install-state.sh"
 }
 unset _CLASHCTL_INSTALL_STATE_LIB
 
+_CLASHCTL_RUNTIME_CONFIG_LIB="$THIS_SCRIPT_DIR/../lib/runtime-config.sh"
+[ -r "$_CLASHCTL_RUNTIME_CONFIG_LIB" ] || {
+    printf 'clashctl: missing required library: %s\n' "$_CLASHCTL_RUNTIME_CONFIG_LIB" >&2
+    return 1 2>/dev/null || exit 1
+}
+. "$_CLASHCTL_RUNTIME_CONFIG_LIB" || {
+    printf 'clashctl: failed to source library: %s\n' "$_CLASHCTL_RUNTIME_CONFIG_LIB" >&2
+    return 1 2>/dev/null || exit 1
+}
+unset _CLASHCTL_RUNTIME_CONFIG_LIB
+
 _clashctl_parse_env_file() {
     _path_env_read_into_vars "$1"
 }
@@ -223,8 +234,14 @@ _get_random_port() {
 
 _get_bind_addr() {
     local allowLan bindAddr
-    bindAddr=$("$BIN_YQ" '.bind-address // "*"' "$CLASH_CONFIG_RUNTIME")
-    allowLan=$("$BIN_YQ" '.allow-lan // false' "$CLASH_CONFIG_RUNTIME")
+    bindAddr=$("$BIN_YQ" '.bind-address // "*"' "$CLASH_CONFIG_RUNTIME") || {
+        _failcat "bind-address 读取失败：$CLASH_CONFIG_RUNTIME"
+        return 1
+    }
+    allowLan=$("$BIN_YQ" '.allow-lan // false' "$CLASH_CONFIG_RUNTIME") || {
+        _failcat "allow-lan 读取失败：$CLASH_CONFIG_RUNTIME"
+        return 1
+    }
 
     case $allowLan in
     true)
@@ -262,10 +279,7 @@ _format_http_url() {
 
 function _detect_ext_addr() {
     local ext_addr ext_ip
-    ext_addr=$("$BIN_YQ" '.external-controller // ""' "$CLASH_CONFIG_RUNTIME") || {
-        _failcat "external-controller 读取失败：$CLASH_CONFIG_RUNTIME"
-        return 1
-    }
+    ext_addr=$(_runtime_config_controller "$CLASH_CONFIG_RUNTIME") || return 1
     case "$ext_addr" in
     "")
         ext_ip=127.0.0.1
