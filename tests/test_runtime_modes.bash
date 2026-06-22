@@ -18,13 +18,25 @@ assert_file_contains "$SERVICE_RUNTIME_SH" '_clash_adapter_nohup_start\(\)' \
 assert_file_contains "$SERVICE_RUNTIME_SH" '_clash_adapter_systemd_start\(\)' \
     "clashctl should keep systemd adapter available at runtime"
 
+assert_file_contains "$SERVICE_RUNTIME_SH" '_with_service_lock\(\)' \
+    "runtime start/stop/restart operations should share a service lock"
+
+assert_file_contains "$SERVICE_RUNTIME_SH" '/proc/\$pid/comm' \
+    "nohup pid validation should handle replaced kernel binaries by falling back to comm and cmdline checks"
+
 assert_file_contains "$CLASHCTL_SH" 'clashon "\$@"|clashon "\$\{@\}"' \
     "clashctl on should pass runtime mode arguments through"
 
-assert_file_contains "$FISH_SH" 'bash -i -c '\''clashon "\$@"'\'' -- \$argv' \
-    "fish clashon wrapper should pass runtime mode arguments through"
+assert_file_contains "$FISH_SH" '_clashctl_bash_call clashon \$argv' \
+    "fish clashon wrapper should pass runtime mode arguments through a non-interactive helper"
 
-assert_file_contains "$FISH_SH" 'clashctl update-self "\$@"|clashctl update-self \$argv' \
+assert_file_not_contains "$FISH_SH" 'bash -i' \
+    "fish wrapper should not load interactive bash rc and trigger watch_proxy side effects"
+
+assert_file_not_contains "$FISH_SH" 'bash -c "\\. \\"\\$CLASHCTL_CMD_DIR' \
+    "fish wrapper should pass command directory as a bash positional argument instead of interpolating it"
+
+assert_file_contains "$FISH_SH" '_clashctl_bash_call clashctl update-self \$argv' \
     "fish clashctl wrapper should pass update-self through to bash clashctl"
 
 assert_file_not_contains "$PREFLIGHT_SH" 'placeholder_start#_clash_service_start' \
@@ -197,6 +209,16 @@ mode_tmp=$(make_test_tmpdir "clash-runtime-mode")
     grep -q '^pid: 4242$' "$CLASH_SERVICE_STATE" ||
         fail "clashrestart should record only the nohup pid in service state"
 
+    unset_proxy_called=false
+    _unset_system_proxy() {
+        unset_proxy_called=true
+    }
+    clashrestart --mode tmux
+    status=$?
+    [ "$status" -eq 0 ] || fail "clashrestart should switch modes without using user-facing clashoff side effects"
+    [ "$unset_proxy_called" = false ] ||
+        fail "clashrestart should not clear current shell proxy variables"
+
     clashoff
     status=$?
     [ "$status" -eq 0 ] || fail "clashoff should stop active mode"
@@ -214,6 +236,7 @@ restart_ext_tmp=$(make_test_tmpdir "clash-restart-ext")
     _get_default_service_mode() { printf '%s\n' tmux; }
     _merge_config() { printf 'merge\n' >>"$restart_ext_tmp/calls"; }
     _ensure_ext_addr_available() { printf 'ensure-ext\n' >>"$restart_ext_tmp/calls"; }
+    _detect_proxy_port() { printf 'detect-proxy\n' >>"$restart_ext_tmp/calls"; }
     _clash_service_stop() { printf 'stop-%s\n' "$1" >>"$restart_ext_tmp/calls"; }
     _clash_service_start() { printf 'start-%s\n' "$1" >>"$restart_ext_tmp/calls"; }
     clashstatus() { printf 'status\n' >>"$restart_ext_tmp/calls"; return 0; }
@@ -224,10 +247,78 @@ restart_ext_tmp=$(make_test_tmpdir "clash-restart-ext")
 awk '
     $0 == "merge" { merge=NR }
     $0 == "ensure-ext" { detect=NR }
+    $0 == "detect-proxy" { proxy=NR }
     $0 == "start-tmux" { start=NR }
-    END { exit (merge && detect && start && merge < detect && detect < start) ? 0 : 1 }
+    END { exit (merge && detect && proxy && start && merge < detect && detect < proxy && proxy < start) ? 0 : 1 }
 ' "$restart_ext_tmp/calls" ||
-    fail "_merge_config_restart should detect external-controller conflicts before restarting"
+    fail "_merge_config_restart should check external-controller and proxy port conflicts before starting"
+
+restart_proxy_env_tmp=$(make_test_tmpdir "clash-restart-proxy-env")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    _has_current_proxy_env() { return 0; }
+    _get_active_mode() { printf '%s\n' tmux; return 0; }
+    _detect_ext_addr() { EXT_PORT=23571; }
+    _merge_config() { printf 'merge\n' >>"$restart_proxy_env_tmp/calls"; }
+    _ensure_ext_addr_available() { printf 'ensure-ext %s\n' "${1:-}" >>"$restart_proxy_env_tmp/calls"; }
+    _detect_proxy_port() { printf 'detect-proxy\n' >>"$restart_proxy_env_tmp/calls"; }
+    _clash_service_stop() { printf 'stop-%s\n' "$1" >>"$restart_proxy_env_tmp/calls"; }
+    _clash_service_start() { printf 'start-%s\n' "$1" >>"$restart_proxy_env_tmp/calls"; }
+    _set_system_proxy() { printf 'set-proxy\n' >>"$restart_proxy_env_tmp/calls"; }
+    clashstatus() { printf 'status\n' >>"$restart_proxy_env_tmp/calls"; return 0; }
+    sleep() { :; }
+
+    _merge_config_restart || fail "_merge_config_restart should succeed with an existing proxy environment"
+)
+! grep -q '^set-proxy$' "$restart_proxy_env_tmp/calls" ||
+    fail "_merge_config_restart should not rewrite current shell proxy variables"
+
+restart_proxy_port_conflict_tmp=$(make_test_tmpdir "clash-restart-proxy-port-conflict")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    CLASH_CONFIG_RUNTIME="$restart_proxy_port_conflict_tmp/runtime.yaml"
+    printf 'old-runtime\n' >"$CLASH_CONFIG_RUNTIME"
+
+    _has_current_proxy_env() { return 1; }
+    _get_active_mode() { printf '%s\n' tmux; return 0; }
+    _detect_ext_addr() { EXT_PORT=23571; }
+    _merge_config() {
+        printf 'new-runtime\n' >"$CLASH_CONFIG_RUNTIME"
+        printf 'merge\n' >>"$restart_proxy_port_conflict_tmp/calls"
+    }
+    _ensure_ext_addr_available() { printf 'ensure-ext %s\n' "${1:-}" >>"$restart_proxy_port_conflict_tmp/calls"; }
+    _clash_service_stop() { printf 'stop-%s\n' "$1" >>"$restart_proxy_port_conflict_tmp/calls"; }
+    _clash_service_start() {
+        printf 'start-%s:%s\n' "$1" "$(cat "$CLASH_CONFIG_RUNTIME")" >>"$restart_proxy_port_conflict_tmp/calls"
+    }
+    _detect_proxy_port() { printf 'detect-proxy\n' >>"$restart_proxy_port_conflict_tmp/calls"; return 1; }
+    _failcat() { printf '%s\n' "$*" >>"$restart_proxy_port_conflict_tmp/fail.log"; }
+    sleep() { :; }
+
+    _merge_config_restart
+    status=$?
+    [ "$status" -ne 0 ] ||
+        fail "_merge_config_restart should fail when the refreshed proxy ports are occupied"
+    [ "$(cat "$CLASH_CONFIG_RUNTIME")" = "old-runtime" ] ||
+        fail "_merge_config_restart should restore the previous runtime after proxy port conflicts"
+)
+awk '
+    $0 == "merge" { merge=NR }
+    $0 == "ensure-ext 23571" { ensure=NR }
+    $0 == "stop-tmux" && !stop { stop=NR }
+    $0 == "detect-proxy" { proxy=NR }
+    $0 == "start-tmux:old-runtime" { rollback_start=NR }
+    /^start-tmux:new-runtime$/ { bad=1 }
+    END {
+        exit (!bad && merge && ensure && stop && proxy && rollback_start &&
+              merge < ensure && ensure < stop && stop < proxy && proxy < rollback_start) ? 0 : 1
+    }
+' "$restart_proxy_port_conflict_tmp/calls" ||
+    fail "_merge_config_restart should stop old service, check proxy ports, then restore old service on conflict"
 
 on_active_conflict_tmp=$(make_test_tmpdir "clash-on-active-conflict")
 (
@@ -251,6 +342,26 @@ on_active_conflict_tmp=$(make_test_tmpdir "clash-on-active-conflict")
         fail "clashon active mode conflict should tell users to use clashrestart"
 )
 
+multi_mode_state_tmp=$(make_test_tmpdir "clash-multi-mode-state")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    CLASH_RESOURCES_DIR="$multi_mode_state_tmp/resources"
+    CLASH_SERVICE_STATE="$CLASH_RESOURCES_DIR/service-state.yaml"
+    mkdir -p "$CLASH_RESOURCES_DIR"
+    printf 'active_mode: tmux\n' >"$CLASH_SERVICE_STATE"
+
+    _clash_adapter_tmux_is_active() { return 0; }
+    _clash_adapter_nohup_is_active() { return 0; }
+    _clash_adapter_systemd_is_active() { return 1; }
+
+    _get_active_mode >/dev/null
+    status=$?
+    [ "$status" -eq 2 ] ||
+        fail "_get_active_mode should report conflicts before trusting service-state.yaml"
+)
+
 restart_health_tmp=$(make_test_tmpdir "clash-restart-health")
 (
     set +e
@@ -261,6 +372,7 @@ restart_health_tmp=$(make_test_tmpdir "clash-restart-health")
     _get_default_service_mode() { printf '%s\n' tmux; }
     _merge_config() { printf 'merge\n' >>"$restart_health_tmp/calls"; }
     _ensure_ext_addr_available() { printf 'ensure-ext\n' >>"$restart_health_tmp/calls"; }
+    _detect_proxy_port() { printf 'detect-proxy\n' >>"$restart_health_tmp/calls"; }
     _clash_service_stop() { printf 'stop-%s\n' "$1" >>"$restart_health_tmp/calls"; }
     _clash_service_start() { printf 'start-%s\n' "$1" >>"$restart_health_tmp/calls"; }
     clashstatus() { printf 'status\n' >>"$restart_health_tmp/calls"; return 1; }
@@ -287,6 +399,7 @@ restart_secret_tmp=$(make_test_tmpdir "clash-restart-secret")
     _detect_ext_addr() { EXT_PORT=23571; }
     _merge_config() { printf 'merge\n' >>"$restart_secret_tmp/calls"; }
     _ensure_ext_addr_available() { printf 'ensure-ext %s\n' "${1:-}" >>"$restart_secret_tmp/calls"; }
+    _detect_proxy_port() { printf 'detect-proxy\n' >>"$restart_secret_tmp/calls"; }
     _clash_service_stop() { printf 'stop-%s\n' "$1" >>"$restart_secret_tmp/calls"; }
     _clash_service_start() { printf 'start-%s\n' "$1" >>"$restart_secret_tmp/calls"; }
     clashstatus() { printf 'status\n' >>"$restart_secret_tmp/calls"; return 0; }
@@ -302,6 +415,31 @@ awk '
     END { exit (merge && ensure && stop && start && merge < ensure && ensure < stop && stop < start) ? 0 : 1 }
 ' "$restart_secret_tmp/calls" ||
     fail "_merge_config_restart should allow the old active external-controller port while checking the new runtime"
+
+same_mode_health_tmp=$(make_test_tmpdir "clash-same-mode-health")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    _get_active_mode() { printf '%s\n' tmux; return 0; }
+    _detect_proxy_port() { printf 'detect-proxy\n' >>"$same_mode_health_tmp/calls"; }
+    _ensure_ext_addr_available() { printf 'ensure-ext\n' >>"$same_mode_health_tmp/calls"; }
+    _clash_service_start() { printf 'start-%s\n' "$1" >>"$same_mode_health_tmp/calls"; }
+    clashstatus() { printf 'status %s\n' "$*" >>"$same_mode_health_tmp/calls"; return 1; }
+    _okcat() { printf '%s\n' "$*" >>"$same_mode_health_tmp/ok.log"; }
+    _failcat() { printf '%s\n' "$*" >>"$same_mode_health_tmp/fail.log"; }
+
+    clashon --mode tmux
+    status=$?
+    [ "$status" -ne 0 ] ||
+        fail "clashon should not claim success when the active same-mode process is unhealthy"
+    grep -qx 'status --mode tmux' "$same_mode_health_tmp/calls" ||
+        fail "clashon same-mode path should verify API health"
+    ! grep -q '^detect-proxy$' "$same_mode_health_tmp/calls" ||
+        fail "clashon same-mode path should not run startup port checks"
+    ! grep -q '^start-tmux$' "$same_mode_health_tmp/calls" ||
+        fail "clashon same-mode path should not start another adapter"
+)
 
 no_conflict_tmp=$(make_test_tmpdir "clash-no-conflict-return")
 (
@@ -350,6 +488,60 @@ EOF
         fail "_detect_ext_addr should return success when external-controller port is free"
     [ ! -e "$no_conflict_tmp/calls" ] ||
         fail "no-conflict detection should not merge config"
+)
+
+proxy_conflict_tmp=$(make_test_tmpdir "clash-proxy-conflict-readonly")
+(
+    set +e -u
+    . "$CLASHCTL_SH"
+
+    BIN_YQ="$proxy_conflict_tmp/yq"
+    CLASH_CONFIG_RUNTIME="$proxy_conflict_tmp/runtime.yaml"
+    CLASH_CONFIG_MIXIN="$proxy_conflict_tmp/mixin.yaml"
+    cat >"$BIN_YQ" <<EOF
+#!/usr/bin/env bash
+if [ "\$1" = "-i" ]; then
+    printf 'yq-write\n' >>"$proxy_conflict_tmp/calls"
+    exit 0
+fi
+case "\$1" in
+'.mixed-port // ""')
+    printf '\n'
+    ;;
+'.port // ""')
+    printf '7890\n'
+    ;;
+'.socks-port // ""')
+    printf '7891\n'
+    ;;
+*)
+    printf '\n'
+    ;;
+esac
+EOF
+    chmod +x "$BIN_YQ"
+    printf '{}\n' >"$CLASH_CONFIG_RUNTIME"
+    printf '{}\n' >"$CLASH_CONFIG_MIXIN"
+    DEFAULT_HTTP_PORT=7890
+    DEFAULT_SOCKS_PORT=7891
+    _is_port_used() { return 0; }
+    _get_random_port() { printf '%s\n' 18080; }
+    clashstatus() { return 1; }
+    _merge_config() { printf 'merge\n' >>"$proxy_conflict_tmp/calls"; }
+    _failcat() { printf '%s\n' "$*" >>"$proxy_conflict_tmp/fail.log"; }
+
+    _detect_proxy_port
+    status=$?
+    [ "$status" -ne 0 ] ||
+        fail "_detect_proxy_port should fail when proxy ports are occupied before startup"
+    ! grep -q '^yq-write$' "$proxy_conflict_tmp/calls" 2>/dev/null ||
+        fail "_detect_proxy_port should not rewrite mixin.yaml automatically"
+    ! grep -q '^merge$' "$proxy_conflict_tmp/calls" 2>/dev/null ||
+        fail "_detect_proxy_port should not merge config after proxy port conflicts"
+    grep -q '建议改 mixin.yaml' "$proxy_conflict_tmp/fail.log" ||
+        fail "_detect_proxy_port should tell users to edit mixin.yaml explicitly"
+    grep -q '18080' "$proxy_conflict_tmp/fail.log" ||
+        fail "_detect_proxy_port should include a suggested free proxy port"
 )
 
 empty_ext_host_tmp=$(make_test_tmpdir "clash-empty-ext-host")
@@ -491,7 +683,7 @@ orphan_restart_tmp=$(make_test_tmpdir "clash-orphan-restart")
     _get_active_mode() { return 1; }
     _current_kernel_pids() { printf '1234\n'; }
     _terminate_current_kernel_pids() { printf 'terminate %s\n' "$*" >>"$orphan_restart_tmp/calls"; }
-    clashon() { printf 'on %s\n' "$*" >>"$orphan_restart_tmp/calls"; }
+    _clashon_impl() { printf 'on %s\n' "$*" >>"$orphan_restart_tmp/calls"; }
 
     clashrestart --mode tmux || fail "clashrestart should recover from exact current-install orphan kernel processes"
 )
@@ -639,6 +831,9 @@ tun_restore_tmp=$(make_test_tmpdir "clash-tun-restore")
     printf 'new\n' >"$CLASH_CONFIG_MIXIN"
     printf 'old\n' >"$tun_restore_tmp/backup.yaml"
     _merge_config() { printf 'merge\n' >>"$tun_restore_tmp/calls"; }
+    _clash_service_stop() {
+        printf 'stop-%s\n' "$1" >>"$tun_restore_tmp/calls"
+    }
     _clash_service_start() {
         printf 'start-%s\n' "$1" >>"$tun_restore_tmp/calls"
         return 1
@@ -660,6 +855,12 @@ tun_restore_tmp=$(make_test_tmpdir "clash-tun-restore")
     status=$?
     [ "$status" -ne 0 ] ||
         fail "_restore_tun_mixin should fail when requested systemd restart fails"
+    awk '
+        $0 == "stop-systemd" { stop=NR }
+        $0 == "start-systemd" { start=NR }
+        END { exit (stop && start && stop < start) ? 0 : 1 }
+    ' "$tun_restore_tmp/calls" ||
+        fail "_restore_tun_mixin should stop systemd before starting rollback runtime"
     grep -q 'Tun 配置已回滚，但 systemd 内核恢复启动失败' "$tun_restore_tmp/fail.log" ||
         fail "_restore_tun_mixin should report failed systemd restart after rollback"
 )

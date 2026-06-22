@@ -19,7 +19,7 @@ _clashctl_expand_env_path() {
         printf '%s\n' "$HOME"
         ;;
     "~/"*)
-        printf '%s/%s\n' "$HOME" "${path#~/}"
+        printf '%s/%s\n' "$HOME" "${path#\~/}"
         ;;
     '$HOME')
         printf '%s\n' "$HOME"
@@ -253,7 +253,39 @@ _clashctl_validate_runtime_paths || { return 1 2>/dev/null || exit 1; }
 
 _is_port_used() {
     local port=$1
-    { ss -tunl 2>/dev/null || netstat -tunl; } | grep -qs ":${port}\b"
+
+    if command -v ss >/dev/null; then
+        ss -H -ltn 2>/dev/null |
+            awk -v port="$port" '
+                {
+                    local_addr = $4
+                    sub(/.*:/, "", local_addr)
+                    if (local_addr == port) {
+                        found = 1
+                    }
+                }
+                END { exit found ? 0 : 1 }
+            '
+        return $?
+    fi
+    if command -v netstat >/dev/null; then
+        netstat -ltn 2>/dev/null |
+            awk -v port="$port" '
+                NR <= 2 { next }
+                {
+                    local_addr = $4
+                    sub(/.*:/, "", local_addr)
+                    if (local_addr == port) {
+                        found = 1
+                    }
+                }
+                END { exit found ? 0 : 1 }
+            '
+        return $?
+    fi
+
+    _failcat "未检测到 ss 或 netstat，无法可靠检查端口占用"
+    return 0
 }
 
 _get_random_port() {
@@ -549,7 +581,6 @@ _download_raw_config() {
         --silent \
         --show-error \
         --fail \
-        --insecure \
         --location \
         --max-time "$sub_timeout" \
         --retry 1 \
@@ -558,7 +589,6 @@ _download_raw_config() {
         "$url" ||
         wget \
             --no-verbose \
-            --no-check-certificate \
             --timeout "$sub_timeout" \
             --tries 1 \
             --user-agent "$CLASH_SUB_UA" \

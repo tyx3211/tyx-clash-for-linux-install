@@ -36,6 +36,7 @@ _restore_tun_mixin() {
     /bin/mv -f "$backup" "$CLASH_CONFIG_MIXIN"
     _merge_config || return 1
     if [ "$restart_after_restore" = true ]; then
+        _clash_service_stop systemd >/dev/null 2>&1 || true
         _clash_service_start systemd >/dev/null || {
             _failcat "Tun 配置已回滚，但 systemd 内核恢复启动失败"
             return 1

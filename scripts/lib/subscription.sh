@@ -117,7 +117,14 @@ EOF
 
     local id=$("$BIN_YQ" '.profiles // [] | (map(.id) | max) // 0 | . + 1' "$CLASH_PROFILES_META")
     local profile_path="${CLASH_PROFILES_DIR}/${id}.yaml"
-    mv "$CLASH_CONFIG_TEMP" "$profile_path"
+    mkdir -p "$CLASH_PROFILES_DIR" || {
+        _error_quit "无法创建订阅目录：$CLASH_PROFILES_DIR"
+        return 1
+    }
+    /bin/mv -f "$CLASH_CONFIG_TEMP" "$profile_path" || {
+        _error_quit "订阅文件保存失败：$profile_path"
+        return 1
+    }
 
     PROFILE_ID=$id PROFILE_PATH=$profile_path PROFILE_URL=$url \
         "$BIN_YQ" -i '
@@ -127,7 +134,11 @@ EOF
               "path": env(PROFILE_PATH),
               "url": env(PROFILE_URL)
             }]
-        ' "$CLASH_PROFILES_META"
+        ' "$CLASH_PROFILES_META" || {
+        /usr/bin/rm -f "$profile_path"
+        _error_quit "订阅元信息写入失败：$CLASH_PROFILES_META"
+        return 1
+    }
     _logging_sub "➕ 已添加订阅：[$id] $url"
     _okcat '🎉' "订阅已添加：[$id] $url"
     [ "$use_after_add" = true ] && _sub_use "$id"
@@ -144,8 +155,19 @@ _sub_del() {
     url=$(_get_url_by_id "$id")
     use=$("$BIN_YQ" '.use // ""' "$CLASH_PROFILES_META")
     [ "$use" = "$id" ] && _error_quit "删除失败：订阅 $id 正在使用中，请先切换订阅"
-    /usr/bin/rm -f "$profile_path"
-    PROFILE_ID=$id "$BIN_YQ" -i 'del(.profiles[] | select((.id | tostring) == env(PROFILE_ID)))' "$CLASH_PROFILES_META"
+    local meta_backup="${CLASH_PROFILES_META}.del.bak.$$"
+    /bin/cp -f "$CLASH_PROFILES_META" "$meta_backup" || return 1
+    PROFILE_ID=$id "$BIN_YQ" -i 'del(.profiles[] | select((.id | tostring) == env(PROFILE_ID)))' "$CLASH_PROFILES_META" || {
+        /bin/mv -f "$meta_backup" "$CLASH_PROFILES_META"
+        _error_quit "订阅元信息更新失败：$CLASH_PROFILES_META"
+        return 1
+    }
+    /usr/bin/rm -f "$profile_path" || {
+        /bin/mv -f "$meta_backup" "$CLASH_PROFILES_META"
+        _error_quit "订阅文件删除失败：$profile_path"
+        return 1
+    }
+    /usr/bin/rm -f "$meta_backup"
     _logging_sub "➖ 已删除订阅：[$id] $url"
     _okcat '🎉' "订阅已删除：[$id] $url"
 }
@@ -166,22 +188,33 @@ _sub_use() {
     profile_path=$(_get_path_by_id "$id") || _error_quit "订阅 id 不存在，请检查"
     url=$(_get_url_by_id "$id")
     local base_backup="${CLASH_CONFIG_BASE}.sub-use.bak.$$" had_base=false
+    local meta_backup="${CLASH_PROFILES_META}.use.bak.$$"
     [ -f "$CLASH_CONFIG_BASE" ] && {
-        cat "$CLASH_CONFIG_BASE" >"$base_backup" || return 1
+        /bin/cp -f "$CLASH_CONFIG_BASE" "$base_backup" || return 1
         had_base=true
     }
-    cat "$profile_path" >"$CLASH_CONFIG_BASE" || return 1
+    /bin/cp -f "$CLASH_PROFILES_META" "$meta_backup" || return 1
+    "$BIN_YQ" -i ".use = $id" "$CLASH_PROFILES_META" || {
+        /bin/mv -f "$meta_backup" "$CLASH_PROFILES_META"
+        _error_quit "订阅元信息写入失败：$CLASH_PROFILES_META"
+        return 1
+    }
+    _replace_file_from_source "$profile_path" "$CLASH_CONFIG_BASE" || {
+        /bin/mv -f "$meta_backup" "$CLASH_PROFILES_META"
+        /usr/bin/rm -f "$base_backup"
+        return 1
+    }
     _merge_config_restart || {
         if [ "$had_base" = true ]; then
             /bin/mv -f "$base_backup" "$CLASH_CONFIG_BASE"
         else
             /usr/bin/rm -f "$CLASH_CONFIG_BASE" "$base_backup"
         fi
+        /bin/mv -f "$meta_backup" "$CLASH_PROFILES_META"
         _merge_config >/dev/null 2>&1 || true
         return 1
     }
-    /usr/bin/rm -f "$base_backup"
-    "$BIN_YQ" -i ".use = $id" "$CLASH_PROFILES_META"
+    /usr/bin/rm -f "$base_backup" "$meta_backup"
     _logging_sub "🔥 订阅已切换为：[$id] $url"
     _okcat '🔥' '订阅已生效'
 }
@@ -197,6 +230,22 @@ _make_config_temp() {
 }
 _get_id_by_url() {
     PROFILE_URL=$1 "$BIN_YQ" -e '.profiles[] | select(.url == env(PROFILE_URL)) | (.id | tostring)' "$CLASH_PROFILES_META" 2>/dev/null
+}
+_replace_file_from_source() {
+    local source=$1 dest=$2 dir tmp
+
+    [ -f "$source" ] || return 1
+    dir=$(dirname "$dest")
+    mkdir -p "$dir" || return 1
+    tmp=$(mktemp "${dir}/.replace.XXXXXX") || return 1
+    cat "$source" >"$tmp" || {
+        /usr/bin/rm -f "$tmp"
+        return 1
+    }
+    /bin/mv -f "$tmp" "$dest" || {
+        /usr/bin/rm -f "$tmp"
+        return 1
+    }
 }
 _sub_update() {
     local id= is_convert=false
@@ -281,10 +330,10 @@ _sub_update() {
     }
     local profile_backup="${profile_path}.update.bak.$$" had_profile=false
     [ -f "$profile_path" ] && {
-        cat "$profile_path" >"$profile_backup" || return 1
+        /bin/cp -f "$profile_path" "$profile_backup" || return 1
         had_profile=true
     }
-    cat "$CLASH_CONFIG_TEMP" >"$profile_path" || return 1
+    _replace_file_from_source "$CLASH_CONFIG_TEMP" "$profile_path" || return 1
     use=$("$BIN_YQ" '.use // ""' "$CLASH_PROFILES_META")
     [ "$use" = "$id" ] && {
         clashsub use "$use" && {

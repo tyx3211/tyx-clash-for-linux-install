@@ -140,6 +140,18 @@ _cleanup_incomplete_install() {
         return "$status"
         ;;
     esac
+    case "$CLASH_INSTALL_CREATED_DIR" in
+    /*)
+        ;;
+    *)
+        return "$status"
+        ;;
+    esac
+    case "$CLASH_INSTALL_CREATED_DIR" in
+    *[!A-Za-z0-9_./-]* | */../* | */.. | */./* | */.)
+        return "$status"
+        ;;
+    esac
 
     /usr/bin/rm -rf "$CLASH_INSTALL_CREATED_DIR" 2>/dev/null || true
     return "$status"
@@ -217,7 +229,7 @@ _parse_args() {
         clash)
             KERNEL_NAME=clash
             ;;
-        http*)
+        http* | file://*)
             CLASH_CONFIG_URL=$arg
             ;;
         --init=*)
@@ -413,7 +425,6 @@ _download_zip() {
             --progress-bar \
             --show-error \
             --fail \
-            --insecure \
             --location \
             --max-time "$download_timeout" \
             --retry 1 \
@@ -433,14 +444,93 @@ _valid_zip() {
 
     ((${#fail_zips[@]})) && _error_quit "文件验证失败：${fail_zips[*]} 请删除后重试，或自行下载对应版本至 ${ZIP_BASE_DIR} 目录"
 }
+_archive_member_path_is_safe() {
+    local member=${1#./}
+
+    case "$member" in
+    "" | "/" | /* | "." | ".." | ../* | */../* | */.. | */./* | */.)
+        return 1
+        ;;
+    esac
+    return 0
+}
+_tar_archive_is_safe() {
+    local archive=$1 mode member
+
+    tar -tf "$archive" >/dev/null 2>&1 || return 1
+    while IFS= read -r member; do
+        _archive_member_path_is_safe "$member" || return 1
+    done < <(tar -tf "$archive" 2>/dev/null)
+
+    while IFS= read -r mode _; do
+        case "$mode" in
+        -* | d*)
+            ;;
+        *)
+            return 1
+            ;;
+        esac
+    done < <(tar -tvf "$archive" 2>/dev/null)
+    return 0
+}
+_zip_archive_is_safe() {
+    local archive=$1 member members listing
+
+    members=$(unzip -Z -1 "$archive" 2>/dev/null) || return 1
+    [ -n "$members" ] || return 1
+    while IFS= read -r member; do
+        _archive_member_path_is_safe "$member" || return 1
+    done <<<"$members"
+
+    listing=$(unzip -Z -l "$archive" 2>/dev/null) || return 1
+    [ -n "$listing" ] || return 1
+    awk '
+            BEGIN { seen = 0; bad = 0 }
+            length($1) == 10 && $2 ~ /^[0-9]+(\.[0-9]+)?$/ {
+                seen = 1
+                kind = substr($1, 1, 1)
+                if (kind != "-" && kind != "d") {
+                    bad = 1
+                }
+                if ($1 !~ /^[-d][rwxStTs-]{9}$/) {
+                    bad = 1
+                }
+                next
+            }
+            /^Archive:/ || /^Zip file size:/ || /^[[:space:]]*[0-9]+ files?,/ || NF == 0 {
+                next
+            }
+            {
+                bad = 1
+            }
+            END { exit (seen && !bad) ? 0 : 1 }
+        ' <<<"$listing"
+}
+_extract_tar_archive() {
+    local archive=$1 dest=$2
+
+    _tar_archive_is_safe "$archive" ||
+        _error_quit "归档包含不安全路径或特殊文件，请删除后重试：$archive"
+    tar -xf "$archive" -C "$dest"
+}
+_extract_zip_archive() {
+    local archive=$1 dest=$2
+
+    _zip_archive_is_safe "$archive" || return 1
+    unzip -oqq "$archive" -d "$dest"
+}
 _unzip_zip() {
     _valid_zip "$ZIP_KERNEL" "$ZIP_YQ" "$ZIP_SUBCONVERTER" "$ZIP_UI"
-    /usr/bin/install -D <(gzip -dc "$ZIP_KERNEL") "$BIN_KERNEL"
-    tar -xf "$ZIP_YQ" -C "${BIN_BASE_DIR}"
-    /bin/mv -f "${BIN_BASE_DIR}"/yq_* "${BIN_BASE_DIR}/yq"
-    tar -xf "$ZIP_SUBCONVERTER" -C "$BIN_BASE_DIR"
-    /bin/cp "$BIN_SUBCONVERTER_DIR/pref.example.yml" "$BIN_SUBCONVERTER_CONFIG"
-    unzip -oqq "$ZIP_UI" -d "$RESOURCES_BASE_DIR" 2>/dev/null || tar -xf "$ZIP_UI" -C "$RESOURCES_BASE_DIR"
+    /usr/bin/install -D <(gzip -dc "$ZIP_KERNEL") "$BIN_KERNEL" || return 1
+    _extract_tar_archive "$ZIP_YQ" "${BIN_BASE_DIR}" || return 1
+    /bin/mv -f "${BIN_BASE_DIR}"/yq_* "${BIN_BASE_DIR}/yq" || return 1
+    _extract_tar_archive "$ZIP_SUBCONVERTER" "$BIN_BASE_DIR" || return 1
+    /bin/cp "$BIN_SUBCONVERTER_DIR/pref.example.yml" "$BIN_SUBCONVERTER_CONFIG" || return 1
+    _extract_zip_archive "$ZIP_UI" "$RESOURCES_BASE_DIR" 2>/dev/null ||
+        _extract_tar_archive "$ZIP_UI" "$RESOURCES_BASE_DIR" || return 1
+    [ -x "$BIN_KERNEL" ] || return 1
+    [ -x "$BIN_YQ" ] || return 1
+    [ -x "$BIN_SUBCONVERTER" ] || return 1
 }
 
 # shellcheck disable=SC2206
@@ -657,6 +747,18 @@ _detect_rc() {
     start_flag="# clashctl START"
     end_flag="# clashctl END"
 }
+_chown_sudo_user_path() {
+    local path=$1 group
+    _is_regular_sudo || return 0
+    [ -e "$path" ] || return 0
+
+    group=$(id -gn "$SUDO_USER" 2>/dev/null || true)
+    if [ -n "$group" ]; then
+        chown "$SUDO_USER:$group" "$path" 2>/dev/null || true
+    else
+        chown "$SUDO_USER" "$path" 2>/dev/null || true
+    fi
+}
 _apply_rc() {
     _detect_rc
     local source_clashctl=". $CLASH_CMD_DIR/clashctl.sh"
@@ -667,11 +769,20 @@ _apply_rc() {
 $start_flag $CLASH_CMD_DIR
 # 加载 clashctl 命令
 $source_clashctl
-# 自动开启代理环境
+# 按 sidecar 配置检查是否写入代理变量
 watch_proxy
 $end_flag $CLASH_CMD_DIR
 EOF
-    [ -n "$SHELL_RC_FISH" ] && /usr/bin/install "$SCRIPT_CMD_FISH" "$SHELL_RC_FISH"
+    [ -n "$SHELL_RC_BASH" ] && _chown_sudo_user_path "$SHELL_RC_BASH"
+    [ -n "$SHELL_RC_ZSH" ] && _chown_sudo_user_path "$SHELL_RC_ZSH"
+    [ -n "$SHELL_RC_FISH" ] && {
+        /usr/bin/install -D -m 644 "$SCRIPT_CMD_FISH" "$SHELL_RC_FISH"
+        sed -i "1iset -gx CLASHCTL_CMD_DIR $(_shell_quote "$CLASH_CMD_DIR")" "$SHELL_RC_FISH"
+        _chown_sudo_user_path "$(dirname "$(dirname "$(dirname "$SHELL_RC_FISH")")")"
+        _chown_sudo_user_path "$(dirname "$(dirname "$SHELL_RC_FISH")")"
+        _chown_sudo_user_path "$(dirname "$SHELL_RC_FISH")"
+        _chown_sudo_user_path "$SHELL_RC_FISH"
+    }
     $source_clashctl
 }
 _revoke_rc_file() {

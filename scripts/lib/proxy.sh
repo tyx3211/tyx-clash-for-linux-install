@@ -5,7 +5,7 @@ _ensure_sidecar_config() {
     cat >"$CLASH_CONFIG_SIDECAR" <<'EOF'
 # clashctl 自身的附加行为配置，不会传给 mihomo / clash 内核。
 system-proxy:
-  enable: true
+  enable: false
   # none: shell 启动时不自动写入代理变量
   # silent: shell 启动时静默写入代理变量
   # verbose: shell 启动时写入代理变量并打印提示
@@ -23,7 +23,7 @@ _get_system_proxy_enable() {
         echo "$enable"
         ;;
     *)
-        echo true
+        echo false
         ;;
     esac
 }
@@ -83,6 +83,15 @@ $proxy_env"
 
 _show_system_proxy_mode_status() {
     _okcat "全局自动代理：enable=$(_get_system_proxy_enable) mode=$(_get_system_proxy_mode)"
+}
+
+_warn_global_auto_proxy_still_enabled() {
+    local enabled
+
+    enabled=$(_get_system_proxy_enable 2>/dev/null || printf '%s\n' false)
+    [ "$enabled" = true ] || return 0
+    _failcat "全局自动代理仍为开启状态；如需新终端也停止自动代理，请执行 clashproxy off -g" || true
+    return 0
 }
 
 _get_runtime_proxy_ports() {
@@ -174,8 +183,9 @@ function clashproxy() {
         shift
     done
 
-    local action="${args[0]}"
-    local action_arg="${args[1]}"
+    local action="${args[0]-}"
+    local action_arg="${args[1]-}"
+    local extra_arg="${args[2]-}"
 
     case "$action" in
     -h | --help)
@@ -208,6 +218,10 @@ EOF
         return 0
         ;;
     on)
+        [ -z "$action_arg" ] && [ -z "$extra_arg" ] || {
+            _failcat "未知参数：${action_arg:-$extra_arg}"
+            return 1
+        }
         if [ "$global" = true ]; then
             _proxy_set_global_enable true || return 1
         fi
@@ -219,6 +233,10 @@ EOF
         fi
         ;;
     off)
+        [ -z "$action_arg" ] && [ -z "$extra_arg" ] || {
+            _failcat "未知参数：${action_arg:-$extra_arg}"
+            return 1
+        }
         if [ "$global" = true ]; then
             _proxy_set_global_enable false || return 1
         fi
@@ -264,6 +282,10 @@ EOF
         esac
         ;;
     "" | status)
+        [ -z "$action_arg" ] && [ -z "$extra_arg" ] || {
+            _failcat "未知参数：${action_arg:-$extra_arg}"
+            return 1
+        }
         [ "$global" = true ] && {
             _failcat "status 子命令不支持 -g/--global；查看全局状态请用 clashproxy mode status"
             return 1

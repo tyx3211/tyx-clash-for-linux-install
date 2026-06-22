@@ -31,6 +31,12 @@ assert_file_contains "$INSTALL_SH" '_detect_proxy_port \|\| _error_quit' \
 assert_file_contains "$INSTALL_SH" 'clashui \|\| _error_quit' \
     "install should fail when Web console endpoint detection or startup fails"
 
+assert_file_not_contains "$PREFLIGHT_SH" '--insecure' \
+    "dependency downloads should not disable TLS certificate verification by default"
+
+assert_file_not_contains "$COMMON_SH" '--no-check-certificate|--insecure' \
+    "subscription downloads should not disable TLS certificate verification by default"
+
 assert_file_contains "$PREFLIGHT_SH" '_normalize_sudo_install_path\(\)' \
     "regular sudo systemd install should normalize default /root path back to invoking user home"
 
@@ -46,8 +52,152 @@ env_override_tmp=$(make_test_tmpdir "clash-env-override")
         fail "explicit CLASH_BASE_DIR environment override should win over .env defaults"
 )
 
+tilde_env_tmp=$(make_test_tmpdir "clash-tilde-env")
+tilde_env_repo="$tilde_env_tmp/repo"
+tilde_home="$tilde_env_tmp/home"
+mkdir -p "$tilde_home" "$tilde_env_repo"
+cp -a "$TEST_ROOT/scripts" "$tilde_env_repo/scripts"
+cat >"$tilde_env_repo/.env" <<'EOF'
+KERNEL_NAME=mihomo
+CLASH_BASE_DIR=~/clashctl
+CLASH_CONFIG_URL=""
+INIT_TYPE=tmux
+URL_CLASH_UI=http://board.example.invalid
+CLASH_SUB_UA=test-agent
+EOF
+(
+    set +e
+    HOME="$tilde_home"
+    . "$tilde_env_repo/scripts/cmd/clashctl.sh" || exit 1
+    [ "$CLASH_BASE_DIR" = "$tilde_home/clashctl" ] ||
+        fail "literal ~/ in .env CLASH_BASE_DIR should expand to HOME without keeping a literal tilde: $CLASH_BASE_DIR"
+)
+(
+    set +e
+    HOME="$tilde_home"
+    . "$TEST_ROOT/scripts/lib/install-state.sh" || exit 1
+    [ "$(_install_state_expand_path "~/state")" = "$tilde_home/state" ] ||
+        fail "install-state path expansion should strip literal ~/ before prefixing HOME"
+    [ "$(_install_state_expand_path '${HOME}/state')" = "$tilde_home/state" ] ||
+        fail "install-state path expansion should support literal \${HOME}/ prefixes"
+)
+bad_tilde_pattern='${path#~/}'
+! grep -R -nF "$bad_tilde_pattern" \
+    "$TEST_ROOT/scripts" \
+    "$TEST_ROOT/update.sh" \
+    "$TEST_ROOT/migrate.sh" \
+    "$TEST_ROOT/uninstall.sh" ||
+    fail "path expansion must escape literal tilde in parameter removal patterns"
+
 assert_file_contains "$PREFLIGHT_SH" '\[\!A-Za-z0-9_\./-\]' \
     "install path validation should reject shell metacharacters"
+
+path_expand_tmp=$(make_test_tmpdir "clash-path-expand")
+(
+    set +e
+    HOME="$path_expand_tmp/home"
+    mkdir -p "$HOME"
+    eval "$(extract_function _expand_path "$TEST_ROOT/update.sh")"
+    [ "$(_expand_path '${HOME}/clashctl')" = "$HOME/clashctl" ] ||
+        fail "update path expansion should support literal \${HOME}/ prefixes"
+)
+(
+    set +e
+    HOME="$path_expand_tmp/home"
+    eval "$(extract_function _expand_path "$TEST_ROOT/migrate.sh")"
+    [ "$(_expand_path '${HOME}/clashctl')" = "$HOME/clashctl" ] ||
+        fail "migrate path expansion should support literal \${HOME}/ prefixes"
+)
+
+archive_safe_tmp=$(make_test_tmpdir "clash-archive-safe")
+(
+    set +e
+    . "$CLASHCTL_SH"
+    . "$PREFLIGHT_SH"
+
+    mkdir -p "$archive_safe_tmp/src" "$archive_safe_tmp/out"
+    printf 'good\n' >"$archive_safe_tmp/src/good.txt"
+    tar -C "$archive_safe_tmp/src" -czf "$archive_safe_tmp/good.tar.gz" good.txt
+    _tar_archive_is_safe "$archive_safe_tmp/good.tar.gz" ||
+        fail "safe tar archive should be accepted"
+
+    tar -C "$archive_safe_tmp/src" --transform='s#good.txt#dir/../../escape.txt#' -czf "$archive_safe_tmp/evil.tar.gz" good.txt >/dev/null 2>&1
+    _tar_archive_is_safe "$archive_safe_tmp/evil.tar.gz" &&
+        fail "tar archive with parent traversal members should be rejected"
+
+    if command -v zip >/dev/null; then
+        ln -s good.txt "$archive_safe_tmp/src/link.txt"
+        (cd "$archive_safe_tmp/src" && zip -y "$archive_safe_tmp/link.zip" link.txt >/dev/null)
+        _zip_archive_is_safe "$archive_safe_tmp/link.zip" &&
+            fail "zip archive with symlink members should be rejected"
+    fi
+
+    fake_unzip_dir="$archive_safe_tmp/fake-bin"
+    mkdir -p "$fake_unzip_dir"
+    cat >"$fake_unzip_dir/unzip" <<'EOF'
+#!/usr/bin/env bash
+case "$1 $2" in
+"-Z -1")
+    case "${ZIP_FAKE_MODE:-good}" in
+    path_traverse) printf '../escape.txt\n' ;;
+    *) printf 'good.txt\n' ;;
+    esac
+    ;;
+"-Z -l")
+    case "${ZIP_FAKE_MODE:-good}" in
+    fail_long)
+        exit 9
+        ;;
+    unknown_long)
+        printf 'mystery listing format\n'
+        ;;
+    special_long)
+        printf 'Archive: fake.zip\n'
+        printf 'Zip file size: 1 bytes, number of entries: 1\n'
+        printf 'crw-r--r--  3.0 unx        0 bx        0 stor 26-Jun-22 00:00 node\n'
+        printf '1 file, 0 bytes uncompressed, 0 bytes compressed:  0.0%%\n'
+        ;;
+    *)
+        printf 'Archive: fake.zip\n'
+        printf 'Zip file size: 1 bytes, number of entries: 1\n'
+        printf -- '-rw-------  3.0 unx        1 tx        1 stor 26-Jun-22 00:00 good.txt\n'
+        printf '1 file, 1 bytes uncompressed, 1 bytes compressed:  0.0%%\n'
+        ;;
+    esac
+    ;;
+*)
+    exit 1
+    ;;
+esac
+EOF
+    chmod +x "$fake_unzip_dir/unzip"
+    PATH="$fake_unzip_dir:$PATH" ZIP_FAKE_MODE=good _zip_archive_is_safe "$archive_safe_tmp/fake.zip" ||
+        fail "zip archive checker should accept ordinary files with known unzip listing format"
+    PATH="$fake_unzip_dir:$PATH" ZIP_FAKE_MODE=fail_long _zip_archive_is_safe "$archive_safe_tmp/fake.zip" &&
+        fail "zip archive checker should fail closed when long listing fails"
+    PATH="$fake_unzip_dir:$PATH" ZIP_FAKE_MODE=unknown_long _zip_archive_is_safe "$archive_safe_tmp/fake.zip" &&
+        fail "zip archive checker should reject unknown long listing formats"
+    PATH="$fake_unzip_dir:$PATH" ZIP_FAKE_MODE=path_traverse _zip_archive_is_safe "$archive_safe_tmp/fake.zip" &&
+        fail "zip archive checker should reject parent traversal members"
+    PATH="$fake_unzip_dir:$PATH" ZIP_FAKE_MODE=special_long _zip_archive_is_safe "$archive_safe_tmp/fake.zip" &&
+        fail "zip archive checker should reject special-file members"
+
+    if _archive_member_path_is_safe "../escape.txt"; then
+        fail "archive member path validator should reject parent traversal"
+    fi
+)
+
+file_url_tmp=$(make_test_tmpdir "clash-install-file-url")
+(
+    set +e
+    . "$CLASHCTL_SH"
+    . "$PREFLIGHT_SH"
+
+    CLASH_CONFIG_URL=
+    _parse_args file://"$file_url_tmp/config.yaml"
+    [ "$CLASH_CONFIG_URL" = "file://$file_url_tmp/config.yaml" ] ||
+        fail "install argument parsing should accept file:// subscription or config URLs"
+)
 
 path_traversal_tmp=$(make_test_tmpdir "clash-install-path-traversal")
 (

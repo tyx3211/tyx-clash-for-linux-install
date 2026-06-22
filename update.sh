@@ -38,13 +38,19 @@ _expand_path() {
         printf '%s\n' "$HOME"
         ;;
     "~/"*)
-        printf '%s/%s\n' "$HOME" "${path#~/}"
+        printf '%s/%s\n' "$HOME" "${path#\~/}"
         ;;
     '$HOME')
         printf '%s\n' "$HOME"
         ;;
     '$HOME/'*)
         printf '%s/%s\n' "$HOME" "${path#\$HOME/}"
+        ;;
+    '${HOME}')
+        printf '%s\n' "$HOME"
+        ;;
+    '${HOME}/'*)
+        printf '%s/%s\n' "$HOME" "${path#\$\{HOME\}/}"
         ;;
     *)
         printf '%s\n' "$path"
@@ -56,7 +62,13 @@ _read_env_value() {
     local file=$1 key=$2 line value=
     [ -f "$file" ] || return 1
 
-    while IFS= read -r line; do
+    while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+        export[[:space:]]*)
+            line=${line#export}
+            line=${line#"${line%%[![:space:]]*}"}
+            ;;
+        esac
         case "$line" in
         "$key="*)
             value=${line#*=}
@@ -152,6 +164,11 @@ _validate_target_path() {
         _die "安装目录包含 shell 模板不支持的字符，请仅使用字母、数字、_、-、.、/：$path"
         ;;
     esac
+    case "$path" in
+    */../* | */.. | */./* | */.)
+        _die "安装目录不能包含 . 或 .. 路径组件：$path"
+        ;;
+    esac
 }
 
 _validate_repo_slug() {
@@ -172,6 +189,37 @@ _validate_ref() {
     esac
 }
 
+_archive_member_path_is_safe() {
+    local member=${1#./}
+
+    case "$member" in
+    "" | "/" | /* | "." | ".." | ../* | */../* | */.. | */./* | */.)
+        return 1
+        ;;
+    esac
+    return 0
+}
+
+_tar_archive_is_safe() {
+    local archive=$1 mode member
+
+    tar -tf "$archive" >/dev/null 2>&1 || return 1
+    while IFS= read -r member; do
+        _archive_member_path_is_safe "$member" || return 1
+    done < <(tar -tf "$archive" 2>/dev/null)
+
+    while IFS= read -r mode _; do
+        case "$mode" in
+        -* | d*)
+            ;;
+        *)
+            return 1
+            ;;
+        esac
+    done < <(tar -tvf "$archive" 2>/dev/null)
+    return 0
+}
+
 _download_remote_source() {
     local update_target=$1
     local archive archive_root proxy url
@@ -187,6 +235,12 @@ _download_remote_source() {
         /usr/bin/rm -rf "$download_tmp"
         download_tmp=
         _die "项目源码下载失败：$url"
+    fi
+
+    if ! _tar_archive_is_safe "$archive"; then
+        /usr/bin/rm -rf "$download_tmp"
+        download_tmp=
+        _die "项目源码归档包含不安全路径或特殊文件：$url"
     fi
 
     if ! tar -xzf "$archive" -C "$download_tmp"; then
@@ -354,7 +408,8 @@ if [ -L "$marker" ]; then
     _die "拒绝使用符号链接安装标记：$marker"
 elif [ -f "$marker" ] && grep -qx 'tyx-clash-for-linux-install' "$marker"; then
     :
-elif [ -f "$target/scripts/cmd/clashctl.sh" ] && [ -f "$target/resources/mixin.yaml" ]; then
+elif [ -f "$target/scripts/cmd/clashctl.sh" ] &&
+    { [ -f "$target/resources/mixin.yaml" ] || [ -f "$target/config/mixin.yaml" ]; }; then
     legacy=true
 else
     _die "目标目录不像 clashctl 安装目录，拒绝更新：$target"

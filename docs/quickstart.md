@@ -56,11 +56,13 @@ clashstatus
 tmux ls
 ```
 
-如果当前机器没有 `tmux`，可以改用 `nohup`：
+如果当前机器没有 `tmux`，安装时就改用 `nohup`：
 
 ```bash
-clashrestart --mode nohup
+bash install.sh --init nohup
 ```
+
+安装完成后，后续也可以通过 `clashrestart --mode nohup` 切到 nohup。
 
 ## 让当前终端走代理
 
@@ -69,7 +71,7 @@ clashproxy on
 clashproxy status
 ```
 
-`clashproxy on` 只影响当前终端，不会修改系统代理。关闭当前终端代理：
+`clashon` 只启动内核，不会自动写入当前终端代理变量。`clashproxy on` 只影响当前终端，不会修改系统代理。关闭当前终端代理：
 
 ```bash
 clashproxy off
@@ -81,6 +83,8 @@ clashproxy off
 clashproxy on -g
 clashproxy mode silent
 ```
+
+`clashoff` 会关闭内核并清理当前终端代理变量。如果已经用 `clashproxy on -g` 打开新终端自动代理，关闭内核后建议再执行 `clashproxy off -g`，避免新终端自动写入一个已经不可用的代理地址。
 
 ## Web 面板
 

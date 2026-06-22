@@ -119,6 +119,9 @@ assert_file_contains "$SUBSCRIPTION_SH" 'mktemp "\$\{CLASH_RESOURCES_DIR\}/temp\
 assert_file_contains "$TUN_SH" '_merge_config \\|\\|' \
     "tun operations should be able to recover when merge validation fails"
 
+assert_file_contains "$TEST_ROOT/scripts/lib/config.sh" 'mktemp "\$\{runtime_dir\}/\.runtime\.' \
+    "runtime config merges should write a same-directory temporary file before replacing runtime.yaml"
+
 assert_file_contains "$SUBSCRIPTION_SH" '_merge_config_restart \\|\\| return 1' \
     "clashsub use should stop when runtime merge fails"
 
@@ -316,6 +319,7 @@ rollback_tmp=$(make_test_tmpdir "clash-rollback")
     CLASH_PROFILES_META="$rollback_tmp/profiles.yaml"
     test_profile_path="$rollback_tmp/profile.yaml"
     printf 'old-base\n' >"$CLASH_CONFIG_BASE"
+    printf 'use: 0\n' >"$CLASH_PROFILES_META"
     printf 'new-profile\n' >"$test_profile_path"
 
     _error_quit() { return 97; }
@@ -332,6 +336,110 @@ rollback_tmp=$(make_test_tmpdir "clash-rollback")
         fail "clashsub use should restore config.yaml when runtime merge fails"
 )
 
+sub_use_missing_tmp=$(make_test_tmpdir "clash-sub-use-missing")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    CLASH_CONFIG_BASE="$sub_use_missing_tmp/config.yaml"
+    CLASH_PROFILES_META="$sub_use_missing_tmp/profiles.yaml"
+    printf 'old-base\n' >"$CLASH_CONFIG_BASE"
+    printf 'profiles: []\n' >"$CLASH_PROFILES_META"
+
+    _error_quit() { return 97; }
+    _get_path_by_id() { printf '%s\n' "$sub_use_missing_tmp/missing-profile.yaml"; }
+    _get_url_by_id() { printf '%s\n' "file://missing"; }
+    _merge_config_restart() {
+        printf 'merge-restart\n' >>"$sub_use_missing_tmp/calls"
+        return 0
+    }
+
+    _sub_use 1
+    status=$?
+    [ "$status" -ne 0 ] || fail "clashsub use should fail when the selected profile file is missing"
+    [ "$(cat "$CLASH_CONFIG_BASE")" = "old-base" ] ||
+        fail "clashsub use should not truncate config.yaml when the selected profile is missing"
+    [ ! -e "$sub_use_missing_tmp/calls" ] ||
+        fail "clashsub use should not restart when profile replacement failed"
+)
+
+sub_use_meta_fail_tmp=$(make_test_tmpdir "clash-sub-use-meta-fail")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    CLASH_CONFIG_BASE="$sub_use_meta_fail_tmp/config.yaml"
+    CLASH_PROFILES_META="$sub_use_meta_fail_tmp/profiles.yaml"
+    test_profile_path="$sub_use_meta_fail_tmp/profile.yaml"
+    yq_stub="$sub_use_meta_fail_tmp/yq"
+    printf 'old-base\n' >"$CLASH_CONFIG_BASE"
+    printf 'new-profile\n' >"$test_profile_path"
+    printf 'use: 0\n' >"$CLASH_PROFILES_META"
+    cat >"$yq_stub" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "-i" ]; then
+    exit 9
+fi
+exit 0
+EOF
+    chmod +x "$yq_stub"
+    BIN_YQ="$yq_stub"
+
+    _error_quit() { return 97; }
+    _get_path_by_id() { printf '%s\n' "$test_profile_path"; }
+    _get_url_by_id() { printf '%s\n' "file://profile"; }
+    _merge_config_restart() {
+        printf 'merge-restart\n' >>"$sub_use_meta_fail_tmp/calls"
+        return 0
+    }
+
+    _sub_use 1
+    status=$?
+    [ "$status" -ne 0 ] || fail "clashsub use should fail when metadata write fails"
+    [ "$(cat "$CLASH_CONFIG_BASE")" = "old-base" ] ||
+        fail "clashsub use should not switch config.yaml when metadata write fails"
+    [ ! -e "$sub_use_meta_fail_tmp/calls" ] ||
+        fail "clashsub use should not restart when metadata write fails"
+)
+
+sub_del_meta_fail_tmp=$(make_test_tmpdir "clash-sub-del-meta-fail")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    CLASH_PROFILES_META="$sub_del_meta_fail_tmp/profiles.yaml"
+    test_profile_path="$sub_del_meta_fail_tmp/profile.yaml"
+    yq_stub="$sub_del_meta_fail_tmp/yq"
+    printf 'profile\n' >"$test_profile_path"
+    printf 'profiles:\n  - id: 1\n    path: %s\n    url: file://profile\n' "$test_profile_path" >"$CLASH_PROFILES_META"
+    cat >"$yq_stub" <<'EOF'
+#!/usr/bin/env bash
+if [ "$1" = "-i" ]; then
+    exit 9
+fi
+case "$1" in
+'.use // ""')
+    printf '\n'
+    ;;
+*)
+    exit 0
+    ;;
+esac
+EOF
+    chmod +x "$yq_stub"
+    BIN_YQ="$yq_stub"
+
+    _error_quit() { return 97; }
+    _get_path_by_id() { printf '%s\n' "$test_profile_path"; }
+    _get_url_by_id() { printf '%s\n' "file://profile"; }
+
+    _sub_del 1
+    status=$?
+    [ "$status" -ne 0 ] || fail "clashsub del should fail when metadata write fails"
+    [ -f "$test_profile_path" ] ||
+        fail "clashsub del should not delete profile before metadata update succeeds"
+)
+
 update_tmp=$(make_test_tmpdir "clash-update-rollback")
 (
     set +e
@@ -345,6 +453,7 @@ update_tmp=$(make_test_tmpdir "clash-update-rollback")
     test_profile_path="$update_tmp/profile.yaml"
     yq_stub="$update_tmp/yq"
     printf 'old-base\n' >"$CLASH_CONFIG_BASE"
+    printf 'use: 1\n' >"$CLASH_PROFILES_META"
     printf 'old-profile\n' >"$test_profile_path"
     cat >"$yq_stub" <<'EOF'
 #!/usr/bin/env bash
@@ -384,6 +493,47 @@ EOF
         fail "clashsub update should keep old profile when current profile merge fails"
     [ "$(cat "$CLASH_CONFIG_BASE")" = "old-base" ] ||
         fail "clashsub update should keep old base when current profile merge fails"
+)
+
+update_missing_tmp=$(make_test_tmpdir "clash-update-missing-temp")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    CLASH_RESOURCES_DIR="$update_missing_tmp"
+    CLASH_CONFIG_BASE="$update_missing_tmp/config.yaml"
+    CLASH_PROFILES_META="$update_missing_tmp/profiles.yaml"
+    CLASH_CONFIG_TEMP="$update_missing_tmp/temp.yaml"
+    CLASH_PROFILES_LOG="$update_missing_tmp/profiles.log"
+    test_profile_path="$update_missing_tmp/profile.yaml"
+    yq_stub="$update_missing_tmp/yq"
+    printf 'old-profile\n' >"$test_profile_path"
+    cat >"$yq_stub" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+'.use // ""'|'.use // 1')
+    printf '\n'
+    ;;
+*)
+    exit 0
+    ;;
+esac
+EOF
+    chmod +x "$yq_stub"
+    BIN_YQ="$yq_stub"
+
+    _error_quit() { return 97; }
+    _make_config_temp() { printf '%s\n' "$update_missing_tmp/download.yaml"; }
+    _download_config() { return 0; }
+    _valid_config() { return 0; }
+    _get_url_by_id() { printf '%s\n' "https://example.invalid/sub"; }
+    _get_path_by_id() { printf '%s\n' "$test_profile_path"; }
+
+    _sub_update 1
+    status=$?
+    [ "$status" -ne 0 ] || fail "clashsub update should fail when the downloaded temp file is missing"
+    [ "$(cat "$test_profile_path")" = "old-profile" ] ||
+        fail "clashsub update should not truncate an existing profile when temp replacement fails"
 )
 
 secret_tmp=$(make_test_tmpdir "clash-secret-rollback")

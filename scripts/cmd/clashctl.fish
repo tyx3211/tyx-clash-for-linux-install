@@ -1,7 +1,31 @@
+if not set -q CLASHCTL_CMD_DIR
+    set -gx CLASHCTL_CMD_DIR "$HOME/clashctl/scripts/cmd"
+end
+
 function _clashctl_bash_call
     set -l fn $argv[1]
     set -e argv[1]
-    bash -i -c "$fn \"\$@\"" -- $argv
+    switch $fn
+        case clashui clashstatus clashsecret clashmixin clashsub clashtun clashlog clashupgrade clashhelp clashctl clashon clashoff clashrestart clashproxy
+        case '*'
+            echo "unknown clashctl fish wrapper function: $fn" >&2
+            return 1
+    end
+
+    bash -c '
+        cmd_dir=$1
+        fn=$2
+        shift 2
+        case "$fn" in
+        clashui|clashstatus|clashsecret|clashmixin|clashsub|clashtun|clashlog|clashupgrade|clashhelp|clashctl|clashon|clashoff|clashrestart|clashproxy)
+            ;;
+        *)
+            exit 64
+            ;;
+        esac
+        . "$cmd_dir/clashctl.sh" || exit $?
+        "$fn" "$@"
+    ' -- "$CLASHCTL_CMD_DIR" "$fn" $argv
 end
 
 function clashui
@@ -41,7 +65,7 @@ function clashhelp
 end
 
 function clashctl
-    if test -z "$argv"
+    if test (count $argv) -eq 0
         clashhelp
         return
     end
@@ -58,32 +82,43 @@ function clashctl
         case restart
             clashrestart $argv
         case update-self
-            bash -i -c 'clashctl update-self "$@"' -- $argv
+            _clashctl_bash_call clashctl update-self $argv
         case '*'
-            clash"$suffix" $argv
+            set -l fn clash"$suffix"
+            if functions -q $fn
+                $fn $argv
+            else
+                clashhelp
+                return 1
+            end
     end
 end
 
 function clashon
-    bash -i -c 'clashon "$@"' -- $argv
+    _clashctl_bash_call clashon $argv
 end
 
 function clashoff
-    bash -i -c 'clashoff "$@"' -- $argv
+    _clashctl_bash_call clashoff $argv
+    set -l bash_status $status
 
-    set -e \
-    http_proxy \
-    https_proxy \
-    HTTP_PROXY \
-    HTTPS_PROXY \
-    all_proxy \
-    ALL_PROXY \
-    no_proxy \
-    NO_PROXY
+    if test $bash_status -eq 0
+        set -e \
+        http_proxy \
+        https_proxy \
+        HTTP_PROXY \
+        HTTPS_PROXY \
+        all_proxy \
+        ALL_PROXY \
+        no_proxy \
+        NO_PROXY
+    end
+
+    return $bash_status
 end
 
 function clashrestart
-    bash -i -c 'clashrestart "$@"' -- $argv
+    _clashctl_bash_call clashrestart $argv
 end
 
 function clashproxy
@@ -101,7 +136,20 @@ function clashproxy
 
     switch $action
         case on
-            set -l proxy_env (bash -i -c 'clashproxy "$@" >/dev/null; env' -- $argv 2>/dev/null | grep -i -E '^(http|https|all|no)_proxy=')
+            set -l env_tmp (mktemp)
+            bash -c '
+                cmd_dir=$1
+                shift
+                . "$cmd_dir/clashctl.sh" || exit $?
+                clashproxy "$@" >/dev/null && env
+            ' -- "$CLASHCTL_CMD_DIR" $argv >$env_tmp 2>/dev/null
+            set -l bash_status $status
+            if test $bash_status -ne 0
+                rm -f $env_tmp
+                return $bash_status
+            end
+            set -l proxy_env (grep -i -E '^(http|https|all|no)_proxy=' $env_tmp)
+            rm -f $env_tmp
             for line in $proxy_env
                 set -l kv (string split -m1 '=' $line)
                 set -gx $kv[1] $kv[2]
@@ -112,7 +160,16 @@ function clashproxy
                 echo "😼 已为当前终端开启代理"
             end
         case off
-            bash -i -c 'clashproxy "$@" >/dev/null' -- $argv >/dev/null 2>&1
+            bash -c '
+                cmd_dir=$1
+                shift
+                . "$cmd_dir/clashctl.sh" || exit $?
+                clashproxy "$@" >/dev/null
+            ' -- "$CLASHCTL_CMD_DIR" $argv >/dev/null 2>&1
+            set -l bash_status $status
+            if test $bash_status -ne 0
+                return $bash_status
+            end
             set -e \
             http_proxy \
             https_proxy \
@@ -129,7 +186,7 @@ function clashproxy
             end
         case '' status
             if test "$global" = true
-                bash -i -c 'clashproxy "$@"' -- $argv
+                _clashctl_bash_call clashproxy $argv
             else
                 set -l proxy_env (env | grep -i -E '^(http|https|all|no)_proxy=')
                 if test -n "$proxy_env"
@@ -140,8 +197,8 @@ function clashproxy
                 end
             end
         case mode
-            bash -i -c 'clashproxy "$@"' -- $argv
+            _clashctl_bash_call clashproxy $argv
         case '*'
-            bash -i -c 'clashproxy "$@"' -- $argv
+            _clashctl_bash_call clashproxy $argv
     end
 end

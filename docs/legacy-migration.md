@@ -41,7 +41,9 @@ clashstatus --all
 - 将旧 `resources/mixin.yaml` 复制到 `config/mixin.yaml`。
 - 将旧 `resources/clashctl.yaml` 复制到 `config/clashctl.yaml`。
 - 将旧 `resources/profiles.yaml` 复制到 `config/subscriptions.yaml`。
-- 清理 `placeholder_start1`、`.github`、`.editorconfig` 等旧项目遗留文件。
+- 清理 `placeholder_start1`、`preview.png`、`.github`、`.editorconfig`、`.gitattributes`、`.shellcheckrc`、`resources/preview.png` 等旧项目遗留文件。这些路径只按安装根目录下的旧项目资产处理，不应承载用户配置；如果曾经手工改过这些文件，请先备份。
+
+如果旧 `resources/` 配置和新版 `config/` 配置已经同时存在且内容不同，迁移会在刷新脚本前拒绝继续。这是为了避免新版优先读取 `config/` 后，旧 `resources/` 配置看似保留但实际不生效。处理方式是先手工 `diff` 两边内容，确认以后以哪一边为准。
 
 确认状态后，再按需重启：
 
@@ -141,7 +143,7 @@ clashctl update-self --source "$HOME/src/clash-shell/tyx-clash-for-linux-install
 不建议为了升级先卸载旧目录。如果确实要全新安装，优先选择一个不存在的新目录：
 
 ```bash
-CLASH_BASE_DIR="$HOME/experiment/clashctl-new" bash install.sh --init tmux
+CLASH_BASE_DIR="$HOME/clashctl-new" bash install.sh --init tmux
 ```
 
 普通旧版升级仍应优先走原地 `migrate.sh`。只有明确选择重装时，才考虑卸载、清理旧目录或复用旧安装目录。

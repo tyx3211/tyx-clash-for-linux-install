@@ -2,10 +2,6 @@
 
 默认免 sudo，以 `tmux` / `nohup` 在用户态托管内核；需要 Tun 时，可切换到 sudo + `systemd` 模式。
 
-![GitHub License](https://img.shields.io/github/license/tyx3211/tyx-clash-for-linux-install)
-![GitHub top language](https://img.shields.io/github/languages/top/tyx3211/tyx-clash-for-linux-install)
-![GitHub Repo stars](https://img.shields.io/github/stars/tyx3211/tyx-clash-for-linux-install)
-
 ## 🚀 新用户 3 分钟上手
 
 ### 1. 第一次安装
@@ -60,7 +56,7 @@ clashrestart --mode nohup
 clashrestart --mode tmux
 ```
 
-- 没有 `tmux` 时，可以用 `clashrestart --mode nohup`。
+- 没有 `tmux` 时，第一次安装请用 `bash install.sh --init nohup`；已安装后可以用 `clashrestart --mode nohup` 切换。
 - 需要 Tun 时，需要 sudo 安装 systemd 服务，然后用 `clashrestart --mode systemd`。
 
 ### 4. 直接更新项目脚本
@@ -88,7 +84,7 @@ clashctl update-self
   `config/mixin.yaml` 只放会参与 mihomo/clash 合并的配置；
   `config/clashctl.yaml` 只放 `clashctl` 的 sidecar 配置，不再把私有键混进运行时配置。
 - 适合人工维护的配置集中在 `config/`，可选用 git 管理；运行时生成物继续放在 `resources/`。
-- 自动检测代理端口占用情况，并在冲突时为代理端口随机分配可用端口；`external-controller` 控制端口冲突时只提示建议端口，不自动改用户配置。
+- 自动检测代理端口和控制端口占用情况；冲突时只提示建议端口，不自动改用户配置。
 - 在需要时调用 [subconverter](https://github.com/tindy2013/subconverter) 进行本地订阅转换。
 - 默认 no-sudo / tmux 模式不提供 Tun；显式选择 `systemd` 模式时支持 Tun。
 
@@ -246,10 +242,10 @@ Global Options:
 
 ```bash
 $ clashon
-😼 已开启代理环境（mode=tmux）
+😼 内核已启动（mode=tmux）；当前终端如需走代理，请执行 clashproxy on
 
 $ clashrestart --mode nohup
-😼 已开启代理环境（mode=nohup）
+😼 内核已启动（mode=nohup）；当前终端如需走代理，请执行 clashproxy on
 
 $ clashproxy on
 😼 已为当前终端开启代理
@@ -265,7 +261,9 @@ $ clashproxy on -g
 ```
 
 - `clashon` / `clashoff` 负责启动或关闭代理内核；`clashrestart --mode <mode>` 用于显式切换托管模式。
-- `clashstatus --all` 可以查看 `tmux`、`nohup`、`systemd` 三种 adapter 的探测结果。
+- `clashon` 和 `clashrestart` 不写入当前终端代理变量；需要当前终端走代理时，显式执行 `clashproxy on`。
+- `clashoff` 会关闭内核并清理当前终端代理变量；如果曾经用 `clashproxy on -g` 打开新终端自动代理，还需要显式执行 `clashproxy off -g`。
+- `clashstatus --all` 可以查看 `tmux`、`nohup`、`systemd` 三种 adapter 的进程探测结果；默认 `clashstatus` 会进一步检查 API 是否可达。
 - `clashproxy on` / `clashproxy off` 只负责写入或清理当前 shell 的代理变量，不改 sidecar 全局状态。
 - `clashproxy on -g` / `clashproxy off -g` 会在处理当前 shell 的同时，更新 sidecar 中的全局自动代理开关。
 - `clashproxy status` 只根据当前 shell 的实际环境变量输出结果，不读 sidecar 状态。
@@ -277,14 +275,14 @@ $ clashproxy on -g
 
 ```yaml
 system-proxy:
-  enable: true
+  enable: false
   mode: silent
 ```
 
 其中：
 
 - `system-proxy.enable`
-  控制新开的交互式 shell 是否允许 `watch_proxy` 自动写入代理变量。
+  控制新开的交互式 shell 是否允许 `watch_proxy` 自动写入代理变量。默认是 `false`，只有执行 `clashproxy on -g` 后才会打开。
 - `system-proxy.mode`
   控制 `watch_proxy` 的动作，可选值：
   `none`、`silent`、`verbose`
@@ -366,7 +364,7 @@ $ clashmixin -r
 - `config/clashctl.yaml` 是 sidecar 配置，不会参与 mihomo/clash 的运行时合并。
 - 除了 `clashmixin -e`，也鼓励直接用 VS Code Remote、vim 或其他编辑器修改 `~/clashctl/config/mixin.yaml`。直接编辑后记得执行 `clashmixin -m` 或 `clashctl mixin -m`，显式合并并刷新内核。
 - 如果不想进入编辑器，直接执行 `clashmixin -m` 即可显式 merge 并刷新内核；该命令不会打开 `less` 或其他查看器。
-- 如果当前终端已经开启了代理变量，`clashmixin -m` 在刷新后会按新的 runtime 端口重新写入当前终端环境变量，避免端口变更后变量过期。
+- `clashmixin -m` 只合并配置并刷新内核，不会写入或改动当前终端代理变量。如果端口配置发生变化，需要执行 `clashproxy on` 重新写入当前终端变量。
 
 ## 📦 订阅管理
 

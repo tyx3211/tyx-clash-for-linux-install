@@ -14,10 +14,10 @@ bash install.sh
 
 这会把默认运行托管模式设为 `tmux`。
 
-如果没有 tmux，且只需要一个简单后台进程，可以安装后运行：
+如果没有 tmux，且只需要一个简单后台进程，安装时就选择 nohup：
 
 ```bash
-clashon --mode nohup
+bash install.sh --init nohup
 ```
 
 如果机器允许 sudo，并且需要 Tun：
@@ -131,6 +131,8 @@ clashproxy status
 clashproxy on -g
 clashproxy mode silent
 ```
+
+`clashon` / `clashrestart` 只启动或切换内核托管模式，不会自动写入当前终端代理变量。需要当前终端走代理时，执行 `clashproxy on`。`clashoff` 会关闭内核并清理当前终端代理变量；如果曾经执行过 `clashproxy on -g`，关闭内核后建议再执行 `clashproxy off -g`，避免新终端自动写入已经不可用的代理地址。
 
 Web 面板：
 

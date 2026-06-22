@@ -220,6 +220,19 @@ grep -qx 'default_mode: "tmux"' "$legacy_env_dir/resources/install-state.yaml" |
 [ ! -e "$legacy_env_dir/.env" ] ||
     fail "legacy migration should not create .env when the target did not already have one"
 
+legacy_config_only_dir="$update_tmp/legacy-config-only"
+mkdir -p "$legacy_config_only_dir/config" "$legacy_config_only_dir/resources" "$legacy_config_only_dir/scripts/cmd"
+printf 'config-only-mixin\n' >"$legacy_config_only_dir/config/mixin.yaml"
+printf 'legacy-script\n' >"$legacy_config_only_dir/scripts/cmd/clashctl.sh"
+(
+    cd "$source_dir"
+    CLASHCTL_NO_RC=1 bash update.sh --target "$legacy_config_only_dir" >/dev/null
+)
+[ "$(cat "$legacy_config_only_dir/config/mixin.yaml")" = "config-only-mixin" ] ||
+    fail "legacy migration should preserve config/mixin.yaml when resources/mixin.yaml is absent"
+[ -f "$legacy_config_only_dir/.clashctl-install-root" ] ||
+    fail "legacy migration should accept markerless config-only installs"
+
 legacy_upstream_env_dir="$update_tmp/legacy-upstream-env"
 mkdir -p "$legacy_upstream_env_dir/resources" "$legacy_upstream_env_dir/scripts/cmd"
 cat >"$legacy_upstream_env_dir/.env" <<EOF
@@ -250,6 +263,19 @@ printf 'CLASH_BASE_DIR=%s\n' "$legacy_other_dir" >"$legacy_fail_dir/.env"
 ) >/dev/null 2>&1 && fail "legacy migration should reject .env that points at another directory"
 [ ! -e "$legacy_fail_dir/.clashctl-install-root" ] ||
     fail "failed legacy migration should not leave a new install marker"
+
+legacy_no_newline_fail_dir="$update_tmp/legacy-no-newline-fail"
+legacy_no_newline_other_dir="$update_tmp/legacy-no-newline-other"
+mkdir -p "$legacy_no_newline_fail_dir/resources" "$legacy_no_newline_fail_dir/scripts/cmd" "$legacy_no_newline_other_dir"
+printf 'legacy-mixin\n' >"$legacy_no_newline_fail_dir/resources/mixin.yaml"
+printf 'legacy-script\n' >"$legacy_no_newline_fail_dir/scripts/cmd/clashctl.sh"
+printf 'export CLASH_BASE_DIR=%s' "$legacy_no_newline_other_dir" >"$legacy_no_newline_fail_dir/.env"
+(
+    cd "$source_dir"
+    CLASHCTL_NO_RC=1 bash update.sh --target "$legacy_no_newline_fail_dir"
+) >/dev/null 2>&1 && fail "legacy migration should reject .env without a trailing newline when it points at another directory"
+[ ! -e "$legacy_no_newline_fail_dir/.clashctl-install-root" ] ||
+    fail "failed no-newline legacy migration should not leave a new install marker"
 
 explicit_source_dir="$update_tmp/explicit-source"
 explicit_install_dir="$update_tmp/explicit-install"

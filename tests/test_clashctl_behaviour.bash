@@ -50,6 +50,24 @@ assert_file_contains "$TUN_SH" 'clashtun\(\)' \
 assert_file_not_contains "$FISH_SH" 'eval ' \
     "fish wrapper should not use eval to generate fixed command wrappers"
 
+proxy_args_tmp=$(make_test_tmpdir "clash-proxy-args")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    _failcat() { printf '%s\n' "$*" >>"$proxy_args_tmp/fail.log"; }
+    _set_system_proxy() { printf 'set-proxy\n' >>"$proxy_args_tmp/calls"; }
+
+    clashproxy on typo
+    status=$?
+    [ "$status" -ne 0 ] ||
+        fail "clashproxy on should reject unexpected extra arguments"
+    [ ! -e "$proxy_args_tmp/calls" ] ||
+        fail "clashproxy on should not set proxy variables after argument errors"
+    grep -q '未知参数' "$proxy_args_tmp/fail.log" ||
+        fail "clashproxy argument errors should be readable"
+)
+
 sidecar_tmp=$(make_test_tmpdir "clash-sidecar-parent")
 (
     set +e

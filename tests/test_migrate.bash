@@ -125,6 +125,22 @@ CLASHCTL_MIGRATE_SKIP_STATUS=1 bash "$MIGRATE_SH" --target "$legacy_conflict_dir
 [ ! -e "$legacy_conflict_dir/resources/mixin.yaml" ] ||
     fail "--force-remove-legacy-config should delete divergent legacy source only when explicit"
 
+legacy_default_conflict_dir="$migrate_tmp/legacy-default-conflict"
+mkdir -p "$legacy_default_conflict_dir/resources" "$legacy_default_conflict_dir/config" "$legacy_default_conflict_dir/scripts/cmd"
+cat >"$legacy_default_conflict_dir/.env" <<EOF
+CLASH_BASE_DIR=$legacy_default_conflict_dir
+KERNEL_NAME=mihomo
+INIT_TYPE=tmux
+EOF
+printf 'legacy-value\n' >"$legacy_default_conflict_dir/resources/mixin.yaml"
+printf 'config-value\n' >"$legacy_default_conflict_dir/config/mixin.yaml"
+printf 'script\n' >"$legacy_default_conflict_dir/scripts/cmd/clashctl.sh"
+printf 'stale\n' >"$legacy_default_conflict_dir/placeholder_start1"
+CLASHCTL_MIGRATE_SKIP_STATUS=1 bash "$MIGRATE_SH" --target "$legacy_default_conflict_dir" --source "$TEST_ROOT" >/dev/null 2>&1 &&
+    fail "default migration should reject divergent legacy and config files before update"
+[ -e "$legacy_default_conflict_dir/placeholder_start1" ] ||
+    fail "failed default migration should not refresh or clean files before config conflict is resolved"
+
 legacy_bad_dest_dir="$migrate_tmp/legacy-bad-dest"
 mkdir -p "$legacy_bad_dest_dir/resources" "$legacy_bad_dest_dir/config/mixin.yaml" "$legacy_bad_dest_dir/scripts/cmd"
 cat >"$legacy_bad_dest_dir/.env" <<EOF
@@ -136,5 +152,22 @@ printf 'legacy-value\n' >"$legacy_bad_dest_dir/resources/mixin.yaml"
 printf 'script\n' >"$legacy_bad_dest_dir/scripts/cmd/clashctl.sh"
 CLASHCTL_MIGRATE_SKIP_STATUS=1 bash "$MIGRATE_SH" --target "$legacy_bad_dest_dir" --source "$TEST_ROOT" >/dev/null 2>&1 &&
     fail "default migration should reject existing non-file config destinations"
+
+legacy_config_symlink_dir="$migrate_tmp/legacy-config-symlink"
+legacy_config_symlink_external="$migrate_tmp/legacy-config-symlink-external"
+mkdir -p "$legacy_config_symlink_dir/resources" "$legacy_config_symlink_dir/scripts/cmd" "$legacy_config_symlink_external"
+cat >"$legacy_config_symlink_dir/.env" <<EOF
+CLASH_BASE_DIR=$legacy_config_symlink_dir
+KERNEL_NAME=mihomo
+INIT_TYPE=tmux
+EOF
+printf 'legacy-value\n' >"$legacy_config_symlink_dir/resources/mixin.yaml"
+printf 'script\n' >"$legacy_config_symlink_dir/scripts/cmd/clashctl.sh"
+printf 'stale\n' >"$legacy_config_symlink_dir/placeholder_start1"
+ln -s "$legacy_config_symlink_external" "$legacy_config_symlink_dir/config"
+CLASHCTL_MIGRATE_SKIP_STATUS=1 bash "$MIGRATE_SH" --target "$legacy_config_symlink_dir" --source "$TEST_ROOT" >/dev/null 2>&1 &&
+    fail "migration should reject a symlink config directory before refreshing scripts"
+[ -e "$legacy_config_symlink_dir/placeholder_start1" ] ||
+    fail "failed migration with symlink config directory should not refresh or clean files"
 
 pass "one-shot migration checks"

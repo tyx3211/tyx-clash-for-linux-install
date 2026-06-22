@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 THIS_UNINSTALL_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)
+CLASHCTL_ERROR_EXIT=1
 
 _uninstall_die() {
     printf '📢 %s\n' "$1" >&2
@@ -17,7 +18,7 @@ _uninstall_expand_env_path() {
         printf '%s\n' "$HOME"
         ;;
     "~/"*)
-        printf '%s/%s\n' "$HOME" "${path#~/}"
+        printf '%s/%s\n' "$HOME" "${path#\~/}"
         ;;
     '$HOME')
         printf '%s\n' "$HOME"
@@ -124,6 +125,11 @@ esac
 case "$CLASH_BASE_DIR" in
 "" | "/" | "$HOME" | "$HOME/" | . | .. | ./* | ../*)
     _uninstall_die "拒绝删除异常安装路径：${CLASH_BASE_DIR:-<empty>}"
+    ;;
+/*)
+    ;;
+*)
+    _uninstall_die "安装路径必须是绝对路径：$CLASH_BASE_DIR"
     ;;
 esac
 

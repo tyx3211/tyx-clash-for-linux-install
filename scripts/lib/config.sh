@@ -42,8 +42,10 @@ function clashui() {
 }
 
 _merge_config() {
-    local runtime_backup="${CLASH_CONFIG_RUNTIME}.merge.bak.$$"
-    [ -f "$CLASH_CONFIG_RUNTIME" ] && cat "$CLASH_CONFIG_RUNTIME" >"$runtime_backup"
+    local runtime_dir runtime_tmp
+    runtime_dir=$(dirname "$CLASH_CONFIG_RUNTIME")
+    mkdir -p "$runtime_dir" || return 1
+    runtime_tmp=$(mktemp "${runtime_dir}/.runtime.XXXXXX.yaml") || return 1
 
     # shellcheck disable=SC2016
     "$BIN_YQ" eval-all '
@@ -112,26 +114,22 @@ _merge_config() {
         . as $g |
         ($inj | .[$g.name] // []) as $extra |
         .proxies = (.proxies + $extra | unique)
-      )
-    ' "$CLASH_CONFIG_BASE" "$CLASH_CONFIG_MIXIN" >"$CLASH_CONFIG_RUNTIME" || {
-        if [ -f "$runtime_backup" ]; then
-            /bin/mv -f "$runtime_backup" "$CLASH_CONFIG_RUNTIME"
-        else
-            /usr/bin/rm -f "$CLASH_CONFIG_RUNTIME"
-        fi
+	      )
+	    ' "$CLASH_CONFIG_BASE" "$CLASH_CONFIG_MIXIN" >"$runtime_tmp" || {
+        /usr/bin/rm -f "$runtime_tmp"
         _failcat "验证失败：请检查 Mixin 配置"
         return 1
     }
-    _valid_config "$CLASH_CONFIG_RUNTIME" || {
-        if [ -f "$runtime_backup" ]; then
-            /bin/mv -f "$runtime_backup" "$CLASH_CONFIG_RUNTIME"
-        else
-            /usr/bin/rm -f "$CLASH_CONFIG_RUNTIME"
-        fi
+    _valid_config "$runtime_tmp" || {
+        /usr/bin/rm -f "$runtime_tmp"
         _failcat "验证失败：请检查 Mixin 配置"
         return 1
     }
-    /usr/bin/rm -f "$runtime_backup"
+    /bin/mv -f "$runtime_tmp" "$CLASH_CONFIG_RUNTIME" || {
+        /usr/bin/rm -f "$runtime_tmp"
+        _failcat "运行时配置写入失败：$CLASH_CONFIG_RUNTIME"
+        return 1
+    }
 }
 
 _restore_runtime_after_restart_failure() {
@@ -144,6 +142,7 @@ _restore_runtime_after_restart_failure() {
     fi
 
     if [ "$was_active" = true ]; then
+        _clash_service_stop "$mode" >/dev/null 2>&1 || true
         _clash_service_start "$mode" >/dev/null 2>&1 || {
             _failcat "旧运行时配置已恢复，但 $mode 内核恢复启动失败"
             return 1
@@ -153,10 +152,9 @@ _restore_runtime_after_restart_failure() {
 }
 
 _merge_config_restart() {
-    local had_proxy_env=false mode active_status was_active=false allowed_ext_port=
+    local mode active_status was_active=false allowed_ext_port=
     local runtime_restart_backup="${CLASH_CONFIG_RUNTIME}.restart.bak.$$"
 
-    _has_current_proxy_env && had_proxy_env=true
     mode=$(_get_active_mode 2>/dev/null)
     active_status=$?
     [ "$active_status" -eq 2 ] && {
@@ -181,7 +179,20 @@ _merge_config_restart() {
         _restore_runtime_after_restart_failure "$runtime_restart_backup" "$mode" false >/dev/null 2>&1 || true
         return 1
     }
-    [ "$was_active" = true ] && _clash_service_stop "$mode" >/dev/null 2>&1 || true
+
+    if [ "$was_active" = true ]; then
+        _clash_service_stop "$mode" >/dev/null 2>&1 || {
+            _restore_runtime_after_restart_failure "$runtime_restart_backup" "$mode" false >/dev/null 2>&1 || true
+            _failcat "配置已合并，但无法停止 $mode 内核以应用新配置"
+            return 1
+        }
+    fi
+
+    _detect_proxy_port || {
+        _restore_runtime_after_restart_failure "$runtime_restart_backup" "$mode" "$was_active" >/dev/null 2>&1 || true
+        return 1
+    }
+
     sleep 0.1
     _clash_service_start "$mode" >/dev/null || {
         _restore_runtime_after_restart_failure "$runtime_restart_backup" "$mode" "$was_active" >/dev/null 2>&1 || true
@@ -192,9 +203,6 @@ _merge_config_restart() {
     local deadline=$((SECONDS + 5))
     while [ "$SECONDS" -le "$deadline" ]; do
         clashstatus >&/dev/null && {
-            if [ "$had_proxy_env" = true ]; then
-                _set_system_proxy || return 1
-            fi
             /usr/bin/rm -f "$runtime_restart_backup"
             return 0
         }

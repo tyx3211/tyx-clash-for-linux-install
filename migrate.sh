@@ -22,13 +22,19 @@ _expand_path() {
         printf '%s\n' "$HOME"
         ;;
     "~/"*)
-        printf '%s/%s\n' "$HOME" "${path#~/}"
+        printf '%s/%s\n' "$HOME" "${path#\~/}"
         ;;
     '$HOME')
         printf '%s\n' "$HOME"
         ;;
     '$HOME/'*)
         printf '%s/%s\n' "$HOME" "${path#\$HOME/}"
+        ;;
+    '${HOME}')
+        printf '%s\n' "$HOME"
+        ;;
+    '${HOME}/'*)
+        printf '%s/%s\n' "$HOME" "${path#\$\{HOME\}/}"
         ;;
     *)
         printf '%s\n' "$path"
@@ -47,6 +53,12 @@ _read_env_value() {
     [ -f "$file" ] || return 1
 
     while IFS= read -r line || [ -n "$line" ]; do
+        case "$line" in
+        export[[:space:]]*)
+            line=${line#export}
+            line=${line#"${line%%[![:space:]]*}"}
+            ;;
+        esac
         case "$line" in
         "$key="*)
             value=${line#*=}
@@ -189,47 +201,105 @@ target=$(_canonical_dir "$target") || _die "安装目录不存在：$target"
 [ -f "$target/scripts/cmd/clashctl.sh" ] || _die "目标目录缺少 clashctl 脚本：$target"
 [ -d "$target/resources" ] || _die "目标目录缺少 resources：$target"
 
-printf '⏳ 正在迁移安装目录：%s\n' "$target"
-bash "$source_dir/update.sh" --target "$target" --source "$source_dir"
+_legacy_config_plan=()
 
-[ ! -L "$target/config" ] || _die "配置目录不能是符号链接：$target/config"
-mkdir -p "$target/config"
-
-_migrate_legacy_config_file() {
-    local src=$1 dest=$2
+_precheck_legacy_config_file() {
+    local src=$1 dest=$2 dest_parent
+    dest_parent=$(dirname "$dest")
 
     [ -e "$src" ] || [ -L "$src" ] || return 0
     [ ! -L "$src" ] || _die "拒绝迁移符号链接旧配置：$src"
-    [ ! -L "$dest" ] || _die "拒绝覆盖符号链接配置：$dest"
     [ -f "$src" ] || _die "旧配置不是普通文件：$src"
-
-    if [ "$move_legacy_config" = true ]; then
-        if [ ! -e "$dest" ]; then
-            mv "$src" "$dest"
-            return 0
-        fi
-        [ -f "$dest" ] || _die "目标配置不是普通文件：$dest"
-        if cmp -s "$src" "$dest"; then
-            rm -f "$src"
-            return 0
-        fi
-        if [ "$force_remove_legacy_config" = true ]; then
-            rm -f "$src"
-            return 0
-        fi
-        _die "目标配置已存在且与旧配置不同，拒绝删除旧文件：$src -> $dest；确认以 config/ 为准时可追加 --force-remove-legacy-config"
-    fi
+    [ ! -L "$dest_parent" ] || _die "配置目录不能是符号链接：$dest_parent"
+    [ ! -e "$dest_parent" ] || [ -d "$dest_parent" ] || _die "配置父路径不是目录：$dest_parent"
+    [ ! -L "$dest" ] || _die "拒绝覆盖符号链接配置：$dest"
 
     if [ -e "$dest" ]; then
         [ -f "$dest" ] || _die "目标配置不是普通文件：$dest"
+        if ! cmp -s "$src" "$dest"; then
+            if [ "$move_legacy_config" = true ] && [ "$force_remove_legacy_config" = true ]; then
+                _legacy_config_plan+=("remove|$src|$dest")
+                return 0
+            fi
+            _die "旧配置与新版 config 配置内容不同，拒绝半迁移：$src -> $dest；请先手工 diff，或确认以 config/ 为准后使用 --move-legacy-config --force-remove-legacy-config"
+        fi
+        if [ "$move_legacy_config" = true ]; then
+            _legacy_config_plan+=("remove|$src|$dest")
+        else
+            _legacy_config_plan+=("keep|$src|$dest")
+        fi
         return 0
     fi
-    cp -a "$src" "$dest"
+
+    if [ "$move_legacy_config" = true ]; then
+        _legacy_config_plan+=("move|$src|$dest")
+    else
+        _legacy_config_plan+=("copy|$src|$dest")
+    fi
 }
 
-_migrate_legacy_config_file "$target/resources/mixin.yaml" "$target/config/mixin.yaml"
-_migrate_legacy_config_file "$target/resources/clashctl.yaml" "$target/config/clashctl.yaml"
-_migrate_legacy_config_file "$target/resources/profiles.yaml" "$target/config/subscriptions.yaml"
+[ ! -L "$target/config" ] || _die "配置目录不能是符号链接：$target/config"
+[ ! -e "$target/config" ] || [ -d "$target/config" ] || _die "配置路径不是目录：$target/config"
+
+_precheck_legacy_config_file "$target/resources/mixin.yaml" "$target/config/mixin.yaml"
+_precheck_legacy_config_file "$target/resources/clashctl.yaml" "$target/config/clashctl.yaml"
+_precheck_legacy_config_file "$target/resources/profiles.yaml" "$target/config/subscriptions.yaml"
+
+printf '⏳ 正在迁移安装目录：%s\n' "$target"
+bash "$source_dir/update.sh" --target "$target" --source "$source_dir"
+
+mkdir -p "$target/config"
+
+config_backup_dir=$(mktemp -d "$target/.migrate-config-backup.XXXXXX")
+config_migration_started=false
+_rollback_legacy_config_files() {
+    local status=$? plan action src dest rel file
+    if [ "$config_migration_started" = true ]; then
+        for plan in "${_legacy_config_plan[@]}"; do
+            IFS='|' read -r action src dest <<<"$plan"
+            /usr/bin/rm -f "$src" "$dest"
+        done
+        while IFS= read -r file; do
+            rel=${file#"$config_backup_dir"/}
+            /usr/bin/rm -rf "$target/$rel"
+            mkdir -p "$target/$(dirname "$rel")"
+            cp -a "$file" "$target/$rel"
+        done < <(find "$config_backup_dir" -type f)
+    fi
+    /usr/bin/rm -rf "$config_backup_dir"
+    return "$status"
+}
+trap _rollback_legacy_config_files EXIT INT TERM
+
+for plan in "${_legacy_config_plan[@]}"; do
+    IFS='|' read -r action src dest <<<"$plan"
+    [ -e "$src" ] || [ -L "$src" ] || continue
+    for path in "$src" "$dest"; do
+        [ -e "$path" ] || continue
+        rel=${path#"$target"/}
+        mkdir -p "$config_backup_dir/$(dirname "$rel")"
+        cp -a "$path" "$config_backup_dir/$rel"
+    done
+
+    config_migration_started=true
+    mkdir -p "$(dirname "$dest")"
+    case "$action" in
+    copy)
+        cp -a "$src" "$dest"
+        ;;
+    move)
+        mv "$src" "$dest"
+        ;;
+    remove)
+        rm -f "$src"
+        ;;
+    keep)
+        ;;
+    esac
+done
+config_migration_started=false
+/usr/bin/rm -rf "$config_backup_dir"
+trap - EXIT INT TERM
 
 if [ -n "$restart_mode" ]; then
     # shellcheck disable=SC1091

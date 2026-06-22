@@ -8,7 +8,7 @@ _install_state_expand_path() {
         printf '%s\n' "$HOME"
         ;;
     "~/"*)
-        printf '%s/%s\n' "$HOME" "${path#~/}"
+        printf '%s/%s\n' "$HOME" "${path#\~/}"
         ;;
     '$HOME')
         printf '%s\n' "$HOME"
