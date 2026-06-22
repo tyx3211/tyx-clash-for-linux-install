@@ -7,19 +7,20 @@ set -euo pipefail
 ENV_FILE="$TEST_ROOT/.env"
 INSTALL_SH="$TEST_ROOT/install.sh"
 PREFLIGHT_SH="$TEST_ROOT/scripts/preflight.sh"
+SERVICE_RENDER_SH="$TEST_ROOT/scripts/install/service-render.sh"
 CLASHCTL_SH="$TEST_ROOT/scripts/cmd/clashctl.sh"
 TUN_SH="$TEST_ROOT/scripts/lib/tun.sh"
 
 assert_file_contains "$ENV_FILE" '^INIT_TYPE=tmux$' \
     "tmux should remain the default init mode"
 
-assert_file_contains "$PREFLIGHT_SH" 'tmux\)' \
+assert_file_contains "$SERVICE_RENDER_SH" 'tmux\)' \
     "_detect_init should support tmux mode"
 
-assert_file_contains "$PREFLIGHT_SH" 'nohup\)' \
+assert_file_contains "$SERVICE_RENDER_SH" 'nohup\)' \
     "_detect_init should support explicit nohup mode"
 
-assert_file_contains "$PREFLIGHT_SH" 'systemd\)' \
+assert_file_contains "$SERVICE_RENDER_SH" 'systemd\)' \
     "_detect_init should support explicit systemd mode"
 
 assert_file_contains "$PREFLIGHT_SH" '--init=' \

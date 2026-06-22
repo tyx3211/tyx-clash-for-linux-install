@@ -10,6 +10,7 @@ CONFIG_SH="$TEST_ROOT/scripts/lib/config.sh"
 SUBSCRIPTION_SH="$TEST_ROOT/scripts/lib/subscription.sh"
 TUN_SH="$TEST_ROOT/scripts/lib/tun.sh"
 PREFLIGHT_SH="$TEST_ROOT/scripts/preflight.sh"
+SERVICE_RENDER_SH="$TEST_ROOT/scripts/install/service-render.sh"
 UNINSTALL_SH="$TEST_ROOT/uninstall.sh"
 FISH_SH="$TEST_ROOT/scripts/cmd/clashctl.fish"
 
@@ -56,11 +57,11 @@ assert_file_contains "$TUN_SH" 'clashtun\(\)' \
 assert_file_not_contains "$FISH_SH" 'eval ' \
     "fish wrapper should not use eval to generate fixed command wrappers"
 
-assert_file_contains "$PREFLIGHT_SH" '^_preflight_escape_sed_repl\(\)' \
-    "preflight should keep sed replacement escaping as a top-level helper"
+assert_file_contains "$SERVICE_RENDER_SH" '^_preflight_escape_sed_repl\(\)' \
+    "service rendering should keep sed replacement escaping as a top-level helper"
 
-assert_file_not_contains "$PREFLIGHT_SH" '^[[:space:]]*_escape_sed_repl\(\)' \
-    "preflight should not define helper functions inside _install_service"
+assert_file_not_contains "$SERVICE_RENDER_SH" '^[[:space:]]*_escape_sed_repl\(\)' \
+    "service rendering should not define helper functions inside _install_service"
 
 proxy_args_tmp=$(make_test_tmpdir "clash-proxy-args")
 (

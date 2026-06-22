@@ -15,6 +15,7 @@ SUBSCRIPTION_SH="$TEST_ROOT/scripts/lib/subscription.sh"
 FISH_SH="$TEST_ROOT/scripts/cmd/clashctl.fish"
 UNINSTALL_SH="$TEST_ROOT/uninstall.sh"
 PATH_ENV_SH="$TEST_ROOT/scripts/lib/path-env.sh"
+RC_SH="$TEST_ROOT/scripts/install/rc.sh"
 
 install_order=$(
     awk '
@@ -340,10 +341,10 @@ EOF
 [ -d "$uninstall_marker_symlink_repo" ] ||
     fail "uninstall should not delete install dir when marker is a symlink"
 
-assert_file_contains "$PREFLIGHT_SH" '_revoke_rc_file' \
+assert_file_contains "$RC_SH" '_revoke_rc_file' \
     "rc cleanup should be scoped to the current install block"
 
-assert_file_not_contains "$PREFLIGHT_SH" '/\$start_flag/,/\$end_flag/d' \
+assert_file_not_contains "$RC_SH" '/\$start_flag/,/\$end_flag/d' \
     "rc cleanup should not remove every clashctl block regardless of install path"
 
 rc_symlink_tmp=$(make_test_tmpdir "clash-rc-symlink")

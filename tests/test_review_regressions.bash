@@ -6,6 +6,7 @@ set -euo pipefail
 
 INSTALL_SH="$TEST_ROOT/install.sh"
 PREFLIGHT_SH="$TEST_ROOT/scripts/preflight.sh"
+SERVICE_RENDER_SH="$TEST_ROOT/scripts/install/service-render.sh"
 CLASHCTL_SH="$TEST_ROOT/scripts/cmd/clashctl.sh"
 TUN_SH="$TEST_ROOT/scripts/lib/tun.sh"
 SUBSCRIPTION_SH="$TEST_ROOT/scripts/lib/subscription.sh"
@@ -54,16 +55,16 @@ printf 'ci metadata\n' >"$install_payload_source/.github/workflows/ci.yml"
 assert_file_contains "$SYSTEMD_SH" 'placeholder_run_as_user' \
     "systemd service should be able to run as the sudo invoking user"
 
-assert_file_contains "$PREFLIGHT_SH" 'User=\$SUDO_USER|User="\$SUDO_USER"|service_run_as_user' \
+assert_file_contains "$SERVICE_RENDER_SH" 'User=\$SUDO_USER|User="\$SUDO_USER"|service_run_as_user' \
     "regular sudo systemd install should render a User= line"
 
-assert_file_contains "$PREFLIGHT_SH" '/usr/bin/install -D -m 755' \
+assert_file_contains "$SERVICE_RENDER_SH" '/usr/bin/install -D -m 755' \
     "rendered service files should keep read permission for init managers"
 
 assert_file_contains "$PREFLIGHT_SH" '_validate_install_path' \
     "install should explicitly reject paths that shell templates cannot safely support"
 
-assert_file_contains "$PREFLIGHT_SH" '_install_service\(\)' \
+assert_file_contains "$SERVICE_RENDER_SH" '_install_service\(\)' \
     "preflight should define install service rendering"
 
 assert_file_contains "$PREFLIGHT_SH" '_fetch_latest_tag\(\)' \
