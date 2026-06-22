@@ -31,6 +31,7 @@
 - Modify: `uninstall.sh`
 - Modify: `scripts/cmd/common.sh`
 - Modify: `scripts/lib/install-state.sh`
+- Test: `tests/test_path_env.bash`
 - Test: `tests/test_common_safety.bash`
 - Test: `tests/test_migrate.bash`
 - Test: `tests/test_update_self.bash`
@@ -88,6 +89,7 @@ git commit -m "refactor: centralize env and path parsing"
 - Modify: `scripts/lib/service-runtime.sh`
 - Modify: `scripts/lib/proxy.sh`
 - Modify: `scripts/cmd/common.sh`
+- Test: `tests/test_runtime_config.bash`
 - Test: `tests/test_runtime_modes.bash`
 - Test: `tests/test_clashctl_behaviour.bash`
 
@@ -177,6 +179,7 @@ git commit -m "refactor: tighten shell helper scopes"
 - Create: `scripts/install/service-render.sh`
 - Create: `scripts/install/rc.sh`
 - Modify: `scripts/preflight.sh`
+- Test: `tests/test_preflight_split.bash`
 - Test: `tests/test_rendered_install.bash`
 - Test: `tests/test_update_self.bash`
 
