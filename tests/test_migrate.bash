@@ -60,6 +60,44 @@ grep -q 'function clashctl' "$legacy_dir/scripts/cmd/clashctl.sh" ||
 bash "$MIGRATE_SH" --help >/dev/null ||
     fail "migrate should expose a help page"
 
+installed_migrate_tmp="$migrate_tmp/installed-migrate-runner"
+installed_migrate_target="$migrate_tmp/installed-migrate-target"
+installed_migrate_source_home="$migrate_tmp/installed-migrate-source-home"
+installed_migrate_source="$installed_migrate_source_home/source"
+mkdir -p "$installed_migrate_tmp" "$installed_migrate_source_home" "$installed_migrate_target/resources" "$installed_migrate_target/scripts/cmd"
+cp -a "$TEST_ROOT/." "$installed_migrate_source"
+cp "$TEST_ROOT/migrate.sh" "$installed_migrate_tmp/migrate.sh"
+cat >"$installed_migrate_target/.env" <<EOF
+CLASH_BASE_DIR=$installed_migrate_target
+KERNEL_NAME=mihomo
+INIT_TYPE=tmux
+EOF
+printf 'installed-migrate-mixin\n' >"$installed_migrate_target/resources/mixin.yaml"
+printf 'legacy-script\n' >"$installed_migrate_target/scripts/cmd/clashctl.sh"
+CLASHCTL_MIGRATE_SKIP_STATUS=1 HOME="$installed_migrate_source_home" bash "$installed_migrate_tmp/migrate.sh" --target "$installed_migrate_target" --source '${HOME}/source' >/dev/null ||
+    fail "standalone migrate.sh should expand literal \${HOME} in explicit --source before loading helpers"
+grep -q 'function clashctl' "$installed_migrate_target/scripts/cmd/clashctl.sh" ||
+    fail "standalone migrate.sh with literal \${HOME} --source should refresh target scripts"
+
+auto_target_source="$migrate_tmp/auto-target-source"
+auto_target_install="$migrate_tmp/auto-target-install"
+mkdir -p "$auto_target_source" "$auto_target_install/resources" "$auto_target_install/scripts/cmd"
+cp "$TEST_ROOT/migrate.sh" "$auto_target_source/migrate.sh"
+cat >"$auto_target_source/.env" <<EOF
+CLASHCTL_HOME=$auto_target_install
+EOF
+cat >"$auto_target_install/.env" <<EOF
+CLASHCTL_HOME=$auto_target_install
+CLASHCTL_KERNEL=clash
+INIT_TYPE=nohup
+EOF
+printf 'auto-mixin\n' >"$auto_target_install/resources/mixin.yaml"
+printf 'legacy-script\n' >"$auto_target_install/scripts/cmd/clashctl.sh"
+CLASHCTL_MIGRATE_SKIP_STATUS=1 bash "$auto_target_source/migrate.sh" --source "$TEST_ROOT" >/dev/null ||
+    fail "migrate should auto-discover target from local CLASHCTL_HOME"
+grep -qx 'kernel_name: "clash"' "$auto_target_install/resources/install-state.yaml" ||
+    fail "auto-discovered CLASHCTL_HOME migration should preserve legacy CLASHCTL_KERNEL"
+
 legacy_home_source="$migrate_tmp/legacy-home-source"
 legacy_home_target="$migrate_tmp/legacy-home-target"
 mkdir -p "$legacy_home_source" "$legacy_home_target/resources" "$legacy_home_target/scripts/cmd"

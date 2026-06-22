@@ -1,32 +1,19 @@
 #!/usr/bin/env bash
 
-_install_state_expand_path() {
-    local path=$1
-
-    case "$path" in
-    "~")
-        printf '%s\n' "$HOME"
-        ;;
-    "~/"*)
-        printf '%s/%s\n' "$HOME" "${path#\~/}"
-        ;;
-    '$HOME')
-        printf '%s\n' "$HOME"
-        ;;
-    '$HOME/'*)
-        printf '%s/%s\n' "$HOME" "${path#\$HOME/}"
-        ;;
-    '${HOME}')
-        printf '%s\n' "$HOME"
-        ;;
-    '${HOME}/'*)
-        printf '%s/%s\n' "$HOME" "${path#\$\{HOME\}/}"
-        ;;
-    *)
-        printf '%s\n' "$path"
-        ;;
-    esac
+_INSTALL_STATE_LIB_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || {
+    printf 'install-state: failed to resolve library directory\n' >&2
+    return 1 2>/dev/null || exit 1
 }
+_INSTALL_STATE_PATH_ENV_LIB="$_INSTALL_STATE_LIB_DIR/path-env.sh"
+[ -r "$_INSTALL_STATE_PATH_ENV_LIB" ] || {
+    printf 'install-state: missing required library: %s\n' "$_INSTALL_STATE_PATH_ENV_LIB" >&2
+    return 1 2>/dev/null || exit 1
+}
+. "$_INSTALL_STATE_PATH_ENV_LIB" || {
+    printf 'install-state: failed to source library: %s\n' "$_INSTALL_STATE_PATH_ENV_LIB" >&2
+    return 1 2>/dev/null || exit 1
+}
+unset _INSTALL_STATE_LIB_DIR _INSTALL_STATE_PATH_ENV_LIB
 
 _install_state_trim() {
     local value=$1
@@ -53,37 +40,18 @@ _install_state_unquote() {
     printf '%s\n' "$value"
 }
 
+_install_state_expand_path() {
+    _path_env_expand_path "$1"
+}
+
 _install_state_read_env_value() {
-    local file=$1 key=$2 line current_key value=
-    [ -f "$file" ] || return 1
+    local file=$1 key=$2
 
-    while IFS= read -r line || [ -n "$line" ]; do
-        case "$line" in
-        "" | "#"*)
-            continue
-            ;;
-        export[[:space:]]*)
-            line=${line#export}
-            line=${line#"${line%%[![:space:]]*}"}
-            ;;
-        esac
-
-        case "$line" in
-        *=*)
-            current_key=${line%%=*}
-            [ "$current_key" = "$key" ] || continue
-            value=${line#*=}
-            ;;
-        *)
-            continue
-            ;;
-        esac
-    done <"$file"
-
-    [ -n "$value" ] || return 1
-    value=$(_install_state_unquote "$value")
-    [ "$key" = CLASH_BASE_DIR ] && value=$(_install_state_expand_path "$value")
-    printf '%s\n' "$value"
+    if _path_env_key_is_path "$key"; then
+        _path_env_read_path_value "$file" "$key"
+    else
+        _path_env_read_value "$file" "$key"
+    fi
 }
 
 _install_state_read_yaml_value() {

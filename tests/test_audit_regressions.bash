@@ -14,6 +14,7 @@ TUN_SH="$TEST_ROOT/scripts/lib/tun.sh"
 SUBSCRIPTION_SH="$TEST_ROOT/scripts/lib/subscription.sh"
 FISH_SH="$TEST_ROOT/scripts/cmd/clashctl.fish"
 UNINSTALL_SH="$TEST_ROOT/uninstall.sh"
+PATH_ENV_SH="$TEST_ROOT/scripts/lib/path-env.sh"
 
 install_order=$(
     awk '
@@ -97,16 +98,9 @@ path_expand_tmp=$(make_test_tmpdir "clash-path-expand")
     set +e
     HOME="$path_expand_tmp/home"
     mkdir -p "$HOME"
-    eval "$(extract_function _expand_path "$TEST_ROOT/update.sh")"
-    [ "$(_expand_path '${HOME}/clashctl')" = "$HOME/clashctl" ] ||
-        fail "update path expansion should support literal \${HOME}/ prefixes"
-)
-(
-    set +e
-    HOME="$path_expand_tmp/home"
-    eval "$(extract_function _expand_path "$TEST_ROOT/migrate.sh")"
-    [ "$(_expand_path '${HOME}/clashctl')" = "$HOME/clashctl" ] ||
-        fail "migrate path expansion should support literal \${HOME}/ prefixes"
+    . "$PATH_ENV_SH"
+    [ "$(_path_env_expand_path '${HOME}/clashctl')" = "$HOME/clashctl" ] ||
+        fail "shared path expansion should support literal \${HOME}/ prefixes"
 )
 
 archive_safe_tmp=$(make_test_tmpdir "clash-archive-safe")

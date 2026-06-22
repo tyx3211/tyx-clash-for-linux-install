@@ -10,81 +10,16 @@ _uninstall_die() {
 . "$THIS_UNINSTALL_DIR/scripts/lib/install-state.sh" ||
     _uninstall_die "缺少安装状态解析脚本：$THIS_UNINSTALL_DIR/scripts/lib/install-state.sh"
 
-_uninstall_expand_env_path() {
-    local path=$1
-
-    case "$path" in
-    "~")
-        printf '%s\n' "$HOME"
-        ;;
-    "~/"*)
-        printf '%s/%s\n' "$HOME" "${path#\~/}"
-        ;;
-    '$HOME')
-        printf '%s\n' "$HOME"
-        ;;
-    '$HOME/'*)
-        printf '%s/%s\n' "$HOME" "${path#\$HOME/}"
-        ;;
-    '${HOME}')
-        printf '%s\n' "$HOME"
-        ;;
-    '${HOME}/'*)
-        printf '%s/%s\n' "$HOME" "${path#\$\{HOME\}/}"
-        ;;
-    *)
-        printf '%s\n' "$path"
-        ;;
-    esac
-}
-
 _uninstall_read_env() {
-    local env_file=$1 line key value
+    local env_file=$1
     [ -r "$env_file" ] || _uninstall_die "缺少安装环境文件：$env_file"
 
-    while IFS= read -r line || [ -n "$line" ]; do
-        case "$line" in
-        "" | "#"*)
-            continue
-            ;;
-        export[[:space:]]*)
-            line=${line#export}
-            line=${line#"${line%%[![:space:]]*}"}
-            ;;
-        esac
-
-        case "$line" in
-        *=*)
-            key=${line%%=*}
-            value=${line#*=}
-            ;;
-        *)
-            continue
-            ;;
-        esac
-
-        [[ $key =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
-        case "$key" in
-        KERNEL_NAME | CLASH_BASE_DIR | INIT_TYPE | CLASH_INSTALLED_INIT_TYPE)
-            ;;
-        *)
-            continue
-            ;;
-        esac
-        case "$value" in
-        \"*\")
-            value=${value#\"}
-            value=${value%\"}
-            ;;
-        \'*\')
-            value=${value#\'}
-            value=${value%\'}
-            ;;
-        esac
-
-        [ "$key" = CLASH_BASE_DIR ] && value=$(_uninstall_expand_env_path "$value")
-        printf -v "$key" '%s' "$value"
-    done <"$env_file"
+    _path_env_read_into_vars \
+        "$env_file" \
+        KERNEL_NAME \
+        CLASH_BASE_DIR \
+        INIT_TYPE \
+        CLASH_INSTALLED_INIT_TYPE
 }
 
 _uninstall_read_metadata() {

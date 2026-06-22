@@ -16,23 +16,9 @@ _die() {
     exit 1
 }
 
-_load_install_state_lib() {
-    [ "${INSTALL_STATE_LIB_LOADED:-false}" = true ] && return 0
-
-    local candidate
-    for candidate in "$THIS_UPDATE_DIR/scripts/lib/install-state.sh" "${SOURCE_DIR:-}/scripts/lib/install-state.sh"; do
-        [ -n "$candidate" ] || continue
-        [ -r "$candidate" ] || continue
-        . "$candidate" || _die "安装状态解析脚本加载失败：$candidate"
-        INSTALL_STATE_LIB_LOADED=true
-        return 0
-    done
-
-    _die "缺少安装状态解析脚本：$THIS_UPDATE_DIR/scripts/lib/install-state.sh"
-}
-
-_expand_path() {
+_bootstrap_expand_path() {
     local path=$1
+
     case "$path" in
     "~")
         printf '%s\n' "$HOME"
@@ -58,49 +44,37 @@ _expand_path() {
     esac
 }
 
-_read_env_value() {
-    local file=$1 key=$2 line value=
-    [ -f "$file" ] || return 1
+_load_path_env_lib() {
+    local root expanded candidate
+    for root in "$THIS_UPDATE_DIR" "${SOURCE_DIR:-}"; do
+        [ -n "$root" ] || continue
+        for expanded in "$root" "$(_bootstrap_expand_path "$root")"; do
+            [ -n "$expanded" ] || continue
+            candidate="$expanded/scripts/lib/path-env.sh"
+            [ -r "$candidate" ] || continue
+            . "$candidate" || _die "环境解析脚本加载失败：$candidate"
+            declare -F _path_env_read_value >/dev/null ||
+                _die "环境解析脚本缺少必要函数：$candidate"
+            return 0
+        done
+    done
 
-    while IFS= read -r line || [ -n "$line" ]; do
-        case "$line" in
-        export[[:space:]]*)
-            line=${line#export}
-            line=${line#"${line%%[![:space:]]*}"}
-            ;;
-        esac
-        case "$line" in
-        "$key="*)
-            value=${line#*=}
-            ;;
-        esac
-    done <"$file"
-
-    [ -n "$value" ] || return 1
-    case "$value" in
-    \"*\")
-        value=${value#\"}
-        value=${value%\"}
-        ;;
-    \'*\')
-        value=${value#\'}
-        value=${value%\'}
-        ;;
-    esac
-    _expand_path "$value"
+    _die "缺少环境解析脚本：$THIS_UPDATE_DIR/scripts/lib/path-env.sh"
 }
 
-_read_env_value_any() {
-    local file=$1 key value
-    shift
+_load_install_state_lib() {
+    [ "${INSTALL_STATE_LIB_LOADED:-false}" = true ] && return 0
 
-    for key in "$@"; do
-        value=$(_read_env_value "$file" "$key" 2>/dev/null || true)
-        [ -n "$value" ] || continue
-        printf '%s\n' "$value"
+    local candidate
+    for candidate in "$THIS_UPDATE_DIR/scripts/lib/install-state.sh" "${SOURCE_DIR:-}/scripts/lib/install-state.sh"; do
+        [ -n "$candidate" ] || continue
+        [ -r "$candidate" ] || continue
+        . "$candidate" || _die "安装状态解析脚本加载失败：$candidate"
+        INSTALL_STATE_LIB_LOADED=true
         return 0
     done
-    return 1
+
+    _die "缺少安装状态解析脚本：$THIS_UPDATE_DIR/scripts/lib/install-state.sh"
 }
 
 _read_state_value() {
@@ -113,7 +87,7 @@ _read_install_dir_value() {
     local root=$1 value=
 
     value=$(_read_state_value "$root" install_dir 2>/dev/null || true)
-    [ -n "$value" ] || value=$(_read_env_value_any "$root/.env" CLASH_BASE_DIR CLASHCTL_HOME 2>/dev/null || true)
+    [ -n "$value" ] || value=$(_path_env_read_path_value_any "$root/.env" CLASH_BASE_DIR CLASHCTL_HOME 2>/dev/null || true)
     [ -n "$value" ] || return 1
     printf '%s\n' "$value"
 }
@@ -125,13 +99,13 @@ _read_target_metadata() {
     if [ -z "$value" ]; then
         case "$env_key" in
         KERNEL_NAME)
-            value=$(_read_env_value_any "$root/.env" KERNEL_NAME CLASHCTL_KERNEL 2>/dev/null || true)
+            value=$(_path_env_read_value_any "$root/.env" KERNEL_NAME CLASHCTL_KERNEL 2>/dev/null || true)
             ;;
         CLASH_BASE_DIR)
-            value=$(_read_env_value_any "$root/.env" CLASH_BASE_DIR CLASHCTL_HOME 2>/dev/null || true)
+            value=$(_path_env_read_path_value_any "$root/.env" CLASH_BASE_DIR CLASHCTL_HOME 2>/dev/null || true)
             ;;
         *)
-            value=$(_read_env_value "$root/.env" "$env_key" 2>/dev/null || true)
+            value=$(_path_env_read_value "$root/.env" "$env_key" 2>/dev/null || true)
             ;;
         esac
     fi
@@ -141,7 +115,7 @@ _read_target_metadata() {
 
 _canonical_dir() {
     local path
-    path=$(_expand_path "$1")
+    path=$(_path_env_expand_path "$1")
     cd "$path" 2>/dev/null && pwd -P
 }
 
@@ -227,7 +201,7 @@ _download_remote_source() {
     download_tmp=$(mktemp -d "$update_target/.update-source.XXXXXX")
     archive="$download_tmp/source.tar.gz"
     url="https://github.com/${UPDATE_REPO}/archive/${UPDATE_REF}.tar.gz"
-    proxy=$(_read_env_value "$update_target/.env" URL_GH_PROXY 2>/dev/null || true)
+    proxy=$(_path_env_read_value "$update_target/.env" URL_GH_PROXY 2>/dev/null || true)
     [ -n "$proxy" ] && url="${proxy%/}/${url}"
 
     printf '⏳ 正在下载项目源码：%s@%s\n' "$UPDATE_REPO" "$UPDATE_REF" >&2
@@ -376,6 +350,8 @@ EOF
     shift
 done
 
+_load_path_env_lib
+
 _validate_repo_slug "$UPDATE_REPO"
 _validate_ref "$UPDATE_REF"
 
@@ -474,7 +450,7 @@ printf '%s\n' 'tyx-clash-for-linux-install' >"$marker"
 
 env_path="$target/.env"
 if [ -f "$env_path" ]; then
-    existing_target=$(_read_env_value "$env_path" CLASH_BASE_DIR 2>/dev/null || true)
+    existing_target=$(_path_env_read_path_value_any "$env_path" CLASH_BASE_DIR CLASHCTL_HOME 2>/dev/null || true)
     if [ -n "$existing_target" ]; then
         existing_target=$(_canonical_dir "$existing_target" 2>/dev/null || true)
         [ -z "$existing_target" ] || [ "$existing_target" = "$target" ] ||
@@ -522,12 +498,12 @@ if [ ! -f "$state_path" ]; then
         _die "内核名称不安全，仅支持 mihomo、clash：$kernel_name"
     default_mode=$(_read_target_metadata "$target" default_mode INIT_TYPE 2>/dev/null || printf '%s\n' tmux)
     installed_systemd=false
-    installed_init=$(_read_env_value "$env_path" CLASH_INSTALLED_INIT_TYPE 2>/dev/null || true)
+    installed_init=$(_path_env_read_value "$env_path" CLASH_INSTALLED_INIT_TYPE 2>/dev/null || true)
     [ "$installed_init" = systemd ] && installed_systemd=true
     [ "$default_mode" = systemd ] && installed_systemd=true
-    version_mihomo=$(_read_env_value "$env_path" VERSION_MIHOMO 2>/dev/null || true)
-    version_yq=$(_read_env_value "$env_path" VERSION_YQ 2>/dev/null || true)
-    version_subconverter=$(_read_env_value "$env_path" VERSION_SUBCONVERTER 2>/dev/null || true)
+    version_mihomo=$(_path_env_read_value "$env_path" VERSION_MIHOMO 2>/dev/null || true)
+    version_yq=$(_path_env_read_value "$env_path" VERSION_YQ 2>/dev/null || true)
+    version_subconverter=$(_path_env_read_value "$env_path" VERSION_SUBCONVERTER 2>/dev/null || true)
     _install_state_write \
         "$state_path" \
         "$target" \

@@ -264,6 +264,19 @@ printf 'CLASH_BASE_DIR=%s\n' "$legacy_other_dir" >"$legacy_fail_dir/.env"
 [ ! -e "$legacy_fail_dir/.clashctl-install-root" ] ||
     fail "failed legacy migration should not leave a new install marker"
 
+legacy_alias_fail_dir="$update_tmp/legacy-alias-fail"
+legacy_alias_other_dir="$update_tmp/legacy-alias-other"
+mkdir -p "$legacy_alias_fail_dir/resources" "$legacy_alias_fail_dir/scripts/cmd" "$legacy_alias_other_dir"
+printf 'legacy-mixin\n' >"$legacy_alias_fail_dir/resources/mixin.yaml"
+printf 'legacy-script\n' >"$legacy_alias_fail_dir/scripts/cmd/clashctl.sh"
+printf 'CLASHCTL_HOME=%s\n' "$legacy_alias_other_dir" >"$legacy_alias_fail_dir/.env"
+(
+    cd "$source_dir"
+    CLASHCTL_NO_RC=1 bash update.sh --target "$legacy_alias_fail_dir"
+) >/dev/null 2>&1 && fail "legacy migration should reject .env CLASHCTL_HOME that points at another directory"
+[ ! -e "$legacy_alias_fail_dir/.clashctl-install-root" ] ||
+    fail "failed legacy alias migration should not leave a new install marker"
+
 legacy_no_newline_fail_dir="$update_tmp/legacy-no-newline-fail"
 legacy_no_newline_other_dir="$update_tmp/legacy-no-newline-other"
 mkdir -p "$legacy_no_newline_fail_dir/resources" "$legacy_no_newline_fail_dir/scripts/cmd" "$legacy_no_newline_other_dir"
@@ -295,6 +308,26 @@ bash "$explicit_install_dir/update.sh" --target "$explicit_install_dir" --source
     fail "installed update.sh should accept an explicit source directory"
 grep -q 'explicit-source-marker' "$explicit_install_dir/scripts/cmd/clashctl.sh" ||
     fail "update --source should refresh files from the explicit source directory"
+
+explicit_home_source_home="$update_tmp/explicit-home-source-home"
+explicit_home_source_dir="$explicit_home_source_home/source"
+explicit_home_install_dir="$update_tmp/explicit-home-install"
+mkdir -p "$explicit_home_source_home" "$explicit_home_install_dir/resources" "$explicit_home_install_dir/scripts/cmd"
+cp -a "$TEST_ROOT/." "$explicit_home_source_dir"
+printf 'tyx-clash-for-linux-install\n' >"$explicit_home_install_dir/.clashctl-install-root"
+printf 'mixin\n' >"$explicit_home_install_dir/resources/mixin.yaml"
+cp "$TEST_ROOT/update.sh" "$explicit_home_install_dir/update.sh"
+cat >"$explicit_home_install_dir/.env" <<EOF
+CLASH_BASE_DIR=$explicit_home_install_dir
+KERNEL_NAME=mihomo
+INIT_TYPE=tmux
+EOF
+printf 'old installed script\n' >"$explicit_home_install_dir/scripts/cmd/clashctl.sh"
+printf '\n# explicit-home-source-marker\n' >>"$explicit_home_source_dir/scripts/cmd/clashctl.sh"
+HOME="$explicit_home_source_home" bash "$explicit_home_install_dir/update.sh" --target "$explicit_home_install_dir" --source '${HOME}/source' >/dev/null 2>&1 ||
+    fail "standalone update.sh should expand literal \${HOME} in explicit --source before loading helpers"
+grep -q 'explicit-home-source-marker' "$explicit_home_install_dir/scripts/cmd/clashctl.sh" ||
+    fail "standalone update.sh with literal \${HOME} --source should refresh files"
 
 implicit_installed_source_dir="$update_tmp/implicit-installed-source"
 implicit_current_install_dir="$update_tmp/implicit-current-install"

@@ -15,8 +15,9 @@ _die() {
     exit 1
 }
 
-_expand_path() {
+_bootstrap_expand_path() {
     local path=$1
+
     case "$path" in
     "~")
         printf '%s\n' "$HOME"
@@ -42,55 +43,36 @@ _expand_path() {
     esac
 }
 
-_canonical_dir() {
-    local path
-    path=$(_expand_path "$1")
-    cd "$path" 2>/dev/null && pwd -P
+_load_path_env_lib() {
+    local root expanded candidate
+    for root in "$THIS_MIGRATE_DIR" "${source_dir:-}"; do
+        [ -n "$root" ] || continue
+        for expanded in "$root" "$(_bootstrap_expand_path "$root")"; do
+            [ -n "$expanded" ] || continue
+            candidate="$expanded/scripts/lib/path-env.sh"
+            [ -r "$candidate" ] || continue
+            . "$candidate" || _die "环境解析脚本加载失败：$candidate"
+            declare -F _path_env_read_value >/dev/null ||
+                _die "环境解析脚本缺少必要函数：$candidate"
+            return 0
+        done
+    done
+
+    _die "缺少环境解析脚本：$THIS_MIGRATE_DIR/scripts/lib/path-env.sh"
 }
 
-_read_env_value() {
-    local file=$1 key=$2 line value=
-    [ -f "$file" ] || return 1
-
-    while IFS= read -r line || [ -n "$line" ]; do
-        case "$line" in
-        export[[:space:]]*)
-            line=${line#export}
-            line=${line#"${line%%[![:space:]]*}"}
-            ;;
-        esac
-        case "$line" in
-        "$key="*)
-            value=${line#*=}
-            ;;
-        esac
-    done <"$file"
-
-    [ -n "$value" ] || return 1
-    case "$value" in
-    \"*\")
-        value=${value#\"}
-        value=${value%\"}
-        ;;
-    \'*\')
-        value=${value#\'}
-        value=${value%\'}
-        ;;
-    esac
-    case "$key" in
-    CLASH_BASE_DIR | CLASHCTL_HOME)
-        value=$(_expand_path "$value")
-        ;;
-    esac
-    printf '%s\n' "$value"
+_canonical_dir() {
+    local path
+    path=$(_path_env_expand_path "$1")
+    cd "$path" 2>/dev/null && pwd -P
 }
 
 _find_target_from_env() {
     local candidate
     for candidate in "$THIS_MIGRATE_DIR/.env" "$HOME/clashctl/.env"; do
         [ -f "$candidate" ] || continue
-        _read_env_value "$candidate" CLASH_BASE_DIR && return 0
-        _read_env_value "$candidate" CLASHCTL_HOME && return 0
+        _path_env_read_path_value "$candidate" CLASH_BASE_DIR && return 0
+        _path_env_read_path_value "$candidate" CLASHCTL_HOME && return 0
     done
     return 1
 }
@@ -187,6 +169,8 @@ done
 _validate_mode "$restart_mode"
 [ "$force_remove_legacy_config" = false ] || [ "$move_legacy_config" = true ] ||
     _die "--force-remove-legacy-config 需要配合 --move-legacy-config 使用"
+
+_load_path_env_lib
 
 [ -n "$source_dir" ] || source_dir=$THIS_MIGRATE_DIR
 source_dir=$(_canonical_dir "$source_dir") || _die "源码目录不存在：$source_dir"
