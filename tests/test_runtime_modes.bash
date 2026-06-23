@@ -270,6 +270,58 @@ mode_tmp=$(make_test_tmpdir "clash-runtime-mode")
         fail "clashoff should not clear current shell proxy variables"
 )
 
+service_state_yq_tmp=$(make_test_tmpdir "clash-service-state-yq")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    CLASH_RESOURCES_DIR="$service_state_yq_tmp/resources"
+    CLASH_SERVICE_STATE="$CLASH_RESOURCES_DIR/service-state.yaml"
+    CLASH_CONFIG_RUNTIME="$CLASH_RESOURCES_DIR/runtime.yaml"
+    BIN_KERNEL="$service_state_yq_tmp/bin/mihomo"
+    BIN_YQ="$service_state_yq_tmp/yq"
+    mkdir -p "$CLASH_RESOURCES_DIR" "$service_state_yq_tmp/bin"
+    cat >"$BIN_YQ" <<'EOF'
+#!/usr/bin/env bash
+case "$*" in
+*"if strenv"*)
+    printf 'fake yq rejected unsupported if strenv expression\n' >&2
+    exit 9
+    ;;
+esac
+if [ "${1:-}" = "-n" ]; then
+    printf 'active_mode: %s\n' "$SERVICE_STATE_ACTIVE_MODE"
+    printf 'started_at: %s\n' "$SERVICE_STATE_STARTED_AT"
+    printf 'bin_kernel: "%s"\n' "$SERVICE_STATE_BIN_KERNEL"
+    printf 'config_runtime: "%s"\n' "$SERVICE_STATE_CONFIG_RUNTIME"
+    exit 0
+fi
+if [ "${1:-}" = "-i" ]; then
+    file=${3:-}
+    printf 'pid: %s\n' "$SERVICE_STATE_PID" >>"$file"
+    exit 0
+fi
+exit 7
+EOF
+    chmod +x "$BIN_YQ"
+
+    _write_service_state systemd
+    status=$?
+    [ "$status" -eq 0 ] ||
+        fail "_write_service_state should not use yq if/then syntax for pid-less service state"
+    grep -qx 'active_mode: systemd' "$CLASH_SERVICE_STATE" ||
+        fail "_write_service_state should write systemd active mode without a pid"
+
+    _write_service_state nohup 4242
+    status=$?
+    [ "$status" -eq 0 ] ||
+        fail "_write_service_state should write pid through yq without unsupported if syntax"
+    grep -qx 'active_mode: nohup' "$CLASH_SERVICE_STATE" ||
+        fail "_write_service_state should update active mode when pid is present"
+    grep -qx 'pid: 4242' "$CLASH_SERVICE_STATE" ||
+        fail "_write_service_state should record pid when provided"
+)
+
 restart_ext_tmp=$(make_test_tmpdir "clash-restart-ext")
 (
     set +e

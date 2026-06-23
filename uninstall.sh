@@ -48,7 +48,28 @@ _uninstall_read_metadata() {
         _uninstall_die "内核名称不安全，仅支持 mihomo、clash：$KERNEL_NAME"
 }
 
+_uninstall_is_regular_sudo() {
+    [ "$(id -u)" -eq 0 ] && [ -n "${SUDO_USER:-}" ] && [ "$SUDO_USER" != 'root' ]
+}
+
+_normalize_sudo_uninstall_path() {
+    _uninstall_is_regular_sudo || return 0
+
+    case "$CLASH_BASE_DIR" in
+    /root/)
+        return 0
+        ;;
+    /root/*)
+        local sudo_home
+        sudo_home=$(awk -F: -v user="$SUDO_USER" '$1==user{print $6}' /etc/passwd)
+        [ -n "$sudo_home" ] || _uninstall_die "无法识别 sudo 调用用户的 HOME：$SUDO_USER"
+        CLASH_BASE_DIR="${sudo_home}${CLASH_BASE_DIR#/root}"
+        ;;
+    esac
+}
+
 _uninstall_read_metadata
+_normalize_sudo_uninstall_path
 
 current_dir=$(pwd -P 2>/dev/null || pwd 2>/dev/null || true)
 case "$current_dir" in
@@ -58,7 +79,7 @@ case "$current_dir" in
 esac
 
 case "$CLASH_BASE_DIR" in
-"" | "/" | "$HOME" | "$HOME/" | . | .. | ./* | ../*)
+"" | "/" | /root | /root/ | "$HOME" | "$HOME/" | . | .. | ./* | ../*)
     _uninstall_die "拒绝删除异常安装路径：${CLASH_BASE_DIR:-<empty>}"
     ;;
 /*)
@@ -70,6 +91,13 @@ esac
 
 CLASH_BASE_REAL=$(cd "$CLASH_BASE_DIR" 2>/dev/null && pwd -P) || _uninstall_die "安装路径不存在：$CLASH_BASE_DIR"
 HOME_REAL=$(cd "$HOME" 2>/dev/null && pwd -P)
+if _uninstall_is_regular_sudo; then
+    SUDO_HOME_REAL=$(awk -F: -v user="$SUDO_USER" '$1==user{print $6}' /etc/passwd)
+    [ -n "$SUDO_HOME_REAL" ] || _uninstall_die "无法识别 sudo 调用用户的 HOME：$SUDO_USER"
+    SUDO_HOME_REAL=$(cd "$SUDO_HOME_REAL" 2>/dev/null && pwd -P)
+else
+    SUDO_HOME_REAL=
+fi
 THIS_UNINSTALL_REAL=$THIS_UNINSTALL_DIR
 [ "$THIS_UNINSTALL_REAL" = "$CLASH_BASE_REAL" ] ||
     _uninstall_die "卸载脚本所在目录与安装状态目录不一致：$THIS_UNINSTALL_REAL != $CLASH_BASE_REAL"
@@ -78,6 +106,8 @@ case "$CLASH_BASE_REAL" in
     _uninstall_die "拒绝删除异常安装路径：${CLASH_BASE_REAL:-<empty>}"
     ;;
 esac
+[ -z "$SUDO_HOME_REAL" ] || [ "$CLASH_BASE_REAL" != "$SUDO_HOME_REAL" ] ||
+    _uninstall_die "拒绝删除 sudo 调用用户的 HOME：$CLASH_BASE_REAL"
 
 INSTALL_MARKER="${CLASH_BASE_REAL}/.clashctl-install-root"
 [ ! -L "$INSTALL_MARKER" ] || _uninstall_die "拒绝使用符号链接安装标记：$INSTALL_MARKER"

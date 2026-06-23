@@ -42,6 +42,12 @@ assert_file_not_contains "$COMMON_SH" '--no-check-certificate|--insecure' \
 assert_file_contains "$PREFLIGHT_SH" '_normalize_sudo_install_path\(\)' \
     "regular sudo systemd install should normalize default /root path back to invoking user home"
 
+assert_file_contains "$UNINSTALL_SH" '_normalize_sudo_uninstall_path\(\)' \
+    "regular sudo uninstall should normalize default /root path back to invoking user home before checking install dir"
+
+assert_file_contains "$UNINSTALL_SH" '_normalize_sudo_uninstall_path' \
+    "uninstall should call sudo path normalization before resolving CLASH_BASE_DIR"
+
 assert_file_contains "$PREFLIGHT_SH" '_refresh_install_paths\(\)' \
     "command-line kernel/path overrides should refresh derived install paths"
 
@@ -105,6 +111,56 @@ path_expand_tmp=$(make_test_tmpdir "clash-path-expand")
     . "$PATH_ENV_SH"
     [ "$(_path_env_expand_path '${HOME}/clashctl')" = "$HOME/clashctl" ] ||
         fail "shared path expansion should support literal \${HOME}/ prefixes"
+)
+
+sudo_path_tmp=$(make_test_tmpdir "clash-sudo-path")
+(
+    set +e
+    . "$PREFLIGHT_SH"
+
+    sudo_home=$(awk -F: -v user="$(id -un)" '$1==user{print $6}' /etc/passwd)
+    [ -n "$sudo_home" ] || fail "test should resolve current user home from passwd"
+    SUDO_USER=$(id -un)
+    _is_regular_sudo() { return 0; }
+
+    CLASH_BASE_DIR=/root
+    _normalize_sudo_install_path
+    [ "$CLASH_BASE_DIR" = /root ] ||
+        fail "sudo install normalization should not map /root itself to the sudo user home"
+
+    CLASH_BASE_DIR=/root/clashctl
+    _normalize_sudo_install_path
+    [ "$CLASH_BASE_DIR" = "$sudo_home/clashctl" ] ||
+        fail "sudo install normalization should map /root child paths to the sudo user home"
+)
+
+sudo_uninstall_path_tmp=$(make_test_tmpdir "clash-sudo-uninstall-path")
+(
+    set +e
+    _uninstall_die() { return 97; }
+    eval "$(extract_function "_uninstall_is_regular_sudo" "$UNINSTALL_SH")"
+    eval "$(extract_function "_normalize_sudo_uninstall_path" "$UNINSTALL_SH")"
+
+    sudo_home=$(awk -F: -v user="$(id -un)" '$1==user{print $6}' /etc/passwd)
+    [ -n "$sudo_home" ] || fail "test should resolve current user home from passwd"
+    SUDO_USER=$(id -un)
+    id() {
+        if [ "${1:-}" = -u ]; then
+            printf '0\n'
+            return 0
+        fi
+        command id "$@"
+    }
+
+    CLASH_BASE_DIR=/root
+    _normalize_sudo_uninstall_path
+    [ "$CLASH_BASE_DIR" = /root ] ||
+        fail "sudo uninstall normalization should not map /root itself to the sudo user home"
+
+    CLASH_BASE_DIR=/root/clashctl
+    _normalize_sudo_uninstall_path
+    [ "$CLASH_BASE_DIR" = "$sudo_home/clashctl" ] ||
+        fail "sudo uninstall normalization should map /root child paths to the sudo user home"
 )
 
 archive_safe_tmp=$(make_test_tmpdir "clash-archive-safe")

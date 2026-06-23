@@ -141,6 +141,24 @@ _preflight_escape_sed_repl() {
     printf '%s' "$1" | sed -e 's/[#&\\]/\\&/g'
 }
 
+_service_target_expected_execstart() {
+    printf 'ExecStart=%s -d %s -f %s\n' "$BIN_KERNEL" "$CLASH_RESOURCES_DIR" "$CLASH_CONFIG_RUNTIME"
+}
+
+_service_target_belongs_to_current_install() {
+    [ -n "${service_target:-}" ] || return 1
+    [ -f "$service_target" ] || return 1
+
+    case "${INIT_TYPE:-}" in
+    systemd)
+        grep -Fqx "$(_service_target_expected_execstart)" "$service_target"
+        ;;
+    *)
+        return 0
+        ;;
+    esac
+}
+
 _install_service() {
     local kernel_desc="$KERNEL_NAME Daemon, A[nother] Clash Kernel."
 
@@ -148,7 +166,13 @@ _install_service() {
     local cmd_arg="-d ${CLASH_RESOURCES_DIR} -f ${CLASH_CONFIG_RUNTIME}"
     local cmd_full="${BIN_KERNEL} -d ${CLASH_RESOURCES_DIR} -f ${CLASH_CONFIG_RUNTIME}"
 
-    [ -n "$service_src" ] && {
+    [ -n "${service_src:-}" ] && {
+        if { [ -e "$service_target" ] || [ -L "$service_target" ]; } &&
+            ! _service_target_belongs_to_current_install; then
+            _error_quit "systemd 服务已存在且不属于当前安装，拒绝覆盖：$service_target"
+            return 1
+        fi
+
         local sed_cmd_path sed_cmd_arg sed_cmd_full sed_log_file sed_pid_file
         local sed_kernel_name sed_kernel_desc sed_run_as_user
         sed_cmd_path=$(_preflight_escape_sed_repl "$cmd_path")
@@ -160,7 +184,8 @@ _install_service() {
         sed_kernel_desc=$(_preflight_escape_sed_repl "$kernel_desc")
         sed_run_as_user=$(_preflight_escape_sed_repl "${service_run_as_user:-}")
         /usr/bin/install -D -m 755 "$service_src" "$service_target" || return 1
-        if ((${#service_add[@]})); then
+        CLASH_INSTALL_SERVICE_WRITTEN=true
+        if declare -p service_add >/dev/null 2>&1 && ((${#service_add[@]})); then
             "${service_add[@]}" || return 1
         fi
         sed -i \
@@ -188,9 +213,21 @@ _install_service() {
 }
 
 _uninstall_service() {
+    local force_current_attempt=false
+    [ "${1:-}" = --force-current-attempt ] && force_current_attempt=true
+
     _detect_init
+    if [ -n "${service_target:-}" ] && [ "$force_current_attempt" != true ] &&
+        ! _service_target_belongs_to_current_install; then
+        return 0
+    fi
+
     "${service_disable[@]}" >&/dev/null
-    ((${#service_del[@]})) && "${service_del[@]}"
-    rm -f "$service_target"
-    ((${#service_reload[@]})) && "${service_reload[@]}"
+    if declare -p service_del >/dev/null 2>&1 && ((${#service_del[@]})); then
+        "${service_del[@]}"
+    fi
+    [ -n "${service_target:-}" ] && rm -f "$service_target"
+    if declare -p service_reload >/dev/null 2>&1 && ((${#service_reload[@]})); then
+        "${service_reload[@]}"
+    fi
 }

@@ -27,6 +27,9 @@ FILE_PID="${CLASH_RESOURCES_DIR}/${KERNEL_NAME}.pid"
 INSTALL_MARKER="${CLASH_BASE_DIR}/.clashctl-install-root"
 CLASH_INSTALL_CREATED_DIR=
 CLASH_INSTALL_COMPLETE=false
+CLASH_INSTALL_SERVICE_TOUCHED=false
+CLASH_INSTALL_SERVICE_WRITTEN=false
+CLASH_INSTALL_RC_TOUCHED=false
 
 _refresh_install_paths() {
     CLASH_RESOURCES_DIR="${CLASH_BASE_DIR}/resources"
@@ -65,7 +68,10 @@ _normalize_sudo_install_path() {
     _is_regular_sudo || return 0
 
     case "$CLASH_BASE_DIR" in
-    /root | /root/*)
+    /root/)
+        return 0
+        ;;
+    /root/*)
         local sudo_home
         sudo_home=$(awk -F: -v user="$SUDO_USER" '$1==user{print $6}' /etc/passwd)
         [ -n "$sudo_home" ] || _error_quit "无法识别 sudo 调用用户的 HOME：$SUDO_USER"
@@ -99,7 +105,7 @@ _validate_kernel_name() {
 
 _validate_install_path() {
     case "$CLASH_BASE_DIR" in
-    "" | "/" | "$HOME" | "$HOME/" | . | .. | ./* | ../*)
+    "" | "/" | /root | /root/ | "$HOME" | "$HOME/" | . | .. | ./* | ../*)
         _error_quit "安装路径不安全，请在 .env 中更换 CLASH_BASE_DIR：${CLASH_BASE_DIR:-<empty>}"
         ;;
     /*)
@@ -156,6 +162,14 @@ _cleanup_incomplete_install() {
         ;;
     esac
 
+    if [ "${CLASH_INSTALL_SERVICE_WRITTEN:-false}" = true ]; then
+        _uninstall_service --force-current-attempt >/dev/null 2>&1 || true
+    elif [ "${CLASH_INSTALL_SERVICE_TOUCHED:-false}" = true ]; then
+        _uninstall_service >/dev/null 2>&1 || true
+    fi
+    if [ "${CLASH_INSTALL_RC_TOUCHED:-false}" = true ]; then
+        _revoke_rc >/dev/null 2>&1 || true
+    fi
     /usr/bin/rm -rf "$CLASH_INSTALL_CREATED_DIR" 2>/dev/null || true
     return "$status"
 }

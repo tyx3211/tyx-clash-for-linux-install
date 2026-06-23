@@ -80,16 +80,17 @@ _write_service_state() {
             .active_mode = strenv(SERVICE_STATE_ACTIVE_MODE) |
             .started_at = (strenv(SERVICE_STATE_STARTED_AT) | tonumber) |
             .bin_kernel = strenv(SERVICE_STATE_BIN_KERNEL) |
-            .config_runtime = strenv(SERVICE_STATE_CONFIG_RUNTIME) |
-            if strenv(SERVICE_STATE_PID) != "" then
-                .pid = (strenv(SERVICE_STATE_PID) | tonumber)
-            else
-                .
-            end
+            .config_runtime = strenv(SERVICE_STATE_CONFIG_RUNTIME)
         ' >"$tmp" || {
         /usr/bin/rm -f "$tmp"
         return 1
     }
+    if [ -n "$pid" ]; then
+        SERVICE_STATE_PID=$pid "$BIN_YQ" -i '.pid = (strenv(SERVICE_STATE_PID) | tonumber)' "$tmp" || {
+            /usr/bin/rm -f "$tmp"
+            return 1
+        }
+    fi
     /bin/mv -f "$tmp" "$CLASH_SERVICE_STATE"
 }
 

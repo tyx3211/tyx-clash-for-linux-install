@@ -19,6 +19,15 @@ HOME="$bootstrap_home" bash "$bootstrap_source/install.sh" --help \
 grep -q 'Usage:' "$bootstrap_tmp/help.out" ||
     fail "install --help should still show usage during bootstrap"
 
+grep -q 'CLASH_INSTALL_SERVICE_TOUCHED=true' "$TEST_ROOT/install.sh" ||
+    fail "install should mark service setup as touched before rendering system service"
+grep -q '_uninstall_service' "$TEST_ROOT/scripts/preflight.sh" ||
+    fail "incomplete install cleanup should try to remove a partially installed service"
+grep -q 'CLASH_INSTALL_RC_TOUCHED=true' "$TEST_ROOT/install.sh" ||
+    fail "install should mark shell rc setup as touched before applying rc snippets"
+grep -q '_revoke_rc' "$TEST_ROOT/scripts/preflight.sh" ||
+    fail "incomplete install cleanup should revoke partially applied shell rc snippets"
+
 bad_marker_tmp=$(make_test_tmpdir "clash-install-bad-marker")
 bad_marker_source="$bad_marker_tmp/source"
 cp -a "$TEST_ROOT/." "$bad_marker_source"

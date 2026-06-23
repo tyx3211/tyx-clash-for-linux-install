@@ -73,8 +73,12 @@ _set_envs
 _init_config_git
 _is_regular_sudo && chown -R "$SUDO_USER" "$CLASH_BASE_DIR"
 
+CLASH_INSTALL_SERVICE_TOUCHED=true
 _install_service || _error_quit "服务安装失败，请检查启动方式和权限"
-[ -n "$CLASHCTL_NO_RC" ] || _apply_rc
+if [ -z "$CLASHCTL_NO_RC" ]; then
+    CLASH_INSTALL_RC_TOUCHED=true
+    _apply_rc
+fi
 
 
 # 重新加载已替换占位符的脚本
