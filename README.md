@@ -475,6 +475,18 @@ $ clashtun off
 
 `clashsub update` 更新订阅，`clashupgrade` 升级内核，二者都不会更新本项目的 shell 脚本。
 
+GitHub 下载代理只作用在“本项目脚本更新”和“安装时 GitHub 依赖下载”这类 GitHub 下载链路上：
+
+| 命令 | `--gh-proxy` 语义 |
+| --- | --- |
+| `bash install.sh --gh-proxy <url>` | 持久写入安装目录 `.env`，安装依赖下载、空版本号 latest release 查询和后续 `update-self` 默认复用 |
+| `clashctl update-self --gh-proxy <url>` | 只影响本次项目脚本更新，不改 `.env` |
+| `clashctl update-self --source <dir>` | 本地源码更新，不访问 GitHub，不需要代理 |
+| `clashsub update` | 更新订阅 URL，不使用 GitHub 下载代理选项 |
+| `clashupgrade` | 请求本机 mihomo API 升级内核，不使用本项目的 GitHub 下载代理选项 |
+
+更完整的更新语义见 [当前版本使用指南：更新项目脚本](docs/usage-guide.md#更新项目脚本)。
+
 ### 旧版用户先迁移
 
 如果记得安装来源：旧 `nosudo-tmux` 分支、旧 `master`、[`legacy-nosudo-tmux`](https://github.com/tyx3211/clash-for-linux-install-multimode/tree/legacy-nosudo-tmux) 这个 tag 及以前版本，都按旧版处理。只看本地目录时，如果 `~/clashctl` 里还带有 `.git`、`placeholder_start1` 或旧 `resources/mixin.yaml` 布局，也按旧版处理；如果知道自己还没有执行过 `migrate.sh`，同样先按旧版迁移。

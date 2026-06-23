@@ -130,6 +130,15 @@ clashctl update-self
 clashctl update-self --ref main
 ```
 
+如果迁移后的第一次项目更新需要 GitHub 下载代理，可以只影响这一次：
+
+```bash
+clashctl update-self --gh-proxy https://gh-proxy.org
+clashctl update-self --no-gh-proxy
+```
+
+这个选项只影响本项目源码下载；`clashsub update` 订阅更新和 `clashupgrade` 内核升级不是同一条更新链路。
+
 如果已经手工 `git pull` 了源码仓库，也可以从本地源码刷新安装目录：
 
 ```bash

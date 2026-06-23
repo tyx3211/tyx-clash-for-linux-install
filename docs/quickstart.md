@@ -207,6 +207,8 @@ clashctl update-self --gh-proxy https://gh-proxy.org
 clashctl update-self --no-gh-proxy
 ```
 
+这个代理选项只影响项目脚本更新下载，不影响 `clashsub update` 订阅更新，也不影响 `clashupgrade` 内核升级。
+
 使用本地源码目录刷新安装目录：
 
 ```bash
