@@ -117,6 +117,12 @@ clashctl update-self
 - `clashproxy status` 只看当前终端实际环境变量，避免与配置状态偏离。
 - 新终端是否自动写入代理变量，由 `config/clashctl.yaml` 里的 sidecar 配置控制。
 
+## 🧪 开发者测试
+
+测试默认在 `/tmp/tyx/clash-test-run.*` 下创建临时运行目录，退出时自动清理。在当前测试 shell 中 source `clashctl.sh` 的用例，应默认落到测试沙箱安装目录，不能读取或操作开发者真实的 `~/clashctl`、真实 `mihomo` 进程或真实 `tmux` 会话。只有专门验证 `.env` / install-state 覆盖语义的用例，才应显式清理沙箱变量后测试解析行为。
+
+常用验证命令、临时目录清理策略、`TEST_KEEP_TMP=1` 调试方式和测试隔离原则见 [开发测试说明](docs/development-testing.md)。
+
 ## 🚀 安装
 
 这个 README 对应当前 `main` 维护线。历史 `nosudo-tmux` 分支已经退役，新安装和更新都应使用 `main`。

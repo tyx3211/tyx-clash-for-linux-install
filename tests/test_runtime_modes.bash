@@ -42,6 +42,24 @@ assert_file_contains "$FISH_SH" '_clashctl_bash_call clashctl update-self \$argv
 assert_file_not_contains "$PREFLIGHT_SH" 'placeholder_start#_clash_service_start' \
     "install rendering should not hard-wire a single service start function"
 
+source_isolation_tmp=$(make_test_tmpdir "clash-source-isolation")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    case "$CLASH_BASE_DIR" in
+    "$TEST_RUN_TMP_DIR"/*)
+        ;;
+    *)
+        fail "tests should source clashctl with an isolated CLASH_BASE_DIR, got: $CLASH_BASE_DIR"
+        ;;
+    esac
+
+    _current_kernel_pids >"$source_isolation_tmp/pids"
+    [ ! -s "$source_isolation_tmp/pids" ] ||
+        fail "test defaults should not discover real user mihomo processes"
+)
+
 tmux_quote_tmp=$(make_test_tmpdir "clash-tmux-quote")
 (
     set +e
@@ -684,6 +702,7 @@ orphan_restart_tmp=$(make_test_tmpdir "clash-orphan-restart")
     _current_kernel_pids() { printf '1234\n'; }
     _terminate_current_kernel_pids() { printf 'terminate %s\n' "$*" >>"$orphan_restart_tmp/calls"; }
     _clashon_impl() { printf 'on %s\n' "$*" >>"$orphan_restart_tmp/calls"; }
+    _okcat() { printf '%s\n' "$*" >>"$orphan_restart_tmp/ok.log"; }
 
     clashrestart --mode tmux || fail "clashrestart should recover from exact current-install orphan kernel processes"
 )

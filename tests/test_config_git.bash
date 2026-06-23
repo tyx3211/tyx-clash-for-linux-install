@@ -71,6 +71,7 @@ printf 'legacy-sidecar\n' >"$new_layout/resources/clashctl.yaml"
 printf 'legacy-profiles\n' >"$new_layout/resources/profiles.yaml"
 (
     set +e
+    unset_test_install_identity
     . "$new_layout/scripts/cmd/clashctl.sh" || exit 1
     [ "$CLASH_CONFIG_MIXIN" = "$new_layout/config/mixin.yaml" ] ||
         fail "clashctl should prefer config/mixin.yaml when present"
@@ -97,6 +98,7 @@ printf 'legacy-sidecar\n' >"$legacy_layout/resources/clashctl.yaml"
 printf 'legacy-profiles\n' >"$legacy_layout/resources/profiles.yaml"
 (
     set +e
+    unset_test_install_identity
     . "$legacy_layout/scripts/cmd/clashctl.sh" || exit 1
     [ "$CLASH_CONFIG_MIXIN" = "$legacy_layout/resources/mixin.yaml" ] ||
         fail "legacy installs should keep using resources/mixin.yaml"
@@ -121,6 +123,7 @@ CLASH_SUB_UA=test-agent
 EOF
 (
     set +e
+    unset_test_install_identity
     CLASHCTL_CONFIG_GIT=1
     . "$env_override_layout/scripts/cmd/clashctl.sh" || exit 1
     [ "$CLASHCTL_CONFIG_GIT" = 1 ] ||

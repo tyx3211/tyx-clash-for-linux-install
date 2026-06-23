@@ -319,9 +319,13 @@ rollback_tmp=$(make_test_tmpdir "clash-rollback")
     CLASH_CONFIG_BASE="$rollback_tmp/config.yaml"
     CLASH_PROFILES_META="$rollback_tmp/profiles.yaml"
     test_profile_path="$rollback_tmp/profile.yaml"
+    yq_stub="$rollback_tmp/yq"
     printf 'old-base\n' >"$CLASH_CONFIG_BASE"
     printf 'use: 0\n' >"$CLASH_PROFILES_META"
     printf 'new-profile\n' >"$test_profile_path"
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$yq_stub"
+    chmod +x "$yq_stub"
+    BIN_YQ="$yq_stub"
 
     _error_quit() { return 97; }
     _get_path_by_id() { printf '%s\n' "$test_profile_path"; }
@@ -344,8 +348,12 @@ sub_use_missing_tmp=$(make_test_tmpdir "clash-sub-use-missing")
 
     CLASH_CONFIG_BASE="$sub_use_missing_tmp/config.yaml"
     CLASH_PROFILES_META="$sub_use_missing_tmp/profiles.yaml"
+    yq_stub="$sub_use_missing_tmp/yq"
     printf 'old-base\n' >"$CLASH_CONFIG_BASE"
     printf 'profiles: []\n' >"$CLASH_PROFILES_META"
+    printf '#!/usr/bin/env bash\nexit 0\n' >"$yq_stub"
+    chmod +x "$yq_stub"
+    BIN_YQ="$yq_stub"
 
     _error_quit() { return 97; }
     _get_path_by_id() { printf '%s\n' "$sub_use_missing_tmp/missing-profile.yaml"; }

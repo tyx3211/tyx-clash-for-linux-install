@@ -70,6 +70,7 @@ EOF
 (
     set +e
     HOME="$tilde_home"
+    unset_test_install_identity
     . "$tilde_env_repo/scripts/cmd/clashctl.sh" || exit 1
     [ "$CLASH_BASE_DIR" = "$tilde_home/clashctl" ] ||
         fail "literal ~/ in .env CLASH_BASE_DIR should expand to HOME without keeping a literal tilde: $CLASH_BASE_DIR"

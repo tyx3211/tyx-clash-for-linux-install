@@ -31,6 +31,26 @@ _init_test_tmpdir() {
 
 _init_test_tmpdir
 
+TEST_SANDBOX_INSTALL_DIR=${TEST_SANDBOX_INSTALL_DIR:-"$TEST_RUN_TMP_DIR/sandbox-install"}
+mkdir -p "$TEST_SANDBOX_INSTALL_DIR/bin" "$TEST_SANDBOX_INSTALL_DIR/config" "$TEST_SANDBOX_INSTALL_DIR/resources"
+
+# Keep sourced clashctl tests away from the developer's real install. These are
+# shell variables with export attributes removed, so child-process install tests
+# still exercise their own default/argument parsing even if the caller exported
+# a real install identity before invoking the test.
+export -n CLASH_BASE_DIR KERNEL_NAME INIT_TYPE CLASH_INSTALLED_INIT_TYPE 2>/dev/null || true
+CLASH_BASE_DIR=$TEST_SANDBOX_INSTALL_DIR
+KERNEL_NAME=mihomo
+INIT_TYPE=tmux
+CLASH_INSTALLED_INIT_TYPE=tmux
+
+unset_test_install_identity() {
+    unset CLASH_BASE_DIR
+    unset KERNEL_NAME
+    unset INIT_TYPE
+    unset CLASH_INSTALLED_INIT_TYPE
+}
+
 fail() {
     printf 'not ok - %s\n' "$1" >&2
     exit 1
