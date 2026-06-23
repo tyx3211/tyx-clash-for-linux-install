@@ -8,6 +8,9 @@ source_explicit=false
 target=
 UPDATE_REPO=${CLASHCTL_UPDATE_REPO:-tyx3211/clash-for-linux-install-multimode}
 UPDATE_REF=${CLASHCTL_UPDATE_REF:-main}
+UPDATE_GH_PROXY=${URL_GH_PROXY:-}
+UPDATE_GH_PROXY_SET=false
+[ "${URL_GH_PROXY+x}" = x ] && UPDATE_GH_PROXY_SET=true
 download_tmp=
 
 _die() {
@@ -170,6 +173,25 @@ _validate_ref() {
     esac
 }
 
+_validate_gh_proxy() {
+    local proxy=$1
+    [ -z "$proxy" ] && return 0
+
+    case "$proxy" in
+    http://* | https://*)
+        ;;
+    *)
+        _die "GitHub 下载代理前缀必须以 http:// 或 https:// 开头：$proxy"
+        ;;
+    esac
+
+    case "$proxy" in
+    *[[:space:]]* | *\'* | *\"* | *'`'* | *'$('* | *';'* | *'|'* | *'&'* | *'<'* | *'>'*)
+        _die "GitHub 下载代理前缀包含不支持的字符：$proxy"
+        ;;
+    esac
+}
+
 _archive_member_path_is_safe() {
     local member=${1#./}
 
@@ -208,7 +230,12 @@ _download_remote_source() {
     download_tmp=$(mktemp -d "$update_target/.update-source.XXXXXX")
     archive="$download_tmp/source.tar.gz"
     url="https://github.com/${UPDATE_REPO}/archive/${UPDATE_REF}.tar.gz"
-    proxy=$(_path_env_read_value "$update_target/.env" URL_GH_PROXY 2>/dev/null || true)
+    if [ "$UPDATE_GH_PROXY_SET" = true ]; then
+        proxy=$UPDATE_GH_PROXY
+    else
+        proxy=$(_path_env_read_value "$update_target/.env" URL_GH_PROXY 2>/dev/null || true)
+    fi
+    _validate_gh_proxy "$proxy"
     [ -n "$proxy" ] && url="${proxy%/}/${url}"
 
     printf '⏳ 正在下载项目源码：%s@%s\n' "$UPDATE_REPO" "$UPDATE_REF" >&2
@@ -447,15 +474,31 @@ while (($#)); do
         [ $# -gt 0 ] || _die "--ref 需要指定 branch、tag 或 commit"
         UPDATE_REF=$1
         ;;
+    --gh-proxy=*)
+        UPDATE_GH_PROXY=${1#--gh-proxy=}
+        UPDATE_GH_PROXY_SET=true
+        ;;
+    --gh-proxy)
+        shift
+        [ $# -gt 0 ] || _die "--gh-proxy 需要指定 URL，例如：https://gh-proxy.org"
+        UPDATE_GH_PROXY=$1
+        UPDATE_GH_PROXY_SET=true
+        ;;
+    --no-gh-proxy)
+        UPDATE_GH_PROXY=
+        UPDATE_GH_PROXY_SET=true
+        ;;
     -h | --help)
         cat <<EOF
 Usage:
   bash update.sh [--target <install_dir>] [--source <source_dir>]
   bash update.sh [--target <install_dir>] [--repo <owner/repo>] [--ref <branch_or_tag>]
+  bash update.sh [--target <install_dir>] [--gh-proxy <url>|--no-gh-proxy]
 
 默认从当前源码仓库刷新已安装的 clashctl 脚本和文档资产，并保留用户配置、订阅和运行状态。
 安装状态优先保存在 resources/install-state.yaml；旧 .env 如存在会继续保留用于兼容。
 如果在已安装目录中运行且未指定 --source，则默认从 GitHub 下载 tyx3211/clash-for-linux-install-multimode 的 main 分支后无损更新。
+--gh-proxy 只影响本次 update-self 下载；如需持久默认值，请在安装时使用 bash install.sh --gh-proxy <url>。
 EOF
         exit 0
         ;;

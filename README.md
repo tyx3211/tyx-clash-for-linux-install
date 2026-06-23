@@ -28,6 +28,12 @@ bash install.sh --init nohup
 sudo bash install.sh --init systemd
 ```
 
+默认安装不使用 GitHub 下载代理。如果当前网络访问 GitHub releases 不稳定，可以安装时显式指定代理前缀，后续 `clashctl update-self` 也会复用这个设置：
+
+```bash
+bash install.sh --gh-proxy https://gh-proxy.org
+```
+
 安装脚本会提示输入订阅链接。订阅链接里通常带 `?`、`&`，手工输入命令时请始终用双引号包起来。
 
 `bash install.sh` 运行在子 shell 中；安装完成后脚本会写入 shell rc 并尝试进入一个新交互 shell。若当前终端仍没有 `clashctl` 命令，执行：
@@ -154,13 +160,15 @@ cd clash-for-linux-install-multimode
 bash install.sh
 ```
 
-如需 GitHub 代理前缀，也可以使用：
+如果连 `git clone` 源码也需要 GitHub 代理前缀，可以使用：
 
 ```bash
 git clone --branch main --depth 1 https://gh-proxy.org/https://github.com/tyx3211/clash-for-linux-install-multimode.git clash-for-linux-install-multimode
 cd clash-for-linux-install-multimode
-bash install.sh
+bash install.sh --gh-proxy https://gh-proxy.org
 ```
+
+这里的代理分两层：`git clone` 前面的 `https://gh-proxy.org/` 只影响源码拉取；`bash install.sh --gh-proxy ...` 会影响安装时依赖下载，并写入安装目录 `.env`，供后续 `clashctl update-self` 下载项目源码时复用。默认不传 `--gh-proxy` 时，不使用第三方 GitHub 代理。
 
 ### 默认托管模式
 
@@ -179,6 +187,12 @@ CLASHCTL_CONFIG_GIT=1 bash install.sh
 ```
 
 该选项只会在安装目录的 `config/` 子目录执行 `git init`，不会把 `~/clashctl` 根目录变成 git 仓库，也不会自动提交。
+
+如果只想明确禁用 GitHub 下载代理，可以传：
+
+```bash
+bash install.sh --no-gh-proxy
+```
 
 安装时也可以修改默认托管模式：
 
@@ -481,6 +495,13 @@ clashctl update-self
 
 ```bash
 clashctl update-self --ref main
+```
+
+如果本次项目更新需要临时走 GitHub 下载代理，可以只影响这一次：
+
+```bash
+clashctl update-self --gh-proxy https://gh-proxy.org
+clashctl update-self --no-gh-proxy
 ```
 
 如果正在本地开发源码，或者已经手工 pull 了源码仓库，可以执行本地无损项目更新：

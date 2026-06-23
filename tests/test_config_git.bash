@@ -7,6 +7,7 @@ set -euo pipefail
 INSTALL_SH="$TEST_ROOT/install.sh"
 PREFLIGHT_SH="$TEST_ROOT/scripts/preflight.sh"
 UPDATE_SH="$TEST_ROOT/update.sh"
+ENV_FILE="$TEST_ROOT/.env"
 
 config_git_tmp=$(make_test_tmpdir "clash-config-git")
 
@@ -136,6 +137,12 @@ EOF
 assert_file_contains "$PREFLIGHT_SH" '--config-git|CLASHCTL_CONFIG_GIT' \
     "install should expose an install-time config git option and environment switch"
 
+assert_file_contains "$ENV_FILE" '^URL_GH_PROXY=$' \
+    "GitHub proxy should be disabled by default"
+
+assert_file_contains "$PREFLIGHT_SH" '--gh-proxy|URL_GH_PROXY' \
+    "install should expose an install-time GitHub proxy option and environment switch"
+
 parse_args_tmp="$config_git_tmp/parse-args"
 mkdir -p "$parse_args_tmp"
 (
@@ -153,7 +160,44 @@ mkdir -p "$parse_args_tmp"
     _parse_args --no-config-git
     [ "$CLASHCTL_CONFIG_GIT" = 0 ] ||
         fail "--no-config-git should disable config git initialization"
+
+    URL_GH_PROXY=
+    _parse_args --gh-proxy https://gh-proxy.org
+    [ "$URL_GH_PROXY" = https://gh-proxy.org ] ||
+        fail "--gh-proxy should set URL_GH_PROXY"
+
+    URL_GH_PROXY=https://gh-proxy.org
+    _parse_args --no-gh-proxy
+    [ -z "$URL_GH_PROXY" ] ||
+        fail "--no-gh-proxy should clear URL_GH_PROXY"
 )
+
+gh_proxy_env_tmp="$config_git_tmp/gh-proxy-env"
+mkdir -p "$gh_proxy_env_tmp/install" "$gh_proxy_env_tmp/install/resources" "$gh_proxy_env_tmp/install/bin"
+write_test_install_yq "$gh_proxy_env_tmp/install"
+cat >"$gh_proxy_env_tmp/install/.env" <<EOF
+KERNEL_NAME=mihomo
+CLASH_BASE_DIR=$gh_proxy_env_tmp/install
+INIT_TYPE=tmux
+URL_GH_PROXY=
+EOF
+(
+    set +e
+    . "$TEST_ROOT/scripts/cmd/clashctl.sh"
+    . "$PREFLIGHT_SH"
+
+    CLASH_BASE_DIR="$gh_proxy_env_tmp/install"
+    KERNEL_NAME=mihomo
+    INIT_TYPE=tmux
+    CLASH_INSTALL_STATE="$CLASH_BASE_DIR/resources/install-state.yaml"
+    VERSION_MIHOMO=v-test
+    VERSION_YQ=v-test
+    VERSION_SUBCONVERTER=v-test
+    URL_GH_PROXY=https://mirror.example.invalid
+    _set_envs || exit 1
+)
+grep -qx 'URL_GH_PROXY=https://mirror.example.invalid' "$gh_proxy_env_tmp/install/.env" ||
+    fail "install should persist --gh-proxy into .env for later update-self downloads"
 
 init_git_tmp="$config_git_tmp/init-git"
 mkdir -p "$init_git_tmp/install/config" "$init_git_tmp/bin"

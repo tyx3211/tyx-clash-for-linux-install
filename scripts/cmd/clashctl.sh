@@ -129,6 +129,10 @@ Project Update:
   clashctl update-self --ref vX   从指定分支或 tag 更新
   clashctl update-self --repo owner/repo
                                    从指定 GitHub 仓库更新
+  clashctl update-self --gh-proxy https://gh-proxy.org
+                                   本次更新使用 GitHub 下载代理
+  clashctl update-self --no-gh-proxy
+                                   本次更新直连 GitHub
   clashctl update-self --source <dir>
                                    从本地源码目录更新
 

@@ -231,19 +231,42 @@ Options:
   --init=<mode>          等价写法
   --config-git           安装时在 <安装目录>/config 下执行 git init
   --no-config-git        即使 CLASHCTL_CONFIG_GIT=1 也不初始化配置仓库
+  --gh-proxy <url>       设置 GitHub 下载代理前缀，例如 https://gh-proxy.org
+  --gh-proxy=<url>       等价写法
+  --no-gh-proxy          不使用 GitHub 下载代理；这是默认行为
   -h, --help             显示帮助信息
 
 Environment:
   CLASHCTL_CONFIG_GIT=1  等价于 --config-git
+  URL_GH_PROXY=<url>     等价于 --gh-proxy <url>
   CLASHCTL_NO_RC=1       不写入 shell rc
   CLASHCTL_NO_QUIT=1     跳过安装末尾的订阅导入交互
 
 Examples:
   bash install.sh
   bash install.sh --init nohup
+  bash install.sh --gh-proxy https://gh-proxy.org
   CLASHCTL_CONFIG_GIT=1 bash install.sh
   sudo bash install.sh --init systemd
 EOF
+}
+
+_validate_gh_proxy() {
+    [ -z "${URL_GH_PROXY:-}" ] && return 0
+
+    case "$URL_GH_PROXY" in
+    http://* | https://*)
+        ;;
+    *)
+        _error_quit "GitHub 下载代理前缀必须以 http:// 或 https:// 开头：$URL_GH_PROXY"
+        ;;
+    esac
+
+    case "$URL_GH_PROXY" in
+    *[[:space:]]* | *\'* | *\"* | *'`'* | *'$('* | *';'* | *'|'* | *'&'* | *'<'* | *'>'*)
+        _error_quit "GitHub 下载代理前缀包含不支持的字符：$URL_GH_PROXY"
+        ;;
+    esac
 }
 
 _parse_args() {
@@ -277,9 +300,21 @@ _parse_args() {
         --config-git=0 | --config-git=false | --config-git=no | --config-git=off | --no-config-git)
             CLASHCTL_CONFIG_GIT=0
             ;;
+        --gh-proxy=*)
+            URL_GH_PROXY=${arg#--gh-proxy=}
+            ;;
+        --gh-proxy)
+            shift
+            [ "$#" -gt 0 ] || _error_quit "--gh-proxy 需要指定 URL，例如：https://gh-proxy.org"
+            URL_GH_PROXY=$1
+            ;;
+        --no-gh-proxy)
+            URL_GH_PROXY=
+            ;;
         esac
         shift
     done
+    _validate_gh_proxy
     _refresh_install_paths
 }
 
@@ -517,6 +552,7 @@ _set_envs() {
     _set_env KERNEL_NAME "$KERNEL_NAME"
     _set_env CLASH_BASE_DIR "$CLASH_BASE_DIR"
     _set_env VERSION_MIHOMO "$VERSION_MIHOMO"
+    _set_env URL_GH_PROXY "${URL_GH_PROXY:-}"
 }
 
 _get_random_val() {

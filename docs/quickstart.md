@@ -35,6 +35,14 @@ sudo bash install.sh --init systemd
 
 安装脚本会下载依赖、创建默认安装目录 `~/clashctl`，并提示输入订阅链接。
 
+默认安装不使用 GitHub 下载代理。如果当前机器访问 GitHub releases 不稳定，可以在安装时显式指定代理前缀：
+
+```bash
+bash install.sh --gh-proxy https://gh-proxy.org
+```
+
+这个设置会写入安装目录 `.env`，后续 `clashctl update-self` 也会复用。它只影响 GitHub 下载 URL，不会开启当前终端代理变量。
+
 如果希望从第一天开始就把个人配置放进独立 git 仓库，可以安装时加上：
 
 ```bash
@@ -190,6 +198,13 @@ clashctl update-self
 
 ```bash
 clashctl update-self --ref main
+```
+
+临时使用或禁用 GitHub 下载代理：
+
+```bash
+clashctl update-self --gh-proxy https://gh-proxy.org
+clashctl update-self --no-gh-proxy
 ```
 
 使用本地源码目录刷新安装目录：

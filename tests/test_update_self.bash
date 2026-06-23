@@ -422,6 +422,8 @@ bash "$explicit_install_dir/update.sh" --target "$explicit_install_dir" --source
     fail "installed update.sh should accept an explicit source directory"
 grep -q 'explicit-source-marker' "$explicit_install_dir/scripts/cmd/clashctl.sh" ||
     fail "update --source should refresh files from the explicit source directory"
+URL_GH_PROXY=not-a-url bash "$explicit_install_dir/update.sh" --target "$explicit_install_dir" --source "$explicit_source_dir" >/dev/null 2>&1 ||
+    fail "update --source should not validate unused GitHub proxy environment values"
 
 explicit_home_source_home="$update_tmp/explicit-home-source-home"
 explicit_home_source_dir="$explicit_home_source_home/source"
@@ -632,6 +634,20 @@ grep -q 'release-test.tar.gz' "$remote_seen_url" ||
 PATH="$remote_fake_bin:$PATH" \
     CURL_SEEN_URL="$remote_seen_url" \
     REMOTE_ARCHIVE="$remote_archive" \
+    bash "$remote_install_dir/update.sh" --target "$remote_install_dir" --gh-proxy https://mirror.example.invalid --ref proxy-test >/dev/null 2>&1 ||
+    fail "installed update.sh should accept --gh-proxy for one-shot remote updates"
+grep -qx 'https://mirror.example.invalid/https://github.com/tyx3211/clash-for-linux-install-multimode/archive/proxy-test.tar.gz' "$remote_seen_url" ||
+    fail "remote update should let --gh-proxy override URL_GH_PROXY from .env"
+PATH="$remote_fake_bin:$PATH" \
+    CURL_SEEN_URL="$remote_seen_url" \
+    REMOTE_ARCHIVE="$remote_archive" \
+    bash "$remote_install_dir/update.sh" --target "$remote_install_dir" --no-gh-proxy --ref direct-test >/dev/null 2>&1 ||
+    fail "installed update.sh should accept --no-gh-proxy for one-shot remote updates"
+grep -qx 'https://github.com/tyx3211/clash-for-linux-install-multimode/archive/direct-test.tar.gz' "$remote_seen_url" ||
+    fail "remote update should let --no-gh-proxy bypass URL_GH_PROXY from .env"
+PATH="$remote_fake_bin:$PATH" \
+    CURL_SEEN_URL="$remote_seen_url" \
+    REMOTE_ARCHIVE="$remote_archive" \
     bash "$remote_install_dir/update.sh" --target "$remote_install_dir" --repo example-owner/example-repo --ref repo-test >/dev/null 2>&1 ||
     fail "installed update.sh should accept --repo for remote updates"
 grep -qx 'https://gh-proxy.org/https://github.com/example-owner/example-repo/archive/repo-test.tar.gz' "$remote_seen_url" ||
@@ -650,9 +666,9 @@ printf 'clash-for-linux-install-multimode\n' >"$wrapper_install_dir/.clashctl-in
 PATH="$remote_fake_bin:$PATH" \
     CURL_SEEN_URL="$remote_seen_url" \
     REMOTE_ARCHIVE="$remote_archive" \
-    bash -c '. "$1/scripts/cmd/clashctl.sh"; clashctl update-self --repo wrapper-owner/wrapper-repo --ref wrapper-test' _ "$wrapper_install_dir" >/dev/null 2>&1 ||
-    fail "clashctl update-self wrapper should forward --repo and --ref to update.sh"
-grep -qx 'https://github.com/wrapper-owner/wrapper-repo/archive/wrapper-test.tar.gz' "$remote_seen_url" ||
+    bash -c '. "$1/scripts/cmd/clashctl.sh"; clashctl update-self --repo wrapper-owner/wrapper-repo --ref wrapper-test --gh-proxy https://wrapper-proxy.example.invalid' _ "$wrapper_install_dir" >/dev/null 2>&1 ||
+    fail "clashctl update-self wrapper should forward --repo, --ref and --gh-proxy to update.sh"
+grep -qx 'https://wrapper-proxy.example.invalid/https://github.com/wrapper-owner/wrapper-repo/archive/wrapper-test.tar.gz' "$remote_seen_url" ||
     fail "clashctl update-self wrapper should preserve remote update arguments"
 
 pass "update self checks"
