@@ -122,6 +122,12 @@ clashctl update-self
 - [手工端到端检查清单](docs/manual-e2e-checklist.md)
 - [开发测试说明](docs/development-testing.md)
 
+## 📜 许可证与致谢
+
+本项目使用 MIT License。由于本项目基于 `nelvko/clash-for-linux-install` 改造，`LICENSE` 保留上游原始版权声明，并追加本项目后续改造的版权声明。
+
+本仓库中的安装脚本和管理脚本按 MIT License 分发；安装过程中下载或使用的 `mihomo`、`yq`、`subconverter` 等组件，分别遵循各自上游项目的许可证。
+
 ## ✅ no-sudo 使用补充
 
 - 本项目以 `INIT_TYPE=tmux` 为默认运行托管模式，请先确保系统已安装 `tmux`。

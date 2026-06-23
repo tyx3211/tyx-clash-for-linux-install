@@ -4,6 +4,8 @@
 
 本项目基于 `nelvko/clash-for-linux-install` 改造，感谢上游作者提供的原始安装脚本和长期维护基础。当前仓库作为独立的多模式托管版本维护，重点面向 no-sudo `tmux` / `nohup` 用户态链路，并保留可选 sudo `systemd` / Tun 路线。
 
+本项目继续使用 MIT License。`LICENSE` 保留上游原始版权声明，并追加本项目后续改造的版权声明；安装过程中下载或使用的 `mihomo`、`yq`、`subconverter` 等组件，分别遵循各自上游项目的许可证。
+
 ## 当前维护线
 
 当前维护入口应使用 `main`：
