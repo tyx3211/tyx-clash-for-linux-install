@@ -200,6 +200,9 @@ bad_render_tmp=$(make_test_tmpdir "clash-bad-render")
 assert_file_contains "$ENV_FILE" 'SUBCONVERTER_REPO=' \
     "subconverter source should be configurable like upstream"
 
+assert_file_contains "$ENV_FILE" '^SUBCONVERTER_REPO=tindy2013/subconverter$' \
+    "default subconverter source should point at the official release repository"
+
 assert_file_contains "$ENV_FILE" 'CLASHCTL_DOWNLOAD_TIMEOUT=' \
     "dependency download timeout should be configurable like upstream"
 

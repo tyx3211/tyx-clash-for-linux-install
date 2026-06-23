@@ -42,7 +42,7 @@ CLASH_CONFIG_URL=""
 - `INIT_TYPE`：默认运行托管模式，可选 `tmux`、`nohup`、`systemd`。
 - `CLASH_CONFIG_URL`：订阅链接。可以留空，安装末尾会交互输入。
 - `URL_GH_PROXY`：GitHub 下载代理前缀。
-- `SUBCONVERTER_REPO`：subconverter 下载来源。
+- `SUBCONVERTER_REPO`：subconverter 下载来源，默认 `tindy2013/subconverter`。
 - `CLASHCTL_DOWNLOAD_TIMEOUT`：依赖下载超时。
 - `CLASHCTL_SUB_TIMEOUT`：订阅下载超时。
 
