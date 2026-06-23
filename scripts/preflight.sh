@@ -176,20 +176,34 @@ _valid_required() {
     for cmd in "${required_cmds[@]}"; do
         command -v "$cmd" >&/dev/null || missing+=("$cmd")
     done
-    [ "${#missing[@]}" -gt 0 ] && _error_quit "请先安装以下命令：${missing[*]}"
+    if [ "${#missing[@]}" -gt 0 ]; then
+        _error_quit "请先安装以下命令：${missing[*]}"
+        return $?
+    fi
+    return 0
 }
 
 _valid() {
-    _validate_install_path
-    _valid_required
+    _validate_install_path || return 1
+    _valid_required || return 1
 
-    [ -d "$CLASH_BASE_DIR" ] && _error_quit "请先执行卸载脚本,以清除安装路径：$CLASH_BASE_DIR"
+    if [ -d "$CLASH_BASE_DIR" ]; then
+        _error_quit "请先执行卸载脚本,以清除安装路径：$CLASH_BASE_DIR"
+        return $?
+    fi
 
     local msg="${CLASH_BASE_DIR}：当前路径不可用，请在 .env 中更换安装路径。"
     mkdir -p "$CLASH_BASE_DIR" || _error_quit "$msg"
-    _is_regular_sudo && [[ $CLASH_BASE_DIR == /root* ]] && _error_quit "$msg"
+    if _is_regular_sudo && [[ $CLASH_BASE_DIR == /root* ]]; then
+        _error_quit "$msg"
+        return $?
+    fi
 
-    [ -z "$ZSH_VERSION" ] && [ -z "$BASH_VERSION" ] && _error_quit "仅支持：bash、zsh 执行"
+    if [ -z "${ZSH_VERSION:-}" ] && [ -z "${BASH_VERSION:-}" ]; then
+        _error_quit "仅支持：bash、zsh 执行"
+        return $?
+    fi
+    return 0
 }
 
 _print_install_help() {
@@ -445,7 +459,11 @@ _valid_zip() {
         gzip -tq "$zip" || unzip -tqq "$zip" || fail_zips+=("$zip")
     done
 
-    ((${#fail_zips[@]})) && _error_quit "文件验证失败：${fail_zips[*]} 请删除后重试，或自行下载对应版本至 ${ZIP_BASE_DIR} 目录"
+    if ((${#fail_zips[@]})); then
+        _error_quit "文件验证失败：${fail_zips[*]} 请删除后重试，或自行下载对应版本至 ${ZIP_BASE_DIR} 目录"
+        return $?
+    fi
+    return 0
 }
 _unzip_zip() {
     _valid_zip "$ZIP_KERNEL" "$ZIP_YQ" "$ZIP_SUBCONVERTER" "$ZIP_UI"

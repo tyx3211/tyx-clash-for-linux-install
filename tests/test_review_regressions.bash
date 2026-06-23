@@ -212,6 +212,74 @@ assert_file_contains "$ENV_FILE" 'CLASHCTL_SUB_TIMEOUT=' \
 assert_file_contains "$ENV_FILE" 'VERSION_MIHOMO.*VERSION_YQ.*VERSION_SUBCONVERTER|留空时安装脚本会通过 GitHub releases/latest 自动解析最新 tag' \
     "dependency version comments should document latest-tag resolution"
 
+valid_zip_tmp=$(make_test_tmpdir "clash-valid-zip")
+(
+    set +e
+    . "$CLASHCTL_SH"
+    . "$PREFLIGHT_SH"
+
+    printf 'ok\n' | gzip >"$valid_zip_tmp/ok.gz"
+    _valid_zip "$valid_zip_tmp/ok.gz"
+    status=$?
+    [ "$status" -eq 0 ] ||
+        fail "_valid_zip should return success when every archive validates"
+)
+
+valid_install_tmp=$(make_test_tmpdir "clash-valid-install")
+(
+    set +e
+    . "$CLASHCTL_SH"
+    . "$PREFLIGHT_SH"
+
+    INIT_TYPE=nohup
+    CLASH_BASE_DIR="$valid_install_tmp/install"
+    HOME="$valid_install_tmp/home"
+    mkdir -p "$HOME"
+    _refresh_install_paths
+
+    _valid_required
+    status=$?
+    [ "$status" -eq 0 ] ||
+        fail "_valid_required should return success when required commands exist"
+
+    _valid
+    status=$?
+    [ "$status" -eq 0 ] ||
+        fail "_valid should return success for a safe fresh install directory"
+)
+
+subconverter_port_tmp=$(make_test_tmpdir "clash-subconverter-port")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    BIN_SUBCONVERTER_CONFIG="$subconverter_port_tmp/pref.yml"
+    BIN_YQ="$subconverter_port_tmp/yq"
+    BIN_SUBCONVERTER_PORT=
+    printf 'server:\n  port: 25500\n' >"$BIN_SUBCONVERTER_CONFIG"
+    cat >"$BIN_YQ" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-}" = "-i" ]; then
+    exit 0
+fi
+if [ "${1:-}" = ".server.port" ]; then
+    printf '25500\n'
+    exit 0
+fi
+exit 7
+EOF
+    chmod +x "$BIN_YQ"
+
+    "$BIN_YQ" -i '.server.port = 25500' "$BIN_SUBCONVERTER_CONFIG" >/dev/null 2>&1 || true
+    _is_port_used() { return 1; }
+    _detect_subconverter_port
+    status=$?
+    [ "$status" -eq 0 ] ||
+        fail "_detect_subconverter_port should return success when the configured port is free"
+    [ "$BIN_SUBCONVERTER_PORT" = 25500 ] ||
+        fail "_detect_subconverter_port should keep the configured port when it is free"
+)
+
 tmp=$(make_test_tmpdir "clash-sub-fail")
 (
     set +e
@@ -276,13 +344,74 @@ EOF
 
     _sub_add -u "https://example.invalid/sub-a"
     _sub_add --use "https://example.invalid/sub-b"
+    _sub_add "https://example.invalid/sub-c"
+    plain_add_status=$?
+    [ "$plain_add_status" -eq 0 ] ||
+        fail "clashsub add without --use should return success after adding the subscription"
 )
 grep -qx 'https://example.invalid/sub-a' "$sub_add_use_tmp/downloaded-url" ||
     fail "clashsub add -u should treat the following argument as the subscription URL"
 grep -qx 'https://example.invalid/sub-b' "$sub_add_use_tmp/downloaded-url" ||
     fail "clashsub add --use should treat the following argument as the subscription URL"
+grep -qx 'https://example.invalid/sub-c' "$sub_add_use_tmp/downloaded-url" ||
+    fail "clashsub add without --use should still add the subscription"
 [ "$(grep -c '^7$' "$sub_add_use_tmp/used-id")" -eq 2 ] ||
     fail "clashsub add -u/--use should immediately activate the added subscription"
+
+install_subscribe_flow_tmp=$(make_test_tmpdir "clash-install-subscribe-flow")
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    CLASH_RESOURCES_DIR="$install_subscribe_flow_tmp/resources"
+    CLASH_PROFILES_DIR="$install_subscribe_flow_tmp/profiles"
+    CLASH_PROFILES_META="$install_subscribe_flow_tmp/profiles.yaml"
+    CLASH_PROFILES_LOG="$install_subscribe_flow_tmp/profiles.log"
+    CLASH_CONFIG_URL="https://example.invalid/install-sub"
+    BIN_YQ="$install_subscribe_flow_tmp/yq"
+    mkdir -p "$CLASH_RESOURCES_DIR" "$CLASH_PROFILES_DIR"
+    printf 'profiles: []\n' >"$CLASH_PROFILES_META"
+    cat >"$BIN_YQ" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+-i)
+    exit 0
+    ;;
+*)
+    printf '1\n'
+    ;;
+esac
+EOF
+    chmod +x "$BIN_YQ"
+
+    _error_quit() { return 97; }
+    _get_id_by_url() { return 1; }
+    _make_config_temp() {
+        printf '%s\n' "$install_subscribe_flow_tmp/temp.yaml"
+    }
+    _download_config() {
+        printf 'profile\n' >"$1"
+    }
+    _valid_config() { return 0; }
+    _logging_sub() { :; }
+    _okcat() { :; }
+    _sub_use() {
+        printf '%s\n' "$1" >"$install_subscribe_flow_tmp/used-id"
+        return 0
+    }
+
+    if [ -n "$CLASH_CONFIG_URL" ]; then
+        clashsub add "$CLASH_CONFIG_URL" || exit $?
+    else
+        clashsub add || exit $?
+    fi
+    printf 'continued\n' >"$install_subscribe_flow_tmp/continued"
+    clashsub use 1 || exit $?
+)
+[ -f "$install_subscribe_flow_tmp/continued" ] ||
+    fail "install subscribe flow should continue after clashsub add succeeds without --use"
+grep -qx '1' "$install_subscribe_flow_tmp/used-id" ||
+    fail "install subscribe flow should activate subscription after adding it"
 
 sub_delete_tmp=$(make_test_tmpdir "clash-sub-delete")
 (

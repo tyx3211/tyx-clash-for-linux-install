@@ -13,10 +13,24 @@
 
 ## 第一次安装
 
+先拉取安装源码：
+
 ```bash
 git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git
 cd tyx-clash-for-linux-install
+```
+
+然后按使用场景选择安装命令：
+
+```bash
+# 推荐：普通用户 / 共享机 / no-sudo，默认用 tmux 托管
 bash install.sh
+
+# 没有 tmux 或只想要简单后台进程，用 nohup 托管
+bash install.sh --init nohup
+
+# 需要 Tun：用 sudo 注册 systemd 服务
+sudo bash install.sh --init systemd
 ```
 
 安装脚本会下载依赖、创建默认安装目录 `~/clashctl`，并提示输入订阅链接。
@@ -37,7 +51,7 @@ CLASH_CONFIG_URL="https://example.com/sub?clash=3&extend=1"
 
 这里的 `.env` 只用于安装前默认值和旧版本兼容。安装完成后，本机安装状态以 `~/clashctl/resources/install-state.yaml` 为主；长期维护和可选 git 管理的代理偏好在 `~/clashctl/config`。
 
-安装结束后，脚本会尝试让当前终端立即拥有 `clashctl`、`clashon`、`clashoff` 等命令。如果当前终端没有这些命令，执行：
+`bash install.sh` 运行在子 shell 中，不能直接修改父 shell。安装结束后，脚本会写入 shell rc，并尝试进入一个新交互 shell，让 `clashctl`、`clashon`、`clashoff` 等命令立即可用。如果当前终端没有这些命令，执行：
 
 ```bash
 . "$HOME/clashctl/scripts/cmd/clashctl.sh"
@@ -63,6 +77,18 @@ bash install.sh --init nohup
 ```
 
 安装完成后，后续也可以通过 `clashrestart --mode nohup` 切到 nohup。
+
+如果安装时使用了 `sudo bash install.sh --init systemd`，可以切到 systemd 托管：
+
+```bash
+clashrestart --mode systemd
+```
+
+需要 Tun 时，再执行：
+
+```bash
+clashtun on
+```
 
 ## 让当前终端走代理
 

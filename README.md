@@ -6,17 +6,29 @@
 
 ### 1. 第一次安装
 
-共享机、没有 sudo、想用 `tmux` 托管内核时，直接执行：
+先拉取安装源码：
 
 ```bash
 git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git
 cd tyx-clash-for-linux-install
+```
+
+然后按机器权限和托管方式三选一：
+
+```bash
+# 推荐：普通用户 / 共享机 / no-sudo，默认用 tmux 托管
 bash install.sh
+
+# 没有 tmux 或只想要简单后台进程，用 nohup 托管
+bash install.sh --init nohup
+
+# 需要 Tun：用 sudo 注册 systemd 服务
+sudo bash install.sh --init systemd
 ```
 
 安装脚本会提示输入订阅链接。订阅链接里通常带 `?`、`&`，手工输入命令时请始终用双引号包起来。
 
-如果安装完成后当前终端还没有 `clashctl` 命令，执行：
+`bash install.sh` 运行在子 shell 中；安装完成后脚本会写入 shell rc 并尝试进入一个新交互 shell。若当前终端仍没有 `clashctl` 命令，执行：
 
 ```bash
 . "$HOME/clashctl/scripts/cmd/clashctl.sh"
@@ -33,6 +45,7 @@ clashproxy on
 - `clashon` 启动 mihomo / clash 内核，默认使用 `tmux`。
 - `clashstatus` 查看当前内核是否运行。
 - `clashproxy on` 只给当前终端写入代理环境变量，不改系统代理。
+- `systemd` 路线安装后，先执行 `clashrestart --mode systemd` 切到 systemd 托管；Tun 再执行 `clashtun on`。
 
 需要 Web 面板地址：
 
@@ -77,7 +90,7 @@ clashctl update-self
 
 - 支持安装和托管 `mihomo` / `clash` 代理内核。
 - 面向 no-sudo 环境，默认使用 `tmux` 管理内核进程，不依赖 `systemd`。
-- 支持运行时选择托管模式：`clashon --mode tmux|nohup|systemd`。其中 `systemd` 需要 root 或 sudo，并支持 Tun。
+- 支持运行时选择托管模式：`clashon --mode tmux|nohup|systemd`。其中 `systemd` 需要先通过 `sudo bash install.sh --init systemd` 为当前安装注册系统服务，并支持 Tun。
 - 当前维护入口统一为 `main`。历史 `nosudo-tmux` 分支已经退役；新的 no-sudo / tmux 能力直接在 `main` 维护。
 - 默认代理端口为 `port: 7890`、`socks-port: 7891`；新安装默认控制端口为 `127.0.0.1:9090`。
 - 代理内核配置与 `clashctl` 自身行为配置分离：
@@ -182,7 +195,7 @@ sudo bash install.sh --init=systemd
 - `tmux`：默认托管模式，适合共享机普通用户，便于查看会话和日志。
 - `nohup`：普通用户备用模式，不依赖 `tmux`，但进程托管能力较弱。
 - `systemd`：需要 root 或 sudo，会注册系统服务，支持 `clashtun on/off`。运行时管理服务要求 root 或免密 sudo。
-- 安装后也可以用 `clashon --mode ...` / `clashrestart --mode ...` 在运行时选择本次托管模式。
+- 安装后也可以用 `clashon --mode ...` / `clashrestart --mode ...` 在运行时选择本次托管模式；`systemd` 只有在当前安装已经 sudo 注册服务后才可用。
 - `.env` 现在只作为安装前默认值和旧版本兼容入口。安装完成后，本机安装状态以 `resources/install-state.yaml` 为主；普通使用者通常不需要修改它。
 - `.env` 里的 `VERSION_MIHOMO`、`VERSION_YQ`、`VERSION_SUBCONVERTER` 默认固定版本；如果留空，安装脚本会通过 GitHub `releases/latest` 自动解析最新 tag。共享机或网络受限环境建议固定版本，便于复现和排错。
 - `.env` 里的 `CLASH_CONFIG_URL` 默认留空，不再内置任何真实订阅链接。

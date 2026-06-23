@@ -632,14 +632,16 @@ _download_convert_config() {
 }
 
 _detect_subconverter_port() {
-    BIN_SUBCONVERTER_PORT=$("$BIN_YQ" '.server.port' "$BIN_SUBCONVERTER_CONFIG")
-    _is_port_used "$BIN_SUBCONVERTER_PORT" && {
+    BIN_SUBCONVERTER_PORT=$("$BIN_YQ" '.server.port' "$BIN_SUBCONVERTER_CONFIG") || return 1
+    if _is_port_used "$BIN_SUBCONVERTER_PORT"; then
         local newPort
         newPort=$(_get_random_port) || return 1
         _failcat '🎯' "端口冲突：[subconverter] ${BIN_SUBCONVERTER_PORT} 🎲 随机分配：$newPort"
         BIN_SUBCONVERTER_PORT=$newPort
         "$BIN_YQ" -i ".server.port = $newPort" "$BIN_SUBCONVERTER_CONFIG" 2>/dev/null
-    }
+        return $?
+    fi
+    return 0
 }
 
 _start_convert() {
