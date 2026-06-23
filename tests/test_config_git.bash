@@ -278,7 +278,7 @@ update_target="$config_git_tmp/update-target"
 cp -a "$TEST_ROOT/." "$update_source"
 mkdir -p "$update_target/resources" "$update_target/scripts/cmd" "$update_target/config/.git"
 write_test_install_yq "$update_target"
-printf 'tyx-clash-for-linux-install\n' >"$update_target/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$update_target/.clashctl-install-root"
 cat >"$update_target/.env" <<EOF
 KERNEL_NAME=mihomo
 CLASH_BASE_DIR=$update_target

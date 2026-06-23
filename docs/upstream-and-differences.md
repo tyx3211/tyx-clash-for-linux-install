@@ -1,13 +1,15 @@
-# Fork（分叉）差异与分支策略
+# 上游致谢与项目差异
 
-本文说明 `tyx3211/tyx-clash-for-linux-install` 相对 upstream（上游）`nelvko/clash-for-linux-install` 的刻意调整，以及当前推荐的分支使用方式。
+本文说明 `tyx3211/clash-for-linux-install-multimode` 相对上游项目 `nelvko/clash-for-linux-install` 的刻意调整，以及当前推荐的分支使用方式。
+
+本项目基于 `nelvko/clash-for-linux-install` 改造，感谢上游作者提供的原始安装脚本和长期维护基础。当前仓库作为独立的多模式托管版本维护，重点面向 no-sudo `tmux` / `nohup` 用户态链路，并保留可选 sudo `systemd` / Tun 路线。
 
 ## 当前维护线
 
 当前维护入口应使用 `main`：
 
 ```bash
-git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git clash-for-linux-install
+git clone --branch main --depth 1 https://github.com/tyx3211/clash-for-linux-install-multimode.git clash-for-linux-install-multimode
 ```
 
 历史 `nosudo-tmux` 分支已经退役。早期共享机用户态实现已经合入 `main`，并和上游同步机制、systemd sudo 模式、Tun 支持、事务回滚和安全修复一起维护。新安装、更新和问题修复都不再以 `nosudo-tmux` 作为入口。
@@ -23,9 +25,9 @@ GitHub 远程分支策略：
 - 旧 `nosudo-tmux` 远程分支不再保留为发布入口，避免新用户误装旧实现。
 - 旧 `master` 若仍存在，只能视为迁移前遗留分支，不代表当前文档描述的功能面。
 
-## 与 upstream 的关系
+## 与上游项目的关系
 
-当前 fork 保留 upstream 的核心目标：下载内核、合并配置、管理订阅、启动代理、提供 shell CLI。
+本项目保留上游项目的核心目标：下载内核、合并配置、管理订阅、启动代理、提供 shell CLI。
 
 同步上游时，我们优先吸收这些机制：
 
@@ -35,11 +37,11 @@ GitHub 远程分支策略：
 - `clashctl` 子命令拆分、帮助输出、配置合并和安全校验的改进。
 - systemd 服务只授予网络相关能力，而不是无差别扩大权限。
 
-## Fork（分叉）刻意保留的差异
+## 本项目刻意保留的差异
 
 ### 默认用户态启动
 
-upstream 更偏向系统服务式安装；当前 fork 默认走 `tmux`：
+上游项目更偏向系统服务式安装；本项目默认走 `tmux`：
 
 ```bash
 bash install.sh
@@ -49,7 +51,7 @@ bash install.sh
 
 ### 多运行托管模式
 
-当前 fork 支持三种运行托管模式：
+本项目支持三种运行托管模式：
 
 - `tmux`：默认模式，普通用户可用，可通过 tmux 会话观察进程。
 - `nohup`：普通用户备用模式，不依赖 tmux，但可观测性弱。
@@ -73,7 +75,7 @@ clashrestart --mode systemd
 
 ### Tun 只在 systemd sudo 模式开放
 
-Tun 需要网络能力。当前 fork 不在 `tmux` / `nohup` 模式里绕过权限限制，也不尝试通过 `systemd --user` 获取能力。
+Tun 需要网络能力。本项目不在 `tmux` / `nohup` 模式里绕过权限限制，也不尝试通过 `systemd --user` 获取能力。
 
 ```bash
 sudo bash install.sh --init systemd
@@ -87,7 +89,7 @@ clashtun on
 
 ### Sidecar 配置分离
 
-当前 fork 把代理内核运行配置和 `clashctl` 自身行为配置分开：
+本项目把代理内核运行配置和 `clashctl` 自身行为配置分开：
 
 - `config/mixin.yaml`：参与 mihomo / clash 运行时配置合并。
 - `config/clashctl.yaml`：只描述 `clashctl` 自身行为，例如新 shell 是否自动写入代理变量。
@@ -112,7 +114,7 @@ clashproxy mode silent
 
 ### 订阅和配置变更尽量事务化
 
-当前 fork 对以下操作补了失败回滚：
+本项目对以下操作补了失败回滚：
 
 - `clashsub use <id>`：切换订阅后如果运行时合并或重启失败，恢复旧 `config.yaml`。
 - `clashsub update [id]`：当前订阅更新后如果重新应用失败，恢复旧 profile 和 base。
@@ -138,6 +140,6 @@ clashproxy mode silent
 
 ## 后续重写方向
 
-Shell 版本仍是第一版跟进版本。Bun + TypeScript 或 Rust / Go 重写可以降低字符串拼接、全局变量、隐式返回码、trap 和 quoting 带来的风险，但短期内 shell 版本更容易跟进 upstream，也更容易被现有用户直接审查和部署。
+Shell 版本仍是第一版跟进版本。Bun + TypeScript 或 Rust / Go 重写可以降低字符串拼接、全局变量、隐式返回码、trap 和 quoting 带来的风险，但短期内 shell 版本更容易跟进上游机制，也更容易被现有用户直接审查和部署。
 
 实验路线应放在独立分支，例如 `experiment-bun-ts`，不要阻塞当前 shell 主线。生产使用、共享机部署和文档示例都以 `main` 为准。

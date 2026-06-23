@@ -6,7 +6,7 @@ THIS_UPDATE_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 1
 SOURCE_DIR=
 source_explicit=false
 target=
-UPDATE_REPO=${CLASHCTL_UPDATE_REPO:-tyx3211/tyx-clash-for-linux-install}
+UPDATE_REPO=${CLASHCTL_UPDATE_REPO:-tyx3211/clash-for-linux-install-multimode}
 UPDATE_REF=${CLASHCTL_UPDATE_REF:-main}
 download_tmp=
 
@@ -128,7 +128,8 @@ _canonical_dir() {
 _is_install_root() {
     local dir=$1 marker
     marker="$dir/.clashctl-install-root"
-    [ ! -L "$marker" ] && [ -f "$marker" ] && grep -qx 'tyx-clash-for-linux-install' "$marker"
+    [ ! -L "$marker" ] && [ -f "$marker" ] &&
+        grep -Eqx '(clash-for-linux-install-multimode|tyx-clash-for-linux-install)' "$marker"
 }
 
 _validate_target_path() {
@@ -281,7 +282,7 @@ _validate_source_tree() {
     )
 
     [ -f "$source/update.sh" ] && [ -d "$source/scripts/cmd" ] && [ -f "$source/scripts/lib/install-state.sh" ] ||
-        _die "源码目录不像 tyx-clash-for-linux-install 仓库：$source"
+        _die "源码目录不像 clash-for-linux-install-multimode 仓库：$source"
 
     for required_file in "${required_files[@]}"; do
         [ -f "$source/$required_file" ] ||
@@ -454,7 +455,7 @@ Usage:
 
 默认从当前源码仓库刷新已安装的 clashctl 脚本和文档资产，并保留用户配置、订阅和运行状态。
 安装状态优先保存在 resources/install-state.yaml；旧 .env 如存在会继续保留用于兼容。
-如果在已安装目录中运行且未指定 --source，则默认从 GitHub 下载 tyx3211/tyx-clash-for-linux-install 的 main 分支后无损更新。
+如果在已安装目录中运行且未指定 --source，则默认从 GitHub 下载 tyx3211/clash-for-linux-install-multimode 的 main 分支后无损更新。
 EOF
         exit 0
         ;;
@@ -497,7 +498,7 @@ marker="$target/.clashctl-install-root"
 legacy=false
 if [ -L "$marker" ]; then
     _die "拒绝使用符号链接安装标记：$marker"
-elif [ -f "$marker" ] && grep -qx 'tyx-clash-for-linux-install' "$marker"; then
+elif [ -f "$marker" ] && grep -Eqx '(clash-for-linux-install-multimode|tyx-clash-for-linux-install)' "$marker"; then
     :
 elif [ -f "$target/scripts/cmd/clashctl.sh" ] &&
     { [ -f "$target/resources/mixin.yaml" ] || [ -f "$target/config/mixin.yaml" ]; }; then
@@ -561,7 +562,7 @@ for path in "${obsolete_paths[@]}"; do
     /usr/bin/rm -rf "$target/$path"
 done
 
-printf '%s\n' 'tyx-clash-for-linux-install' >"$marker"
+printf '%s\n' 'clash-for-linux-install-multimode' >"$marker"
 
 env_path="$target/.env"
 if [ -f "$env_path" ]; then

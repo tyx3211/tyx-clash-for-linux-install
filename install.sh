@@ -67,7 +67,7 @@ _okcat "安装内核：$KERNEL_NAME by ${INIT_TYPE}"
 _okcat '📦' "安装路径：$CLASH_BASE_DIR"
 
 _copy_install_payload || _error_quit "安装文件复制失败"
-printf '%s\n' 'tyx-clash-for-linux-install' >"$INSTALL_MARKER"
+printf '%s\n' 'clash-for-linux-install-multimode' >"$INSTALL_MARKER"
 touch "$CLASH_CONFIG_BASE"
 _set_envs
 _init_config_git

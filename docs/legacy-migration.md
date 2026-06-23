@@ -8,7 +8,7 @@
 
 - 安装目录来自旧 `nosudo-tmux` 分支。
 - 安装目录来自旧 `master` 分支。
-- 安装目录对应 [`legacy-nosudo-tmux`](https://github.com/tyx3211/tyx-clash-for-linux-install/tree/legacy-nosudo-tmux) 这个 tag 及以前的版本。
+- 安装目录对应 [`legacy-nosudo-tmux`](https://github.com/tyx3211/clash-for-linux-install-multimode/tree/legacy-nosudo-tmux) 这个 tag 及以前的版本。
 
 如果只看本地安装目录，符合下面任意一种情况，也按旧版处理：
 
@@ -24,8 +24,8 @@
 从新的源码目录执行迁移：
 
 ```bash
-git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git
-cd tyx-clash-for-linux-install
+git clone --branch main --depth 1 https://github.com/tyx3211/clash-for-linux-install-multimode.git
+cd clash-for-linux-install-multimode
 bash migrate.sh --target "$HOME/clashctl"
 source "$HOME/clashctl/scripts/cmd/clashctl.sh"
 clashstatus --all
@@ -122,7 +122,7 @@ ls -la "$HOME/clashctl/config"
 clashctl update-self
 ```
 
-该命令默认从 GitHub 获取当前 fork 的 `main`，不会使用本机源码目录里的未提交改动。迁移后如果正在本地调试修复，使用下面的 `--source` 路线。
+该命令默认从 GitHub 获取本项目的 `main`，不会使用本机源码目录里的未提交改动。迁移后如果正在本地调试修复，使用下面的 `--source` 路线。
 
 指定分支或 tag：
 
@@ -135,7 +135,7 @@ clashctl update-self --ref main
 ```bash
 bash update.sh --target "$HOME/clashctl"
 # 或
-clashctl update-self --source "$HOME/src/clash-shell/tyx-clash-for-linux-install"
+clashctl update-self --source "$HOME/src/clash-shell/clash-for-linux-install-multimode"
 ```
 
 项目更新不会停止内核、不会启动内核、不会覆盖 `config/`、订阅、`resources/install-state.yaml`、`resources/config.yaml`、`resources/runtime.yaml`、日志和 pid 状态。

@@ -280,7 +280,7 @@ cp -a "$TEST_ROOT/." "$legacy_bootstrap_repo"
 rm -f "$legacy_bootstrap_repo/resources/install-state.yaml"
 rm -f "$legacy_bootstrap_repo/bin/yq"
 mkdir -p "$legacy_bootstrap_repo/resources" "$legacy_bootstrap_other"
-printf '%s\n' 'tyx-clash-for-linux-install' >"$legacy_bootstrap_repo/.clashctl-install-root"
+printf '%s\n' 'clash-for-linux-install-multimode' >"$legacy_bootstrap_repo/.clashctl-install-root"
 cat >"$legacy_bootstrap_repo/.env" <<EOF
 KERNEL_NAME=mihomo
 CLASH_BASE_DIR=$legacy_bootstrap_repo

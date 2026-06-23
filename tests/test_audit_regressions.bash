@@ -268,6 +268,9 @@ path_traversal_tmp=$(make_test_tmpdir "clash-install-path-traversal")
 assert_file_contains "$INSTALL_SH" 'INSTALL_MARKER' \
     "install should create an ownership marker before uninstall can remove the install root"
 
+assert_file_contains "$INSTALL_SH" 'clash-for-linux-install-multimode' \
+    "new installs should write the independent project marker"
+
 assert_file_contains "$UNINSTALL_SH" 'INSTALL_MARKER' \
     "uninstall should require the install marker before rm -rf"
 
@@ -297,7 +300,7 @@ cp -a "$TEST_ROOT/." "$uninstall_state_repo"
 rm -f "$uninstall_state_repo/.env"
 mkdir -p "$uninstall_state_repo/resources"
 write_test_install_yq "$uninstall_state_repo"
-printf 'tyx-clash-for-linux-install\n' >"$uninstall_state_repo/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$uninstall_state_repo/.clashctl-install-root"
 cat >"$uninstall_state_repo/resources/install-state.yaml" <<EOF
 install_dir: "$uninstall_state_repo"
 kernel_name: "mihomo"
@@ -324,7 +327,7 @@ cp -a "$TEST_ROOT/." "$uninstall_bad_kernel_repo"
 rm -f "$uninstall_bad_kernel_repo/.env"
 mkdir -p "$uninstall_bad_kernel_repo/resources"
 write_test_install_yq "$uninstall_bad_kernel_repo"
-printf 'tyx-clash-for-linux-install\n' >"$uninstall_bad_kernel_repo/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$uninstall_bad_kernel_repo/.clashctl-install-root"
 cat >"$uninstall_bad_kernel_repo/resources/install-state.yaml" <<EOF
 install_dir: "$uninstall_bad_kernel_repo"
 kernel_name: "../../tmp/evil"
@@ -352,7 +355,7 @@ uninstall_mismatch_a="$uninstall_mismatch_tmp/install-a"
 uninstall_mismatch_b="$uninstall_mismatch_tmp/install-b"
 cp -a "$TEST_ROOT/." "$uninstall_mismatch_a"
 cp -a "$TEST_ROOT/." "$uninstall_mismatch_b"
-printf 'tyx-clash-for-linux-install\n' >"$uninstall_mismatch_b/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$uninstall_mismatch_b/.clashctl-install-root"
 cat >"$uninstall_mismatch_a/.env" <<EOF
 KERNEL_NAME=mihomo
 CLASH_BASE_DIR=$uninstall_mismatch_b
@@ -381,7 +384,7 @@ cp -a "$TEST_ROOT/." "$uninstall_marker_symlink_repo"
 mkdir -p "$uninstall_marker_symlink_repo/resources"
 rm -f "$uninstall_marker_symlink_repo/.env" "$uninstall_marker_symlink_repo/.clashctl-install-root"
 write_test_install_yq "$uninstall_marker_symlink_repo"
-printf 'tyx-clash-for-linux-install\n' >"$uninstall_marker_symlink_tmp/marker"
+printf 'clash-for-linux-install-multimode\n' >"$uninstall_marker_symlink_tmp/marker"
 ln -s "$uninstall_marker_symlink_tmp/marker" "$uninstall_marker_symlink_repo/.clashctl-install-root"
 cat >"$uninstall_marker_symlink_repo/resources/install-state.yaml" <<EOF
 install_dir: "$uninstall_marker_symlink_repo"

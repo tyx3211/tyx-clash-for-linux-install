@@ -9,11 +9,11 @@ body:
       label: 前置确认
       description: 在提交之前，请勾选以下选项以确认您已完成必要的自助排查
       options:
-        - label: 我确认这是项目 **Bug**， 而非操作不当或使用不清楚。否则请使用其他 Issue 模板或移步[讨论区](https://github.com/nelvko/clash-for-linux-install/discussions)
+        - label: 我确认这是项目 **Bug**，而非操作不当或使用不清楚。否则请使用 Q&A 模板。
           required: true
-        - label: 我已查阅 [常见问题](https://github.com/nelvko/clash-for-linux-install/wiki/FAQ)，但仍未找到解决方案
+        - label: 我已查阅 README 和 docs 目录，但仍未找到解决方案
           required: true
-        - label: 我已使用关键字查询相关 [Issues](https://github.com/nelvko/clash-for-linux-install/issues?q=is%3Aissue)，但仍未找到解决方案
+        - label: 我已使用关键字查询本仓库相关 Issues，但仍未找到解决方案
           required: true
         - label: 我已确认本地与远程仓库最新提交的哈希一致。 (`git rev-parse --short HEAD`)
           required: true
@@ -64,9 +64,9 @@ body:
       label: 描述 & 复现
       description: |
         请详细描述：
-        1. 操作步骤  
-        2. 期望结果  
-        3. 实际表现  
+        1. 操作步骤
+        2. 期望结果
+        3. 实际表现
         4. ~~必要时~~最好附上截图
         **请勿泄露订阅、IP 等敏感信息**
       # placeholder: |

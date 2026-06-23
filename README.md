@@ -1,6 +1,8 @@
-# Clash/Mihomo Linux 多模式托管工具
+# Clash/Mihomo Linux 多模式托管安装工具
 
 默认免 sudo，以 `tmux` / `nohup` 在用户态托管内核；需要 Tun 时，可切换到 sudo + `systemd` 模式。
+
+中文简介：Clash/Mihomo Linux 多模式托管安装工具，默认 no-sudo `tmux` / `nohup` 用户态运行，可选 sudo `systemd` / Tun。
 
 ## 🚀 新用户 3 分钟上手
 
@@ -9,8 +11,8 @@
 先拉取安装源码：
 
 ```bash
-git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git
-cd tyx-clash-for-linux-install
+git clone --branch main --depth 1 https://github.com/tyx3211/clash-for-linux-install-multimode.git
+cd clash-for-linux-install-multimode
 ```
 
 然后按机器权限和托管方式三选一：
@@ -80,7 +82,7 @@ clashrestart --mode tmux
 clashctl update-self
 ```
 
-这个命令会从当前 fork 的 GitHub `main` 分支下载最新源码，并无损刷新安装目录。它不会停止内核、不会启动内核、不会覆盖 `config/`、订阅、运行时配置、日志和 pid 状态。
+这个命令会从本项目 GitHub `main` 分支下载最新源码，并无损刷新安装目录。它不会停止内核、不会启动内核、不会覆盖 `config/`、订阅、运行时配置、日志和 pid 状态。
 
 `git clone` 得到的是安装源目录；默认安装目录 `~/clashctl` 不是项目 git 仓库，也不需要 `.git`。如果希望版本管理个人配置，推荐只在 `~/clashctl/config` 下建立 git 仓库。安装时可以使用 `bash install.sh --config-git` 或 `CLASHCTL_CONFIG_GIT=1 bash install.sh` 自动执行 `git init`。
 
@@ -108,12 +110,12 @@ clashctl update-self
 - 默认路线：普通用户执行 `bash install.sh`，默认运行托管模式为 `tmux`。
 - 备用用户态路线：执行 `clashon --mode nohup`，用 nohup 托管本次内核进程。
 - sudo 路线：root 或 sudo 执行 `bash install.sh --init systemd` 注册 systemd 服务，用于需要 Tun 的机器。
-- 不支持路线：不使用 `systemd --user`；共享机上这一能力经常被禁用，当前 fork 不把它作为依赖。
+- 不支持路线：不使用 `systemd --user`；共享机上这一能力经常被禁用，本项目不把它作为依赖。
 - 分支策略：GitHub 默认分支为 `main`；旧 `nosudo-tmux` 远程分支不再作为发布入口保留。
 
 更多说明：
 
-- [Fork 差异与分支策略](docs/fork-differences.md)
+- [上游致谢与项目差异](docs/upstream-and-differences.md)
 - [快速上手教程](docs/quickstart.md)
 - [当前版本使用指南](docs/usage-guide.md)
 - [旧版迁移指南](docs/legacy-migration.md)
@@ -122,7 +124,7 @@ clashctl update-self
 
 ## ✅ no-sudo 使用补充
 
-- 当前 fork 以 `INIT_TYPE=tmux` 为默认运行托管模式，请先确保系统已安装 `tmux`。
+- 本项目以 `INIT_TYPE=tmux` 为默认运行托管模式，请先确保系统已安装 `tmux`。
 - 如需纯用户态但不想依赖 `tmux`，可以在运行时使用 `clashon --mode nohup`。
 - 如需 Tun，请先使用 `sudo bash install.sh --init systemd` 注册 systemd 服务，再执行 `clashrestart --mode systemd` 和 `clashtun on`。运行时启动/停止 systemd 服务使用 `sudo -n systemctl`，因此需要 root 或免密 sudo；脚本不会停下来等待输入 sudo 密码。sudo 安装只用于写入系统服务，默认安装目录仍是发起 sudo 的普通用户目录，例如 `/home/william/clashctl`，不会变成 `/root/clashctl`。
 - 新安装的 `external-controller` 默认绑定 `127.0.0.1:9090`，远程访问面板请优先使用 SSH 端口转发。旧安装无损更新后不会自动改已有端口，实际地址以 `clashui` 输出为准。
@@ -141,16 +143,16 @@ clashctl update-self
 这个 README 对应当前 `main` 维护线。历史 `nosudo-tmux` 分支已经退役，新安装和更新都应使用 `main`。
 
 ```bash
-git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git clash-for-linux-install
-cd clash-for-linux-install
+git clone --branch main --depth 1 https://github.com/tyx3211/clash-for-linux-install-multimode.git clash-for-linux-install-multimode
+cd clash-for-linux-install-multimode
 bash install.sh
 ```
 
 如需 GitHub 代理前缀，也可以使用：
 
 ```bash
-git clone --branch main --depth 1 https://gh-proxy.org/https://github.com/tyx3211/tyx-clash-for-linux-install.git clash-for-linux-install
-cd clash-for-linux-install
+git clone --branch main --depth 1 https://gh-proxy.org/https://github.com/tyx3211/clash-for-linux-install-multimode.git clash-for-linux-install-multimode
+cd clash-for-linux-install-multimode
 bash install.sh
 ```
 
@@ -455,19 +457,19 @@ $ clashtun off
 
 ### 旧版用户先迁移
 
-如果记得安装来源：旧 `nosudo-tmux` 分支、旧 `master`、[`legacy-nosudo-tmux`](https://github.com/tyx3211/tyx-clash-for-linux-install/tree/legacy-nosudo-tmux) 这个 tag 及以前版本，都按旧版处理。只看本地目录时，如果 `~/clashctl` 里还带有 `.git`、`placeholder_start1` 或旧 `resources/mixin.yaml` 布局，也按旧版处理；如果知道自己还没有执行过 `migrate.sh`，同样先按旧版迁移。
+如果记得安装来源：旧 `nosudo-tmux` 分支、旧 `master`、[`legacy-nosudo-tmux`](https://github.com/tyx3211/clash-for-linux-install-multimode/tree/legacy-nosudo-tmux) 这个 tag 及以前版本，都按旧版处理。只看本地目录时，如果 `~/clashctl` 里还带有 `.git`、`placeholder_start1` 或旧 `resources/mixin.yaml` 布局，也按旧版处理；如果知道自己还没有执行过 `migrate.sh`，同样先按旧版迁移。
 
 旧版用户请先阅读 [旧版迁移指南](docs/legacy-migration.md)，从新源码目录执行 `migrate.sh`。不建议先卸载旧安装目录，也不建议直接重装覆盖。
 
 ### 已迁移后的日常更新
 
-已迁移到新版后，可以直接从 GitHub 更新当前 fork 的 `main` 分支：
+已迁移到新版后，可以直接从 GitHub 更新本项目的 `main` 分支：
 
 ```bash
 clashctl update-self
 ```
 
-注意：这个命令默认拉取 GitHub 上当前 fork 的 `main`，不会使用本机源码目录里的未提交改动。
+注意：这个命令默认拉取 GitHub 上本项目的 `main`，不会使用本机源码目录里的未提交改动。
 
 也可以指定分支或 tag：
 
@@ -482,7 +484,7 @@ clashctl update-self --ref main
 bash update.sh --target "$HOME/clashctl"
 
 # 或从已安装环境显式指定源码仓库
-clashctl update-self --source "$HOME/src/clash-shell/tyx-clash-for-linux-install"
+clashctl update-self --source "$HOME/src/clash-shell/clash-for-linux-install-multimode"
 ```
 
 该操作只刷新脚本、service 模板和文档资产，不覆盖 `config/`、`resources/install-state.yaml`、`resources/config.yaml`、`resources/runtime.yaml`、订阅 profiles、日志和运行状态。旧安装目录如果已有 `.env`，会继续保留并只做兼容性更新；旧安装目录如果还在使用 `resources/mixin.yaml`、`resources/clashctl.yaml`、`resources/profiles.yaml`，这些文件也会原样保留。

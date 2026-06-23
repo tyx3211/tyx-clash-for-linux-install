@@ -16,8 +16,8 @@
 先拉取安装源码：
 
 ```bash
-git clone --branch main --depth 1 https://github.com/tyx3211/tyx-clash-for-linux-install.git
-cd tyx-clash-for-linux-install
+git clone --branch main --depth 1 https://github.com/tyx3211/clash-for-linux-install-multimode.git
+cd clash-for-linux-install-multimode
 ```
 
 然后按使用场景选择安装命令：
@@ -174,7 +174,7 @@ clashsub update 1 --convert
 - `clashsub update`：更新订阅。
 - `clashupgrade`：升级 mihomo / clash 内核。
 
-旧 `nosudo-tmux` 分支、旧 `master`、[`legacy-nosudo-tmux`](https://github.com/tyx3211/tyx-clash-for-linux-install/tree/legacy-nosudo-tmux) 这个 tag 及以前版本，或者还没执行过 `migrate.sh` 的中间版安装，第一次升级到当前 `main` 前建议先迁移，不要先卸载旧安装目录。完整步骤见 [旧版迁移指南](legacy-migration.md)。
+旧 `nosudo-tmux` 分支、旧 `master`、[`legacy-nosudo-tmux`](https://github.com/tyx3211/clash-for-linux-install-multimode/tree/legacy-nosudo-tmux) 这个 tag 及以前版本，或者还没执行过 `migrate.sh` 的中间版安装，第一次升级到当前 `main` 前建议先迁移，不要先卸载旧安装目录。完整步骤见 [旧版迁移指南](legacy-migration.md)。
 
 已迁移到新版后，日常更新本项目直接执行：
 
@@ -182,7 +182,7 @@ clashsub update 1 --convert
 clashctl update-self
 ```
 
-该命令默认从当前 fork 的 GitHub `main` 分支下载最新源码，并无损刷新当前安装目录。它不会停止内核、不会启动内核、不会覆盖 `config/`、`resources/install-state.yaml`、订阅、运行时配置、日志和 pid 状态。
+该命令默认从本项目的 GitHub `main` 分支下载最新源码，并无损刷新当前安装目录。它不会停止内核、不会启动内核、不会覆盖 `config/`、`resources/install-state.yaml`、订阅、运行时配置、日志和 pid 状态。
 
 默认安装目录不是 git 仓库，也不需要 `.git`。如果旧安装目录里已经有 `.git`，通常是历史安装复制遗留；确认没有自定义用途后，可以手工删除。配置版本管理推荐放在 `~/clashctl/config`。
 
@@ -195,7 +195,7 @@ clashctl update-self --ref main
 使用本地源码目录刷新安装目录：
 
 ```bash
-clashctl update-self --source "$HOME/src/clash-shell/tyx-clash-for-linux-install"
+clashctl update-self --source "$HOME/src/clash-shell/clash-for-linux-install-multimode"
 ```
 
 如果不迁移而选择重装，请先按 [旧版迁移指南：如果选择重装](legacy-migration.md#如果选择重装) 备份关键文件，再按新版布局恢复。

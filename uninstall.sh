@@ -112,7 +112,8 @@ esac
 INSTALL_MARKER="${CLASH_BASE_REAL}/.clashctl-install-root"
 [ ! -L "$INSTALL_MARKER" ] || _uninstall_die "拒绝使用符号链接安装标记：$INSTALL_MARKER"
 [ -f "$INSTALL_MARKER" ] || _uninstall_die "拒绝删除未带安装标记的目录：$CLASH_BASE_REAL"
-grep -qx 'tyx-clash-for-linux-install' "$INSTALL_MARKER" || _uninstall_die "安装标记不匹配：$INSTALL_MARKER"
+grep -Eqx '(clash-for-linux-install-multimode|tyx-clash-for-linux-install)' "$INSTALL_MARKER" ||
+    _uninstall_die "安装标记不匹配：$INSTALL_MARKER"
 [ -f "$CLASH_BASE_REAL/scripts/cmd/clashctl.sh" ] || _uninstall_die "安装目录缺少 clashctl 脚本：$CLASH_BASE_REAL"
 
 . "$THIS_UNINSTALL_DIR/scripts/preflight.sh"

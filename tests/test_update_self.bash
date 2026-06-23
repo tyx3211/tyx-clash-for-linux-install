@@ -27,7 +27,7 @@ CLASH_INSTALLED_INIT_TYPE=tmux
 CLASH_CONFIG_URL="user-sub"
 URL_GH_PROXY=https://example.invalid
 EOF
-printf 'tyx-clash-for-linux-install\n' >"$install_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$install_dir/.clashctl-install-root"
 printf 'user-mixin\n' >"$install_dir/resources/mixin.yaml"
 printf 'user-sidecar\n' >"$install_dir/resources/clashctl.yaml"
 printf 'user-base\n' >"$install_dir/resources/config.yaml"
@@ -81,7 +81,7 @@ grep -q '^CLASH_BASE_DIR=' "$install_dir/.env" ||
 bad_subconverter_env_dir="$update_tmp/bad-subconverter-env"
 mkdir -p "$bad_subconverter_env_dir/resources" "$bad_subconverter_env_dir/scripts/cmd"
 write_test_install_yq "$bad_subconverter_env_dir"
-printf 'tyx-clash-for-linux-install\n' >"$bad_subconverter_env_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$bad_subconverter_env_dir/.clashctl-install-root"
 printf 'mixin\n' >"$bad_subconverter_env_dir/resources/mixin.yaml"
 printf 'script\n' >"$bad_subconverter_env_dir/scripts/cmd/clashctl.sh"
 cat >"$bad_subconverter_env_dir/.env" <<EOF
@@ -100,7 +100,7 @@ grep -qx 'SUBCONVERTER_REPO=tindy2013/subconverter' "$bad_subconverter_env_dir/.
 custom_subconverter_env_dir="$update_tmp/custom-subconverter-env"
 mkdir -p "$custom_subconverter_env_dir/resources" "$custom_subconverter_env_dir/scripts/cmd"
 write_test_install_yq "$custom_subconverter_env_dir"
-printf 'tyx-clash-for-linux-install\n' >"$custom_subconverter_env_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$custom_subconverter_env_dir/.clashctl-install-root"
 printf 'mixin\n' >"$custom_subconverter_env_dir/resources/mixin.yaml"
 printf 'script\n' >"$custom_subconverter_env_dir/scripts/cmd/clashctl.sh"
 cat >"$custom_subconverter_env_dir/.env" <<EOF
@@ -119,7 +119,7 @@ grep -qx 'SUBCONVERTER_REPO=example/subconverter' "$custom_subconverter_env_dir/
 export_subconverter_env_dir="$update_tmp/export-subconverter-env"
 mkdir -p "$export_subconverter_env_dir/resources" "$export_subconverter_env_dir/scripts/cmd"
 write_test_install_yq "$export_subconverter_env_dir"
-printf 'tyx-clash-for-linux-install\n' >"$export_subconverter_env_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$export_subconverter_env_dir/.clashctl-install-root"
 printf 'mixin\n' >"$export_subconverter_env_dir/resources/mixin.yaml"
 printf 'script\n' >"$export_subconverter_env_dir/scripts/cmd/clashctl.sh"
 cat >"$export_subconverter_env_dir/.env" <<EOF
@@ -137,10 +137,28 @@ grep -qx 'export SUBCONVERTER_REPO=example/export-subconverter' "$export_subconv
 [ "$(grep -Ec '^(export[[:space:]]+)?SUBCONVERTER_REPO=' "$export_subconverter_env_dir/.env")" -eq 1 ] ||
     fail "update should not append a duplicate default after an exported custom subconverter repo"
 
+legacy_marker_update_dir="$update_tmp/legacy-marker-update"
+mkdir -p "$legacy_marker_update_dir/resources" "$legacy_marker_update_dir/scripts/cmd"
+write_test_install_yq "$legacy_marker_update_dir"
+printf 'tyx-clash-for-linux-install\n' >"$legacy_marker_update_dir/.clashctl-install-root"
+printf 'mixin\n' >"$legacy_marker_update_dir/resources/mixin.yaml"
+printf 'script\n' >"$legacy_marker_update_dir/scripts/cmd/clashctl.sh"
+cat >"$legacy_marker_update_dir/.env" <<EOF
+CLASH_BASE_DIR=$legacy_marker_update_dir
+KERNEL_NAME=mihomo
+INIT_TYPE=tmux
+EOF
+(
+    cd "$source_dir"
+    CLASHCTL_NO_RC=1 bash update.sh --target "$legacy_marker_update_dir" >/dev/null
+)
+grep -qx 'clash-for-linux-install-multimode' "$legacy_marker_update_dir/.clashctl-install-root" ||
+    fail "update should accept the legacy install marker and rewrite the independent project marker"
+
 duplicate_subconverter_env_dir="$update_tmp/duplicate-subconverter-env"
 mkdir -p "$duplicate_subconverter_env_dir/resources" "$duplicate_subconverter_env_dir/scripts/cmd"
 write_test_install_yq "$duplicate_subconverter_env_dir"
-printf 'tyx-clash-for-linux-install\n' >"$duplicate_subconverter_env_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$duplicate_subconverter_env_dir/.clashctl-install-root"
 printf 'mixin\n' >"$duplicate_subconverter_env_dir/resources/mixin.yaml"
 printf 'script\n' >"$duplicate_subconverter_env_dir/scripts/cmd/clashctl.sh"
 cat >"$duplicate_subconverter_env_dir/.env" <<EOF
@@ -164,7 +182,7 @@ grep -qx 'export SUBCONVERTER_REPO=example/export-subconverter' "$duplicate_subc
 state_install_dir="$update_tmp/state-install"
 mkdir -p "$state_install_dir/resources" "$state_install_dir/scripts/cmd"
 write_test_install_yq "$state_install_dir"
-printf 'tyx-clash-for-linux-install\n' >"$state_install_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$state_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$state_install_dir/resources/mixin.yaml"
 printf 'script\n' >"$state_install_dir/scripts/cmd/clashctl.sh"
 rm -f "$state_install_dir/.env"
@@ -183,7 +201,7 @@ state_mismatch_install_dir="$update_tmp/state-mismatch-install"
 state_mismatch_other_dir="$update_tmp/state-mismatch-other"
 mkdir -p "$state_mismatch_install_dir/resources" "$state_mismatch_install_dir/scripts/cmd" "$state_mismatch_other_dir"
 write_test_install_yq "$state_mismatch_install_dir"
-printf 'tyx-clash-for-linux-install\n' >"$state_mismatch_install_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$state_mismatch_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$state_mismatch_install_dir/resources/mixin.yaml"
 printf 'script\n' >"$state_mismatch_install_dir/scripts/cmd/clashctl.sh"
 cat >"$state_mismatch_install_dir/resources/install-state.yaml" <<EOF
@@ -206,7 +224,7 @@ grep -qx 'script' "$state_mismatch_install_dir/scripts/cmd/clashctl.sh" ||
 state_bad_kernel_install_dir="$update_tmp/state-bad-kernel-install"
 mkdir -p "$state_bad_kernel_install_dir/resources" "$state_bad_kernel_install_dir/scripts/cmd"
 write_test_install_yq "$state_bad_kernel_install_dir"
-printf 'tyx-clash-for-linux-install\n' >"$state_bad_kernel_install_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$state_bad_kernel_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$state_bad_kernel_install_dir/resources/mixin.yaml"
 printf 'script\n' >"$state_bad_kernel_install_dir/scripts/cmd/clashctl.sh"
 cat >"$state_bad_kernel_install_dir/resources/install-state.yaml" <<EOF
@@ -265,7 +283,7 @@ mkdir -p "$not_install_dir"
 symlink_install_dir="$update_tmp/symlink-install"
 symlink_outside="$update_tmp/outside"
 mkdir -p "$symlink_install_dir/resources" "$symlink_outside"
-printf 'tyx-clash-for-linux-install\n' >"$symlink_install_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$symlink_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$symlink_install_dir/resources/mixin.yaml"
 ln -s "$symlink_outside" "$symlink_install_dir/scripts"
 (
@@ -278,7 +296,7 @@ env_install_dir="$update_tmp/env-install"
 cp -a "$TEST_ROOT/." "$env_source_dir"
 mkdir -p "$env_install_dir/resources" "$env_install_dir/scripts/cmd"
 write_test_install_yq "$env_install_dir"
-printf 'tyx-clash-for-linux-install\n' >"$env_install_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$env_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$env_install_dir/resources/mixin.yaml"
 printf 'script\n' >"$env_install_dir/scripts/cmd/clashctl.sh"
 cat >"$env_source_dir/.env" <<EOF
@@ -390,7 +408,7 @@ explicit_install_dir="$update_tmp/explicit-install"
 cp -a "$TEST_ROOT/." "$explicit_source_dir"
 mkdir -p "$explicit_install_dir/resources" "$explicit_install_dir/scripts/cmd"
 write_test_install_yq "$explicit_install_dir"
-printf 'tyx-clash-for-linux-install\n' >"$explicit_install_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$explicit_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$explicit_install_dir/resources/mixin.yaml"
 cp "$TEST_ROOT/update.sh" "$explicit_install_dir/update.sh"
 cat >"$explicit_install_dir/.env" <<EOF
@@ -411,7 +429,7 @@ explicit_home_install_dir="$update_tmp/explicit-home-install"
 mkdir -p "$explicit_home_source_home" "$explicit_home_install_dir/resources" "$explicit_home_install_dir/scripts/cmd"
 write_test_install_yq "$explicit_home_install_dir"
 cp -a "$TEST_ROOT/." "$explicit_home_source_dir"
-printf 'tyx-clash-for-linux-install\n' >"$explicit_home_install_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$explicit_home_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$explicit_home_install_dir/resources/mixin.yaml"
 cp "$TEST_ROOT/update.sh" "$explicit_home_install_dir/update.sh"
 cat >"$explicit_home_install_dir/.env" <<EOF
@@ -433,8 +451,8 @@ cp -a "$TEST_ROOT/." "$implicit_installed_source_dir"
 mkdir -p "$implicit_current_install_dir/resources" "$implicit_current_install_dir/scripts/cmd" "$implicit_other_install_dir/resources" "$implicit_other_install_dir/scripts/cmd"
 write_test_install_yq "$implicit_current_install_dir"
 write_test_install_yq "$implicit_other_install_dir"
-printf 'tyx-clash-for-linux-install\n' >"$implicit_current_install_dir/.clashctl-install-root"
-printf 'tyx-clash-for-linux-install\n' >"$implicit_other_install_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$implicit_current_install_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$implicit_other_install_dir/.clashctl-install-root"
 printf 'current-script\n' >"$implicit_current_install_dir/scripts/cmd/clashctl.sh"
 printf 'other-script\n' >"$implicit_other_install_dir/scripts/cmd/clashctl.sh"
 printf 'mixin\n' >"$implicit_current_install_dir/resources/mixin.yaml"
@@ -478,7 +496,7 @@ CLASH_BASE_DIR=$backup_fail_install_dir
 KERNEL_NAME=mihomo
 INIT_TYPE=tmux
 EOF
-printf 'tyx-clash-for-linux-install\n' >"$backup_fail_install_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$backup_fail_install_dir/.clashctl-install-root"
 printf 'installed-script\n' >"$backup_fail_install_dir/scripts/cmd/clashctl.sh"
 chmod 000 "$backup_fail_install_dir/README.md"
 bash "$TEST_ROOT/update.sh" --target "$backup_fail_install_dir" --source "$backup_fail_source_dir" >/dev/null 2>&1 &&
@@ -493,7 +511,7 @@ source_symlink_outside="$update_tmp/source-symlink-outside"
 cp -a "$TEST_ROOT/." "$source_symlink_dir"
 mkdir -p "$source_symlink_install_dir/resources" "$source_symlink_install_dir/scripts/cmd" "$source_symlink_outside"
 write_test_install_yq "$source_symlink_install_dir"
-printf 'tyx-clash-for-linux-install\n' >"$source_symlink_install_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$source_symlink_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$source_symlink_install_dir/resources/mixin.yaml"
 printf 'script\n' >"$source_symlink_install_dir/scripts/cmd/clashctl.sh"
 rm -rf "$source_symlink_dir/scripts"
@@ -511,7 +529,7 @@ source_missing_env_install_dir="$update_tmp/source-missing-env-install"
 cp -a "$TEST_ROOT/." "$source_missing_env_dir"
 mkdir -p "$source_missing_env_install_dir/resources" "$source_missing_env_install_dir/scripts/cmd"
 write_test_install_yq "$source_missing_env_install_dir"
-printf 'tyx-clash-for-linux-install\n' >"$source_missing_env_install_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$source_missing_env_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$source_missing_env_install_dir/resources/mixin.yaml"
 printf 'script\n' >"$source_missing_env_install_dir/scripts/cmd/clashctl.sh"
 rm -f "$source_missing_env_dir/.env"
@@ -525,7 +543,7 @@ source_missing_required_install_dir="$update_tmp/source-missing-required-install
 cp -a "$TEST_ROOT/." "$source_missing_required_dir"
 mkdir -p "$source_missing_required_install_dir/resources" "$source_missing_required_install_dir/scripts/cmd"
 write_test_install_yq "$source_missing_required_install_dir"
-printf 'tyx-clash-for-linux-install\n' >"$source_missing_required_install_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$source_missing_required_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$source_missing_required_install_dir/resources/mixin.yaml"
 printf 'installed-script\n' >"$source_missing_required_install_dir/scripts/cmd/clashctl.sh"
 rm -f "$source_missing_required_dir/scripts/install/rc.sh"
@@ -542,7 +560,7 @@ git_preserve_install_dir="$update_tmp/git-preserve-install"
 cp -a "$TEST_ROOT/." "$git_preserve_source_dir"
 mkdir -p "$git_preserve_install_dir/resources" "$git_preserve_install_dir/scripts/cmd" "$git_preserve_install_dir/.git"
 write_test_install_yq "$git_preserve_install_dir"
-printf 'tyx-clash-for-linux-install\n' >"$git_preserve_install_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$git_preserve_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$git_preserve_install_dir/resources/mixin.yaml"
 printf 'script\n' >"$git_preserve_install_dir/scripts/cmd/clashctl.sh"
 printf 'user-managed-git\n' >"$git_preserve_install_dir/.git/config"
@@ -552,7 +570,7 @@ grep -qx 'user-managed-git' "$git_preserve_install_dir/.git/config" ||
     fail "update should not silently delete existing install dir .git"
 
 remote_source_parent="$update_tmp/remote-source-parent"
-remote_source_dir="$remote_source_parent/tyx-clash-for-linux-install-main"
+remote_source_dir="$remote_source_parent/clash-for-linux-install-multimode-main"
 remote_install_dir="$update_tmp/remote-install"
 remote_archive="$update_tmp/remote.tar.gz"
 remote_fake_bin="$update_tmp/remote-fake-bin"
@@ -569,7 +587,7 @@ KERNEL_NAME=mihomo
 INIT_TYPE=tmux
 URL_GH_PROXY=https://gh-proxy.org
 EOF
-printf 'tyx-clash-for-linux-install\n' >"$remote_install_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$remote_install_dir/.clashctl-install-root"
 cat >"$remote_fake_bin/curl" <<'EOF'
 #!/usr/bin/env bash
 set -eu
@@ -602,8 +620,8 @@ PATH="$remote_fake_bin:$PATH" \
     fail "installed update.sh should fetch the default remote source when --source is omitted"
 grep -q 'remote-source-marker' "$remote_install_dir/scripts/cmd/clashctl.sh" ||
     fail "default update-self should refresh files from the downloaded archive"
-grep -qx 'https://gh-proxy.org/https://github.com/tyx3211/tyx-clash-for-linux-install/archive/main.tar.gz' "$remote_seen_url" ||
-    fail "default update-self should normalize URL_GH_PROXY before the fork GitHub URL"
+grep -qx 'https://gh-proxy.org/https://github.com/tyx3211/clash-for-linux-install-multimode/archive/main.tar.gz' "$remote_seen_url" ||
+    fail "default update-self should normalize URL_GH_PROXY before the project GitHub URL"
 PATH="$remote_fake_bin:$PATH" \
     CURL_SEEN_URL="$remote_seen_url" \
     REMOTE_ARCHIVE="$remote_archive" \
@@ -628,7 +646,7 @@ KERNEL_NAME=mihomo
 INIT_TYPE=tmux
 URL_GH_PROXY=
 EOF
-printf 'tyx-clash-for-linux-install\n' >"$wrapper_install_dir/.clashctl-install-root"
+printf 'clash-for-linux-install-multimode\n' >"$wrapper_install_dir/.clashctl-install-root"
 PATH="$remote_fake_bin:$PATH" \
     CURL_SEEN_URL="$remote_seen_url" \
     REMOTE_ARCHIVE="$remote_archive" \
