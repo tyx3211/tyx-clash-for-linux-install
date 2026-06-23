@@ -71,7 +71,7 @@ clashproxy on
 clashproxy status
 ```
 
-`clashon` 只启动内核，不会自动写入当前终端代理变量。`clashproxy on` 只影响当前终端，不会修改系统代理。关闭当前终端代理：
+`clashon` 只启动内核，不会自动写入当前终端代理变量。`clashproxy on` 只影响当前终端，不会修改系统代理。`clashproxy status` 中只有 `no_proxy` / `NO_PROXY` 时，不视为代理开启。关闭当前终端代理：
 
 ```bash
 clashproxy off

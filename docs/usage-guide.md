@@ -132,7 +132,7 @@ clashproxy on -g
 clashproxy mode silent
 ```
 
-`clashon` / `clashrestart` 只启动或切换内核托管模式，不会自动写入当前终端代理变量。需要当前终端走代理时，执行 `clashproxy on`。`clashoff` 只关闭内核，不改当前终端代理变量；需要关闭当前终端代理时，执行 `clashproxy off`。如果曾经执行过 `clashproxy on -g`，关闭内核后建议再执行 `clashproxy off -g`，避免新终端自动写入已经不可用的代理地址。
+`clashon` / `clashrestart` 只启动或切换内核托管模式，不会自动写入当前终端代理变量。需要当前终端走代理时，执行 `clashproxy on`。`clashproxy status` 中只有 `no_proxy` / `NO_PROXY` 时，不视为代理开启。`clashoff` 只关闭内核，不改当前终端代理变量；需要关闭当前终端代理时，执行 `clashproxy off`。如果曾经执行过 `clashproxy on -g`，关闭内核后建议再执行 `clashproxy off -g`，避免新终端自动写入已经不可用的代理地址。
 
 Web 面板：
 

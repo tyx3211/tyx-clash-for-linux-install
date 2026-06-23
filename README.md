@@ -114,7 +114,7 @@ clashctl update-self
 - 如需 Tun，请先使用 `sudo bash install.sh --init systemd` 注册 systemd 服务，再执行 `clashrestart --mode systemd` 和 `clashtun on`。运行时启动/停止 systemd 服务使用 `sudo -n systemctl`，因此需要 root 或免密 sudo；脚本不会停下来等待输入 sudo 密码。
 - 新安装的 `external-controller` 默认绑定 `127.0.0.1:9090`，远程访问面板请优先使用 SSH 端口转发。旧安装无损更新后不会自动改已有端口，实际地址以 `clashui` 输出为准。
 - `clashproxy on` / `clashproxy off` 只影响当前 shell 的环境变量，不会改系统级代理。
-- `clashproxy status` 会显示当前终端实际环境变量，并在它们和当前运行配置不一致时提示刷新。
+- `clashproxy status` 会显示当前终端实际环境变量，并在它们和当前运行配置不一致时提示刷新；只有 `no_proxy` / `NO_PROXY` 不算代理开启。
 - 新终端是否自动写入代理变量，由 `config/clashctl.yaml` 里的 sidecar 配置控制。
 
 ## 🧪 开发者测试
@@ -273,7 +273,7 @@ $ clashproxy on -g
 - `clashstatus --all` 可以查看 `tmux`、`nohup`、`systemd` 三种 adapter 的进程探测结果；默认 `clashstatus` 会进一步检查 API 是否可达。
 - `clashproxy on` / `clashproxy off` 只负责写入或清理当前 shell 的代理变量，不改 sidecar 全局状态。
 - `clashproxy on -g` / `clashproxy off -g` 会在处理当前 shell 的同时，更新 sidecar 中的全局自动代理开关。
-- `clashproxy status` 会输出当前 shell 的实际代理变量，并在它们和当前 `runtime.yaml` 不一致时提示重新执行 `clashproxy off && clashproxy on`。
+- `clashproxy status` 会输出当前 shell 的实际代理变量，并在它们和当前 `runtime.yaml` 不一致时提示重新执行 `clashproxy off && clashproxy on`；只有 `no_proxy` / `NO_PROXY` 不算代理开启。
 - `clashproxy mode status` 用于查看 sidecar 中记录的全局自动代理状态与模式。
 
 ### 自动代理模式

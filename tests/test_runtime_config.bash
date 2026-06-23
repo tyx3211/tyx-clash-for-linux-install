@@ -321,6 +321,33 @@ EOF
     set +e
     . "$CLASHCTL_SH"
 
+    BIN_YQ="$runtime_config_tmp/yq-status-no-proxy-only"
+    CLASH_CONFIG_RUNTIME="$runtime_config_tmp/runtime.yaml"
+    write_runtime_proxy_yq "$BIN_YQ"
+    printf '{}\n' >"$CLASH_CONFIG_RUNTIME"
+    unset http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY
+    export no_proxy=localhost
+    export NO_PROXY=localhost
+    _okcat() { printf '%s\n' "$*" >>"$runtime_config_tmp/status-no-proxy-only-ok.log"; }
+    _failcat() {
+        printf '%s\n' "$*" >>"$runtime_config_tmp/status-no-proxy-only-fail.log"
+        return 1
+    }
+
+    clashproxy status
+    status=$?
+    [ "$status" -ne 0 ] ||
+        fail "clashproxy status should treat no_proxy alone as proxy disabled"
+    grep -q '仅存在 no_proxy，不视为代理开启' "$runtime_config_tmp/status-no-proxy-only-fail.log" ||
+        fail "clashproxy status should explain that no_proxy alone is not an active proxy"
+    ! grep -q '当前终端代理与当前运行配置不一致' "$runtime_config_tmp/status-no-proxy-only-fail.log" ||
+        fail "clashproxy status should not warn about runtime mismatch when only no_proxy exists"
+)
+
+(
+    set +e
+    . "$CLASHCTL_SH"
+
     BIN_YQ="$runtime_config_tmp/yq-status-mismatch"
     CLASH_CONFIG_RUNTIME="$runtime_config_tmp/runtime.yaml"
     write_runtime_proxy_yq "$BIN_YQ"

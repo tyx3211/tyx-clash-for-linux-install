@@ -65,13 +65,21 @@ _get_current_proxy_env() {
     env | grep -i -E '^(http|https|all|no)_proxy=' || true
 }
 
+_get_current_effective_proxy_env() {
+    env | grep -i -E '^(http|https|all)_proxy=' || true
+}
+
 _show_current_proxy_status() {
-    local proxy_env
+    local proxy_env effective_proxy_env
     proxy_env=$(_get_current_proxy_env)
-    if [ -n "$proxy_env" ]; then
+    effective_proxy_env=$(_get_current_effective_proxy_env)
+    if [ -n "$effective_proxy_env" ]; then
         _okcat "当前终端代理：开启
 $proxy_env"
         _warn_proxy_env_mismatch
+    elif [ -n "$proxy_env" ]; then
+        _failcat "当前终端代理：关闭（仅存在 no_proxy，不视为代理开启）
+$proxy_env"
     else
         _failcat "当前终端代理：关闭"
     fi
