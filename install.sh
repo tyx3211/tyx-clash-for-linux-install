@@ -3,8 +3,11 @@
 THIS_INSTALL_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || exit 1
 cd "$THIS_INSTALL_DIR" || exit 1
 
-. "$THIS_INSTALL_DIR/scripts/cmd/clashctl.sh"
-. "$THIS_INSTALL_DIR/scripts/preflight.sh"
+CLASHCTL_INSTALL_BOOTSTRAP=1
+CLASHCTL_INSTALL_BOOTSTRAP_SOURCE_DIR=$THIS_INSTALL_DIR
+. "$THIS_INSTALL_DIR/scripts/cmd/clashctl.sh" || exit 1
+unset CLASHCTL_INSTALL_BOOTSTRAP CLASHCTL_INSTALL_BOOTSTRAP_SOURCE_DIR
+. "$THIS_INSTALL_DIR/scripts/preflight.sh" || exit 1
 
 CLASHCTL_ERROR_EXIT=1
 

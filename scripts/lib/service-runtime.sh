@@ -98,27 +98,27 @@ _with_service_lock() {
 
     mkdir -p "$CLASH_RESOURCES_DIR" || return 1
     command -v flock >/dev/null || {
-        local lock_dir="${lock_file}.d" status
+        local lock_dir="${lock_file}.d" cmd_status
         mkdir "$lock_dir" 2>/dev/null || {
             _failcat "另一个 clashctl 操作正在进行，请稍后重试"
             return 1
         }
         "$@"
-        status=$?
+        cmd_status=$?
         rmdir "$lock_dir" 2>/dev/null || true
-        return "$status"
+        return "$cmd_status"
     }
-    local status
+    local cmd_status
     exec 9>"$lock_file" || return 1
     flock 9 || {
         exec 9>&-
         return 1
     }
     "$@"
-    status=$?
+    cmd_status=$?
     flock -u 9 2>/dev/null || true
     exec 9>&-
-    return "$status"
+    return "$cmd_status"
 }
 
 _clear_service_state() {
@@ -695,7 +695,7 @@ clashrestart() {
     _with_service_lock _clashrestart_impl "$@"
 }
 function clashstatus() {
-    local mode active_status status=1
+    local mode active_status any_active_status=1
     case "${1:-}" in
     --all)
         shift
@@ -706,12 +706,12 @@ function clashstatus() {
         for mode in tmux nohup systemd; do
             if _clash_service_is_active "$mode" >/dev/null 2>&1; then
                 _okcat "$mode：托管进程运行中"
-                status=0
+                any_active_status=0
             else
                 _failcat "$mode：托管进程未运行" || true
             fi
         done
-        return "$status"
+        return "$any_active_status"
         ;;
     --mode=*)
         mode=${1#--mode=}

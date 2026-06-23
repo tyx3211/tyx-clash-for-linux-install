@@ -163,10 +163,42 @@ CLASH_PROFILES_LOG="${CLASH_RESOURCES_DIR}/profiles.log"
 INSTALL_MARKER="${CLASH_BASE_DIR}/.clashctl-install-root"
 CLASHCTL_CRON_TAG="# clashctl-auto-update"
 
+_clashctl_runtime_var_value() {
+    case "$1" in
+    CLASH_BASE_DIR)
+        printf '%s\n' "${CLASH_BASE_DIR:-}"
+        ;;
+    CLASH_RESOURCES_DIR)
+        printf '%s\n' "${CLASH_RESOURCES_DIR:-}"
+        ;;
+    CLASH_CONFIG_RUNTIME)
+        printf '%s\n' "${CLASH_CONFIG_RUNTIME:-}"
+        ;;
+    CLASH_CONFIG_MIXIN)
+        printf '%s\n' "${CLASH_CONFIG_MIXIN:-}"
+        ;;
+    FILE_LOG)
+        printf '%s\n' "${FILE_LOG:-}"
+        ;;
+    FILE_PID)
+        printf '%s\n' "${FILE_PID:-}"
+        ;;
+    BIN_KERNEL)
+        printf '%s\n' "${BIN_KERNEL:-}"
+        ;;
+    BIN_YQ)
+        printf '%s\n' "${BIN_YQ:-}"
+        ;;
+    *)
+        return 1
+        ;;
+    esac
+}
+
 _clashctl_validate_runtime_paths() {
     local name value
     for name in CLASH_BASE_DIR CLASH_RESOURCES_DIR CLASH_CONFIG_RUNTIME CLASH_CONFIG_MIXIN FILE_LOG FILE_PID BIN_KERNEL BIN_YQ; do
-        value=${!name-}
+        value=$(_clashctl_runtime_var_value "$name")
         [ -n "$value" ] || {
             printf 'clashctl: critical runtime variable is empty: %s\n' "$name" >&2
             return 1
@@ -192,7 +224,35 @@ _clashctl_validate_runtime_paths() {
     esac
 }
 
-_clashctl_validate_runtime_paths || { return 1 2>/dev/null || exit 1; }
+_clashctl_install_bootstrap_source() {
+    [ "${CLASHCTL_INSTALL_BOOTSTRAP:-}" = 1 ] || return 1
+
+    local source_root source_root_real expected_root_real marker caller caller_real install_seen=false
+    source_root=$(dirname "$(dirname "$THIS_SCRIPT_DIR")")
+    source_root_real=$(cd "$(dirname "$(dirname "$THIS_SCRIPT_DIR")")" 2>/dev/null && pwd -P) || return 1
+    expected_root_real=$(cd "${CLASHCTL_INSTALL_BOOTSTRAP_SOURCE_DIR:-}" 2>/dev/null && pwd -P) || return 1
+    [ "$source_root_real" = "$expected_root_real" ] || return 1
+
+    for caller in "${BASH_SOURCE[@]:-}"; do
+        case "$caller" in
+        */install.sh | install.sh)
+            caller_real=$(readlink -f "$caller" 2>/dev/null || true)
+            [ "$caller_real" = "${source_root_real}/install.sh" ] && install_seen=true
+            ;;
+        esac
+    done
+    [ "$install_seen" = true ] || return 1
+
+    marker="${source_root}/.clashctl-install-root"
+    if [ -e "$marker" ] || [ -L "$marker" ]; then
+        return 1
+    fi
+    return 0
+}
+
+if ! _clashctl_install_bootstrap_source; then
+    _clashctl_validate_runtime_paths || { return 1 2>/dev/null || exit 1; }
+fi
 
 _is_port_used() {
     local port=$1

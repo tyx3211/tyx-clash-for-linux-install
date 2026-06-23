@@ -163,6 +163,9 @@ case "$expr" in
 '.installed_systemd_service // ""')
     key=installed_systemd_service
     ;;
+'select(has("installed_systemd_service")) | .installed_systemd_service')
+    key=installed_systemd_service
+    ;;
 '.active_mode // ""')
     key=active_mode
     ;;

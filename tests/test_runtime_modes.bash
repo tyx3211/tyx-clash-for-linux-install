@@ -21,6 +21,12 @@ assert_file_contains "$SERVICE_RUNTIME_SH" '_clash_adapter_systemd_start\(\)' \
 assert_file_contains "$SERVICE_RUNTIME_SH" '_with_service_lock\(\)' \
     "runtime start/stop/restart operations should share a service lock"
 
+assert_file_not_contains "$SERVICE_RUNTIME_SH" '(^|[[:space:]])local([^#]*)[[:space:]]status(=|[[:space:]]|$)' \
+    "runtime helpers should not declare zsh readonly status as a local variable"
+
+assert_file_not_contains "$SERVICE_RUNTIME_SH" '(^|[[:space:]])status=' \
+    "runtime helpers should not assign zsh readonly status"
+
 assert_file_contains "$SERVICE_RUNTIME_SH" '/proc/\$pid/comm' \
     "nohup pid validation should handle replaced kernel binaries by falling back to comm and cmdline checks"
 

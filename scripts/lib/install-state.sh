@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 
-_INSTALL_STATE_LIB_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P) || {
+_INSTALL_STATE_SELF=${BASH_SOURCE:-${(%):-%N}}
+_INSTALL_STATE_LIB_DIR=$(cd "$(dirname "$_INSTALL_STATE_SELF")" && pwd -P) || {
     printf 'install-state: failed to resolve library directory\n' >&2
     return 1 2>/dev/null || exit 1
 }
@@ -13,7 +14,7 @@ _INSTALL_STATE_PATH_ENV_LIB="$_INSTALL_STATE_LIB_DIR/path-env.sh"
     printf 'install-state: failed to source library: %s\n' "$_INSTALL_STATE_PATH_ENV_LIB" >&2
     return 1 2>/dev/null || exit 1
 }
-unset _INSTALL_STATE_LIB_DIR _INSTALL_STATE_PATH_ENV_LIB
+unset _INSTALL_STATE_SELF _INSTALL_STATE_LIB_DIR _INSTALL_STATE_PATH_ENV_LIB
 
 _install_state_expand_path() {
     _path_env_expand_path "$1"
@@ -43,7 +44,14 @@ _install_state_read_yaml_value() {
     esac
 
     yq=$(_install_state_yq_for_file "$file") || return 1
-    expr=".${key} // \"\""
+    case "$key" in
+    installed_systemd_service)
+        expr='select(has("installed_systemd_service")) | .installed_systemd_service'
+        ;;
+    *)
+        expr=".${key} // \"\""
+        ;;
+    esac
     value=$("$yq" "$expr" "$file") || {
         printf 'install-state: failed to read %s from %s\n' "$key" "$file" >&2
         return 1
@@ -72,10 +80,14 @@ _install_state_read_into_vars() {
     local file=$1 value installed_systemd=false
     [ -f "$file" ] || return 1
 
-    value=$(_install_state_read_yaml_value "$file" install_dir) && CLASH_BASE_DIR=$value
-    value=$(_install_state_read_yaml_value "$file" kernel_name) && KERNEL_NAME=$value
-    value=$(_install_state_read_yaml_value "$file" default_mode) && INIT_TYPE=$value
-    value=$(_install_state_read_yaml_value "$file" installed_systemd_service) && installed_systemd=$value
+    value=$(_install_state_read_yaml_value "$file" install_dir) || return 1
+    CLASH_BASE_DIR=$value
+    value=$(_install_state_read_yaml_value "$file" kernel_name) || return 1
+    KERNEL_NAME=$value
+    value=$(_install_state_read_yaml_value "$file" default_mode) || return 1
+    INIT_TYPE=$value
+    value=$(_install_state_read_yaml_value "$file" installed_systemd_service) || return 1
+    installed_systemd=$value
 
     case "$installed_systemd" in
     true | yes | 1 | systemd)

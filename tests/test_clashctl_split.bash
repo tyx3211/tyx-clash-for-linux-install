@@ -177,6 +177,46 @@ bash -c '
 ' -- "$env_state_repo" >/dev/null 2>&1 ||
     fail "clashctl should source install-state.yaml without requiring .env"
 
+state_false_tmp=$(make_test_tmpdir "clash-state-false")
+state_false_repo="$state_false_tmp/repo"
+cp -a "$TEST_ROOT/." "$state_false_repo"
+rm -f "$state_false_repo/.env"
+mkdir -p "$state_false_repo/bin" "$state_false_repo/resources"
+cat >"$state_false_repo/bin/yq" <<'EOF'
+#!/usr/bin/env bash
+expr=${1:-}
+file=${2:-}
+case "$expr" in
+'.install_dir // ""')
+    awk -F': *' '$1 == "install_dir" { gsub(/^"|"$/, "", $2); print $2 }' "$file"
+    ;;
+'.kernel_name // ""')
+    awk -F': *' '$1 == "kernel_name" { gsub(/^"|"$/, "", $2); print $2 }' "$file"
+    ;;
+'.default_mode // ""')
+    awk -F': *' '$1 == "default_mode" { gsub(/^"|"$/, "", $2); print $2 }' "$file"
+    ;;
+'.installed_systemd_service // ""')
+    printf '\n'
+    ;;
+'select(has("installed_systemd_service")) | .installed_systemd_service')
+    awk -F': *' '$1 == "installed_systemd_service" { print $2 }' "$file"
+    ;;
+*)
+    exit 7
+    ;;
+esac
+EOF
+chmod +x "$state_false_repo/bin/yq"
+cat >"$state_false_repo/resources/install-state.yaml" <<EOF
+install_dir: "$state_false_repo"
+kernel_name: "mihomo"
+default_mode: "tmux"
+installed_systemd_service: false
+EOF
+bash -c '. "$1/scripts/cmd/clashctl.sh"' -- "$state_false_repo" >/dev/null 2>&1 ||
+    fail "clashctl should preserve false installed_systemd_service from install-state.yaml"
+
 state_missing_yq_tmp=$(make_test_tmpdir "clash-state-missing-yq")
 state_missing_yq_repo="$state_missing_yq_tmp/repo"
 cp -a "$TEST_ROOT/." "$state_missing_yq_repo"
@@ -197,6 +237,87 @@ bash -c '. "$1/scripts/cmd/clashctl.sh"' -- "$state_missing_yq_repo" >"$state_mi
     fail "clashctl should fail when install-state.yaml exists but bin/yq is missing"
 grep -q 'missing executable yq' "$state_missing_yq_tmp/err" ||
     fail "missing yq error should mention the missing install yq"
+! grep -q 'install-state.yaml install_dir mismatch' "$state_missing_yq_tmp/err" ||
+    fail "missing yq should stop install-state parsing before install_dir mismatch checks"
+bash -c 'CLASHCTL_INSTALL_BOOTSTRAP=1 . "$1/scripts/cmd/clashctl.sh"' -- "$state_missing_yq_repo" >"$state_missing_yq_tmp/bootstrap.out" 2>"$state_missing_yq_tmp/bootstrap.err" &&
+    fail "installed clashctl should not allow bootstrap mode to bypass missing yq validation"
+grep -q 'missing executable yq' "$state_missing_yq_tmp/bootstrap.err" ||
+    fail "bootstrap bypass rejection should still mention the missing install yq"
+! grep -q 'install-state.yaml install_dir mismatch' "$state_missing_yq_tmp/bootstrap.err" ||
+    fail "bootstrap bypass rejection should stop before install_dir mismatch checks"
+if command -v zsh >/dev/null; then
+    zsh -c 'source "$1/scripts/cmd/clashctl.sh"' -- "$state_missing_yq_repo" >"$state_missing_yq_tmp/zsh.out" 2>"$state_missing_yq_tmp/zsh.err" &&
+        fail "zsh source should still reject an install missing bin/yq"
+    grep -q 'missing executable yq' "$state_missing_yq_tmp/zsh.err" ||
+        fail "zsh source should resolve install-state helpers before reporting missing yq"
+    ! grep -q 'missing required library' "$state_missing_yq_tmp/zsh.err" ||
+        fail "zsh source should not resolve install-state helper paths from the caller directory"
+fi
+
+if command -v zsh >/dev/null; then
+    zsh_env_missing_yq_tmp=$(make_test_tmpdir "clash-zsh-env-missing-yq")
+    zsh_env_missing_yq_repo="$zsh_env_missing_yq_tmp/repo"
+    cp -a "$TEST_ROOT/." "$zsh_env_missing_yq_repo"
+    rm -f "$zsh_env_missing_yq_repo/resources/install-state.yaml"
+    rm -f "$zsh_env_missing_yq_repo/bin/yq"
+    cat >"$zsh_env_missing_yq_repo/.env" <<EOF
+KERNEL_NAME=mihomo
+CLASH_BASE_DIR=$zsh_env_missing_yq_repo
+INIT_TYPE=tmux
+EOF
+    zsh -c 'source "$1/scripts/cmd/clashctl.sh"' -- "$zsh_env_missing_yq_repo" >"$zsh_env_missing_yq_tmp/out" 2>"$zsh_env_missing_yq_tmp/err" &&
+        fail "zsh source should reject a legacy .env install missing bin/yq"
+    grep -q 'missing executable yq' "$zsh_env_missing_yq_tmp/err" ||
+        fail "zsh legacy .env source should report missing yq"
+    ! grep -q 'bad substitution' "$zsh_env_missing_yq_tmp/err" ||
+        fail "zsh legacy .env source should not use bash-only indirect expansion"
+fi
+
+legacy_bootstrap_bypass_tmp=$(make_test_tmpdir "clash-legacy-bootstrap-bypass")
+legacy_bootstrap_repo="$legacy_bootstrap_bypass_tmp/repo"
+legacy_bootstrap_other="$legacy_bootstrap_bypass_tmp/other"
+cp -a "$TEST_ROOT/." "$legacy_bootstrap_repo"
+rm -f "$legacy_bootstrap_repo/resources/install-state.yaml"
+rm -f "$legacy_bootstrap_repo/bin/yq"
+mkdir -p "$legacy_bootstrap_repo/resources" "$legacy_bootstrap_other"
+printf '%s\n' 'tyx-clash-for-linux-install' >"$legacy_bootstrap_repo/.clashctl-install-root"
+cat >"$legacy_bootstrap_repo/.env" <<EOF
+KERNEL_NAME=mihomo
+CLASH_BASE_DIR=$legacy_bootstrap_repo
+INIT_TYPE=tmux
+EOF
+bash -c '
+    CLASHCTL_INSTALL_BOOTSTRAP=1 \
+    CLASHCTL_INSTALL_BOOTSTRAP_SOURCE_DIR=$1 \
+    CLASH_BASE_DIR=$2 \
+    . "$1/scripts/cmd/clashctl.sh"
+' -- "$legacy_bootstrap_repo" "$legacy_bootstrap_other" >"$legacy_bootstrap_bypass_tmp/out" 2>"$legacy_bootstrap_bypass_tmp/err" &&
+    fail "installed legacy clashctl should not allow external CLASH_BASE_DIR to spoof install bootstrap"
+grep -q 'missing executable yq' "$legacy_bootstrap_bypass_tmp/err" ||
+    fail "legacy bootstrap spoof rejection should still require installed yq"
+
+markerless_bootstrap_bypass_tmp=$(make_test_tmpdir "clash-markerless-bootstrap-bypass")
+markerless_bootstrap_repo="$markerless_bootstrap_bypass_tmp/repo"
+markerless_bootstrap_other="$markerless_bootstrap_bypass_tmp/other"
+cp -a "$TEST_ROOT/." "$markerless_bootstrap_repo"
+rm -f "$markerless_bootstrap_repo/.clashctl-install-root"
+rm -f "$markerless_bootstrap_repo/resources/install-state.yaml"
+rm -f "$markerless_bootstrap_repo/bin/yq"
+mkdir -p "$markerless_bootstrap_repo/resources" "$markerless_bootstrap_other"
+cat >"$markerless_bootstrap_repo/.env" <<EOF
+KERNEL_NAME=mihomo
+CLASH_BASE_DIR=$markerless_bootstrap_repo
+INIT_TYPE=tmux
+EOF
+bash -c '
+    CLASHCTL_INSTALL_BOOTSTRAP=1 \
+    CLASHCTL_INSTALL_BOOTSTRAP_SOURCE_DIR=$1 \
+    CLASH_BASE_DIR=$2 \
+    . "$1/scripts/cmd/clashctl.sh"
+' -- "$markerless_bootstrap_repo" "$markerless_bootstrap_other" >"$markerless_bootstrap_bypass_tmp/out" 2>"$markerless_bootstrap_bypass_tmp/err" &&
+    fail "markerless clashctl should not allow direct source to spoof install bootstrap"
+grep -q 'missing executable yq' "$markerless_bootstrap_bypass_tmp/err" ||
+    fail "markerless bootstrap spoof rejection should still require installed yq"
 
 state_mismatch_tmp=$(make_test_tmpdir "clash-state-mismatch")
 state_mismatch_repo="$state_mismatch_tmp/repo"

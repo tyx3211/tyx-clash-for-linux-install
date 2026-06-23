@@ -4,6 +4,43 @@ set -euo pipefail
 
 . "$(dirname "$0")/lib/test_helpers.bash"
 
+bootstrap_tmp=$(make_test_tmpdir "clash-install-bootstrap")
+bootstrap_source="$bootstrap_tmp/source"
+bootstrap_home="$bootstrap_tmp/home"
+cp -a "$TEST_ROOT/." "$bootstrap_source"
+mkdir -p "$bootstrap_home"
+HOME="$bootstrap_home" bash "$bootstrap_source/install.sh" --help \
+    >"$bootstrap_tmp/help.out" 2>"$bootstrap_tmp/help.err" ||
+    fail "install --help should work before an installed yq exists"
+! grep -q 'missing executable yq' "$bootstrap_tmp/help.err" ||
+    fail "install bootstrap should not source runtime yq validation before dependencies are installed"
+! grep -q 'command not found' "$bootstrap_tmp/help.err" ||
+    fail "install bootstrap should define install helpers before preflight uses them"
+grep -q 'Usage:' "$bootstrap_tmp/help.out" ||
+    fail "install --help should still show usage during bootstrap"
+
+bad_marker_tmp=$(make_test_tmpdir "clash-install-bad-marker")
+bad_marker_source="$bad_marker_tmp/source"
+cp -a "$TEST_ROOT/." "$bad_marker_source"
+rm -f "$bad_marker_source/bin/yq"
+printf '%s\n' 'broken-marker' >"$bad_marker_source/.clashctl-install-root"
+HOME="$bad_marker_tmp/home" bash "$bad_marker_source/install.sh" --help \
+    >"$bad_marker_tmp/help.out" 2>"$bad_marker_tmp/help.err" &&
+    fail "install bootstrap should reject any existing install marker before yq is installed"
+grep -q 'missing executable yq' "$bad_marker_tmp/help.err" ||
+    fail "bad marker install bootstrap rejection should still require installed yq"
+
+broken_marker_tmp=$(make_test_tmpdir "clash-install-broken-marker")
+broken_marker_source="$broken_marker_tmp/source"
+cp -a "$TEST_ROOT/." "$broken_marker_source"
+rm -f "$broken_marker_source/bin/yq"
+ln -s "$broken_marker_tmp/missing-marker-target" "$broken_marker_source/.clashctl-install-root"
+HOME="$broken_marker_tmp/home" bash "$broken_marker_source/install.sh" --help \
+    >"$broken_marker_tmp/help.out" 2>"$broken_marker_tmp/help.err" &&
+    fail "install bootstrap should reject a broken symlink install marker before yq is installed"
+grep -q 'missing executable yq' "$broken_marker_tmp/help.err" ||
+    fail "broken marker install bootstrap rejection should still require installed yq"
+
 render_mode() {
     local mode=$1
     local tmp source_dir install_dir
