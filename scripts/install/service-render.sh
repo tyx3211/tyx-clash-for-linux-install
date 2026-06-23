@@ -159,6 +159,22 @@ _service_target_belongs_to_current_install() {
     esac
 }
 
+_systemd_registered_unit_belongs_to_current_install() {
+    [ "${INIT_TYPE:-}" = systemd ] || return 1
+    command -v systemctl >/dev/null || return 1
+
+    local expected unit_body
+    expected=$(_service_target_expected_execstart)
+    unit_body=$(systemctl cat "$KERNEL_NAME" 2>/dev/null) || return 1
+    printf '%s\n' "$unit_body" | grep -Fqx "$expected"
+}
+
+_systemd_registered_unit_exists() {
+    [ "${INIT_TYPE:-}" = systemd ] || return 1
+    command -v systemctl >/dev/null || return 1
+    systemctl cat "$KERNEL_NAME" >/dev/null 2>&1
+}
+
 _install_service() {
     local kernel_desc="$KERNEL_NAME Daemon, A[nother] Clash Kernel."
 
@@ -170,6 +186,12 @@ _install_service() {
         if { [ -e "$service_target" ] || [ -L "$service_target" ]; } &&
             ! _service_target_belongs_to_current_install; then
             _error_quit "systemd 服务已存在且不属于当前安装，拒绝覆盖：$service_target"
+            return 1
+        fi
+        if [ "${INIT_TYPE:-}" = systemd ] &&
+            _systemd_registered_unit_exists &&
+            ! _systemd_registered_unit_belongs_to_current_install; then
+            _error_quit "systemd 已注册同名服务且不属于当前安装，拒绝覆盖：$KERNEL_NAME"
             return 1
         fi
 

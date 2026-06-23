@@ -77,7 +77,7 @@ CLASH_INSTALL_SERVICE_TOUCHED=true
 _install_service || _error_quit "服务安装失败，请检查启动方式和权限"
 if [ -z "$CLASHCTL_NO_RC" ]; then
     CLASH_INSTALL_RC_TOUCHED=true
-    _apply_rc
+    _apply_rc || _error_quit "shell rc 写入失败，请检查 shell 配置文件权限"
 fi
 
 

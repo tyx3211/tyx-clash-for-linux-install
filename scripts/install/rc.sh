@@ -4,6 +4,9 @@ _detect_rc() {
     local home=$HOME
     _is_regular_sudo && home=$(awk -F: -v user="$SUDO_USER" '$1==user{print $6}' /etc/passwd)
 
+    SHELL_RC_BASH=
+    SHELL_RC_ZSH=
+    SHELL_RC_FISH=
     command -v bash >&/dev/null && {
         SHELL_RC_BASH="${home}/.bashrc"
     }
@@ -31,12 +34,15 @@ _chown_sudo_user_path() {
 }
 
 _apply_rc() {
-    _detect_rc
+    _detect_rc || return 1
     local source_clashctl=". $CLASH_CMD_DIR/clashctl.sh"
-    _revoke_rc
-    # shellcheck disable=SC2086
-    tee -a "$SHELL_RC_BASH" $SHELL_RC_ZSH >/dev/null <<EOF
+    local shell_rc_files=()
+    [ -n "${SHELL_RC_BASH:-}" ] && shell_rc_files+=("$SHELL_RC_BASH")
+    [ -n "${SHELL_RC_ZSH:-}" ] && shell_rc_files+=("$SHELL_RC_ZSH")
 
+    _revoke_rc || return 1
+    [ "${#shell_rc_files[@]}" -gt 0 ] || return 1
+    if ! tee -a "${shell_rc_files[@]}" >/dev/null <<EOF
 $start_flag $CLASH_CMD_DIR
 # 加载 clashctl 命令
 $source_clashctl
@@ -44,17 +50,48 @@ $source_clashctl
 watch_proxy
 $end_flag $CLASH_CMD_DIR
 EOF
-    [ -n "$SHELL_RC_BASH" ] && _chown_sudo_user_path "$SHELL_RC_BASH"
-    [ -n "$SHELL_RC_ZSH" ] && _chown_sudo_user_path "$SHELL_RC_ZSH"
-    [ -n "$SHELL_RC_FISH" ] && {
-        /usr/bin/install -D -m 644 "$SCRIPT_CMD_FISH" "$SHELL_RC_FISH"
-        sed -i "1iset -gx CLASHCTL_CMD_DIR $(_shell_quote "$CLASH_CMD_DIR")" "$SHELL_RC_FISH"
+    then
+        _revoke_rc >/dev/null 2>&1 || true
+        return 1
+    fi
+    [ -n "${SHELL_RC_BASH:-}" ] && _chown_sudo_user_path "$SHELL_RC_BASH"
+    [ -n "${SHELL_RC_ZSH:-}" ] && _chown_sudo_user_path "$SHELL_RC_ZSH"
+    [ -n "${SHELL_RC_FISH:-}" ] && {
+        local fish_dir fish_tmp
+        fish_dir=$(dirname "$SHELL_RC_FISH")
+        mkdir -p "$fish_dir" || {
+            _revoke_rc >/dev/null 2>&1 || true
+            return 1
+        }
+        fish_tmp=$(mktemp "${fish_dir}/.clashctl-fish.XXXXXX") || {
+            _revoke_rc >/dev/null 2>&1 || true
+            return 1
+        }
+        /usr/bin/install -m 644 "$SCRIPT_CMD_FISH" "$fish_tmp" || {
+            /usr/bin/rm -f "$fish_tmp"
+            _revoke_rc >/dev/null 2>&1 || true
+            return 1
+        }
+        sed -i "1iset -gx CLASHCTL_CMD_DIR $(_shell_quote "$CLASH_CMD_DIR")" "$fish_tmp" || {
+            /usr/bin/rm -f "$fish_tmp"
+            _revoke_rc >/dev/null 2>&1 || true
+            return 1
+        }
+        /bin/mv -f "$fish_tmp" "$SHELL_RC_FISH" || {
+            /usr/bin/rm -f "$fish_tmp"
+            _revoke_rc >/dev/null 2>&1 || true
+            return 1
+        }
         _chown_sudo_user_path "$(dirname "$(dirname "$(dirname "$SHELL_RC_FISH")")")"
         _chown_sudo_user_path "$(dirname "$(dirname "$SHELL_RC_FISH")")"
         _chown_sudo_user_path "$(dirname "$SHELL_RC_FISH")"
         _chown_sudo_user_path "$SHELL_RC_FISH"
     }
-    $source_clashctl
+    . "$CLASH_CMD_DIR/clashctl.sh" || {
+        _revoke_rc >/dev/null 2>&1 || true
+        return 1
+    }
+    return 0
 }
 
 _revoke_rc_file() {
@@ -103,9 +140,27 @@ _revoke_rc_file() {
     ' "$rc_target" >"$tmp_file" && /bin/mv -f "$tmp_file" "$rc_target"
 }
 
+_revoke_fish_rc_file() {
+    local rc_file=$1 marker
+    [ -f "$rc_file" ] || return 0
+
+    marker="set -gx CLASHCTL_CMD_DIR $(_shell_quote "$CLASH_CMD_DIR")"
+    grep -Fqx "$marker" "$rc_file" || return 0
+    rm -f "$rc_file"
+}
+
 _revoke_rc() {
-    _detect_rc
-    _revoke_rc_file "$SHELL_RC_BASH"
-    _revoke_rc_file "$SHELL_RC_ZSH"
-    [ -n "$SHELL_RC_FISH" ] && rm -f "$SHELL_RC_FISH" 2>/dev/null
+    _detect_rc || return 1
+
+    local status=0
+    if [ -n "${SHELL_RC_BASH:-}" ]; then
+        _revoke_rc_file "$SHELL_RC_BASH" || status=1
+    fi
+    if [ -n "${SHELL_RC_ZSH:-}" ]; then
+        _revoke_rc_file "$SHELL_RC_ZSH" || status=1
+    fi
+    if [ -n "${SHELL_RC_FISH:-}" ]; then
+        _revoke_fish_rc_file "$SHELL_RC_FISH" || status=1
+    fi
+    return "$status"
 }

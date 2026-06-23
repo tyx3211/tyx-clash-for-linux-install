@@ -93,6 +93,7 @@ sudo bash install.sh --init systemd
 ```
 
 适合需要 Tun 的机器。通过 sudo 安装时，服务文件由 root 写入系统目录，实际服务进程以 sudo 调用用户身份运行。
+默认安装目录仍是 sudo 调用用户的 `~/clashctl`，脚本会把 root 环境下展开出来的 `/root/clashctl` 归一化回普通用户目录。
 
 运行时启动、停止和重启 systemd 服务会走 `sudo -n systemctl`。这意味着执行命令的用户需要是 root，或者已经拥有免密 sudo 权限；脚本不会停下来等待输入 sudo 密码。
 

@@ -74,6 +74,50 @@ service_guard_tmp=$(make_test_tmpdir "clash-service-guard")
         fail "_install_service should not overwrite an unrelated existing systemd unit"
 )
 
+service_vendor_guard_tmp=$(make_test_tmpdir "clash-service-vendor-guard")
+(
+    set +e
+    . "$CLASHCTL_SH"
+    . "$PREFLIGHT_SH"
+
+    KERNEL_NAME=mihomo
+    INIT_TYPE=systemd
+    CLASH_BASE_DIR="$service_vendor_guard_tmp/current"
+    CLASH_RESOURCES_DIR="$CLASH_BASE_DIR/resources"
+    CLASH_CONFIG_RUNTIME="$CLASH_RESOURCES_DIR/runtime.yaml"
+    BIN_KERNEL="$CLASH_BASE_DIR/bin/mihomo"
+    service_target="$service_vendor_guard_tmp/etc/mihomo.service"
+    service_src="$service_vendor_guard_tmp/systemd.sh"
+    service_add=()
+    service_enable=(true)
+    service_reload=(true)
+    mkdir -p "$service_vendor_guard_tmp" "$CLASH_RESOURCES_DIR" "$CLASH_BASE_DIR/bin"
+    printf 'ExecStart=placeholder_cmd_full\n' >"$service_src"
+    systemctl() {
+        case "$1" in
+        cat)
+            printf '# /lib/systemd/system/mihomo.service\n'
+            printf 'ExecStart=/opt/vendor/mihomo -d /opt/vendor/resources -f /opt/vendor/runtime.yaml\n'
+            return 0
+            ;;
+        *)
+            return 1
+            ;;
+        esac
+    }
+    _error_quit() {
+        printf '%s\n' "$*" >"$service_vendor_guard_tmp/error.log"
+        return 1
+    }
+
+    _install_service
+    status=$?
+    [ "$status" -ne 0 ] ||
+        fail "_install_service should reject an existing vendor systemd unit that belongs to another install"
+    [ ! -e "$service_target" ] ||
+        fail "_install_service should not shadow an unrelated vendor systemd unit by writing an /etc override"
+)
+
 service_uninstall_guard_tmp=$(make_test_tmpdir "clash-service-uninstall-guard")
 (
     set +e

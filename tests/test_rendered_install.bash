@@ -28,6 +28,57 @@ grep -q 'CLASH_INSTALL_RC_TOUCHED=true' "$TEST_ROOT/install.sh" ||
 grep -q '_revoke_rc' "$TEST_ROOT/scripts/preflight.sh" ||
     fail "incomplete install cleanup should revoke partially applied shell rc snippets"
 
+rc_failure_tmp=$(make_test_tmpdir "clash-apply-rc-failure")
+(
+    set +e
+    . "$TEST_ROOT/scripts/preflight.sh"
+
+    HOME="$rc_failure_tmp/home"
+    CLASH_BASE_DIR="$rc_failure_tmp/install"
+    CLASH_CMD_DIR="$CLASH_BASE_DIR/scripts/cmd"
+    SCRIPT_CMD_FISH="$rc_failure_tmp/missing/clashctl.fish"
+    SHELL_RC_BASH="$HOME/.bashrc"
+    SHELL_RC_ZSH=
+    SHELL_RC_FISH="$HOME/.config/fish/conf.d/clashctl.fish"
+    mkdir -p "$HOME" "$CLASH_CMD_DIR"
+    printf 'KERNEL_NAME=mihomo\nCLASH_BASE_DIR=%s\nINIT_TYPE=tmux\n' "$CLASH_BASE_DIR" >"$CLASH_BASE_DIR/.env"
+    mkdir -p "$CLASH_BASE_DIR/scripts/cmd"
+    cat >"$CLASH_CMD_DIR/clashctl.sh" <<'EOF'
+watch_proxy() { :; }
+EOF
+    _detect_rc() {
+        start_flag="# clashctl START"
+        end_flag="# clashctl END"
+    }
+
+    _apply_rc >/dev/null 2>"$rc_failure_tmp/apply.err"
+    status=$?
+    [ "$status" -ne 0 ] ||
+        fail "_apply_rc should return non-zero when fish rc installation fails after partial shell rc writes"
+    ! grep -q "$CLASH_CMD_DIR/clashctl.sh" "$SHELL_RC_BASH" ||
+        fail "_apply_rc should roll back bash rc snippets after fish rc installation fails"
+)
+
+rc_revoke_failure_tmp=$(make_test_tmpdir "clash-revoke-rc-failure")
+(
+    set +e
+    . "$TEST_ROOT/scripts/preflight.sh"
+
+    HOME="$rc_revoke_failure_tmp/home"
+    mkdir -p "$HOME"
+    _detect_rc() {
+        SHELL_RC_BASH="$HOME/.bashrc"
+        SHELL_RC_ZSH=
+        SHELL_RC_FISH=
+    }
+    _revoke_rc_file() { return 23; }
+
+    _revoke_rc >/dev/null 2>&1
+    status=$?
+    [ "$status" -ne 0 ] ||
+        fail "_revoke_rc should propagate failures from rc file cleanup"
+)
+
 bad_marker_tmp=$(make_test_tmpdir "clash-install-bad-marker")
 bad_marker_source="$bad_marker_tmp/source"
 cp -a "$TEST_ROOT/." "$bad_marker_source"

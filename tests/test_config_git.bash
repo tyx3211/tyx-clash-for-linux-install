@@ -231,6 +231,48 @@ install_state_tmp="$config_git_tmp/install-state"
         fail "install-state.yaml should record whether systemd was installed"
 )
 
+sudo_systemd_state_tmp="$config_git_tmp/sudo-systemd-state"
+(
+    set +e
+    . "$TEST_ROOT/scripts/cmd/clashctl.sh"
+    . "$PREFLIGHT_SH"
+
+    fake_sudo_home="$sudo_systemd_state_tmp/home"
+    mkdir -p "$fake_sudo_home"
+    SUDO_USER=clash_sudo_user
+    awk() {
+        if [ "${1:-}" = -F: ]; then
+            printf '%s\n' "$fake_sudo_home"
+            return 0
+        fi
+        command awk "$@"
+    }
+    _is_regular_sudo() { return 0; }
+    _error_quit() { fail "$*"; }
+
+    CLASH_BASE_DIR=/root/clashctl
+    KERNEL_NAME=mihomo
+    INIT_TYPE=systemd
+    CLASH_INSTALLED_INIT_TYPE=systemd
+    VERSION_MIHOMO=v1.2.3
+    VERSION_YQ=v4.53.3
+    VERSION_SUBCONVERTER=v0.9.0
+
+    _normalize_sudo_install_path
+    _refresh_install_paths
+    mkdir -p "$CLASH_BASE_DIR" "$CLASH_RESOURCES_DIR"
+    write_test_install_yq "$CLASH_BASE_DIR"
+    cp "$TEST_ROOT/.env" "$CLASH_BASE_DIR/.env"
+
+    _set_envs
+    grep -qx 'CLASH_BASE_DIR='"$fake_sudo_home"'/clashctl' "$CLASH_BASE_DIR/.env" ||
+        fail "sudo systemd install should persist the invoking user install dir instead of /root or ~"
+    grep -qx 'install_dir: "'$fake_sudo_home'/clashctl"' "$CLASH_RESOURCES_DIR/install-state.yaml" ||
+        fail "sudo systemd install-state should record an absolute invoking-user path"
+    ! grep -Eq '(^|[" ])~|/root/clashctl' "$CLASH_BASE_DIR/.env" "$CLASH_RESOURCES_DIR/install-state.yaml" ||
+        fail "sudo systemd persisted install metadata should not contain ~ or /root/clashctl"
+)
+
 update_source="$config_git_tmp/update-source"
 update_target="$config_git_tmp/update-target"
 cp -a "$TEST_ROOT/." "$update_source"

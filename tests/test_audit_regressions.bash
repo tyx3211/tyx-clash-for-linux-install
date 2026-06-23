@@ -443,6 +443,37 @@ EOF
         fail "rc cleanup should preserve trailing user rc content"
 )
 
+fish_rc_scope_tmp=$(make_test_tmpdir "clash-fish-rc-scope")
+(
+    set +e
+    . "$PREFLIGHT_SH"
+
+    CLASH_CMD_DIR="$fish_rc_scope_tmp/current/scripts/cmd"
+    current_fish="$fish_rc_scope_tmp/home/.config/fish/conf.d/clashctl.fish"
+    other_fish="$fish_rc_scope_tmp/other-home/.config/fish/conf.d/clashctl.fish"
+    mkdir -p "$(dirname "$current_fish")" "$(dirname "$other_fish")"
+    printf 'set -gx CLASHCTL_CMD_DIR %s\n' "$CLASH_CMD_DIR" >"$current_fish"
+    printf 'set -gx CLASHCTL_CMD_DIR /other/install/scripts/cmd\n' >"$other_fish"
+
+    _detect_rc() {
+        SHELL_RC_BASH=
+        SHELL_RC_ZSH=
+        SHELL_RC_FISH="$other_fish"
+    }
+    _revoke_rc
+    [ -f "$other_fish" ] ||
+        fail "fish rc cleanup should keep wrappers that belong to another install"
+
+    _detect_rc() {
+        SHELL_RC_BASH=
+        SHELL_RC_ZSH=
+        SHELL_RC_FISH="$current_fish"
+    }
+    _revoke_rc
+    [ ! -e "$current_fish" ] ||
+        fail "fish rc cleanup should remove wrappers that belong to the current install"
+)
+
 uninstall_order=$(
     awk '
         /INSTALL_MARKER=/ { print "marker"; next }

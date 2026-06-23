@@ -124,7 +124,7 @@ clashctl update-self
 
 - 当前 fork 以 `INIT_TYPE=tmux` 为默认运行托管模式，请先确保系统已安装 `tmux`。
 - 如需纯用户态但不想依赖 `tmux`，可以在运行时使用 `clashon --mode nohup`。
-- 如需 Tun，请先使用 `sudo bash install.sh --init systemd` 注册 systemd 服务，再执行 `clashrestart --mode systemd` 和 `clashtun on`。运行时启动/停止 systemd 服务使用 `sudo -n systemctl`，因此需要 root 或免密 sudo；脚本不会停下来等待输入 sudo 密码。
+- 如需 Tun，请先使用 `sudo bash install.sh --init systemd` 注册 systemd 服务，再执行 `clashrestart --mode systemd` 和 `clashtun on`。运行时启动/停止 systemd 服务使用 `sudo -n systemctl`，因此需要 root 或免密 sudo；脚本不会停下来等待输入 sudo 密码。sudo 安装只用于写入系统服务，默认安装目录仍是发起 sudo 的普通用户目录，例如 `/home/william/clashctl`，不会变成 `/root/clashctl`。
 - 新安装的 `external-controller` 默认绑定 `127.0.0.1:9090`，远程访问面板请优先使用 SSH 端口转发。旧安装无损更新后不会自动改已有端口，实际地址以 `clashui` 输出为准。
 - `clashproxy on` / `clashproxy off` 只影响当前 shell 的环境变量，不会改系统级代理。
 - `clashproxy status` 会显示当前终端实际环境变量，并在它们和当前运行配置不一致时提示刷新；只有 `no_proxy` / `NO_PROXY` 不算代理开启。
@@ -195,6 +195,7 @@ sudo bash install.sh --init=systemd
 - `tmux`：默认托管模式，适合共享机普通用户，便于查看会话和日志。
 - `nohup`：普通用户备用模式，不依赖 `tmux`，但进程托管能力较弱。
 - `systemd`：需要 root 或 sudo，会注册系统服务，支持 `clashtun on/off`。运行时管理服务要求 root 或免密 sudo。
+- `sudo bash install.sh --init systemd` 只提权写入系统服务；默认安装目录仍归属发起 sudo 的普通用户，例如 `/home/william/clashctl`，不会安装到 `/root/clashctl`。
 - 安装后也可以用 `clashon --mode ...` / `clashrestart --mode ...` 在运行时选择本次托管模式；`systemd` 只有在当前安装已经 sudo 注册服务后才可用。
 - `.env` 现在只作为安装前默认值和旧版本兼容入口。安装完成后，本机安装状态以 `resources/install-state.yaml` 为主；普通使用者通常不需要修改它。
 - `.env` 里的 `VERSION_MIHOMO`、`VERSION_YQ`、`VERSION_SUBCONVERTER` 默认固定版本；如果留空，安装脚本会通过 GitHub `releases/latest` 自动解析最新 tag。共享机或网络受限环境建议固定版本，便于复现和排错。
