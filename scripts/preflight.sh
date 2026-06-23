@@ -386,7 +386,9 @@ _load_zip() {
     ZIP_SUBCONVERTER=$(echo "${ZIP_BASE_DIR}"/subconverter*)
 }
 _fetch_latest_tag() {
-    local repo=$1 body tag
+    local repo=$1 body tag url
+    url="https://api.github.com/repos/${repo}/releases/latest"
+    [ -n "${URL_GH_PROXY:-}" ] && url="${URL_GH_PROXY%/}/${url}"
     body=$(
         curl \
             --silent \
@@ -394,7 +396,7 @@ _fetch_latest_tag() {
             --max-time 10 \
             --retry 1 \
             -H 'Accept: application/vnd.github+json' \
-            "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null
+            "$url" 2>/dev/null
     ) || return 1
     tag=$(
         printf '%s' "$body" |

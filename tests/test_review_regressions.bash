@@ -96,6 +96,24 @@ latest_version_tmp=$(make_test_tmpdir "clash-latest-version")
 grep -qx 'v9.9.9' "$latest_version_tmp/version" ||
     fail "empty dependency version should be resolved from the latest release tag"
 
+latest_version_proxy_tmp=$(make_test_tmpdir "clash-latest-version-proxy")
+(
+    set +e
+    . "$CLASHCTL_SH"
+    . "$PREFLIGHT_SH"
+
+    curl() {
+        printf '%s\n' "$*" >"$latest_version_proxy_tmp/curl.args"
+        printf '%s\n' '{"tag_name":"v9.9.9"}'
+    }
+
+    VERSION_YQ=
+    URL_GH_PROXY=https://gh-proxy.org
+    _resolve_version VERSION_YQ mikefarah/yq >/dev/null || exit 1
+)
+grep -q 'https://gh-proxy.org/https://api.github.com/repos/mikefarah/yq/releases/latest' "$latest_version_proxy_tmp/curl.args" ||
+    fail "latest release tag resolution should honor URL_GH_PROXY"
+
 assert_file_contains "$SYSTEMD_SH" 'CAP_NET_ADMIN CAP_NET_RAW CAP_NET_BIND_SERVICE' \
     "systemd service should keep only network-related capabilities"
 
