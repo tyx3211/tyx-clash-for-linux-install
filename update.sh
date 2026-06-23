@@ -86,8 +86,12 @@ _read_state_value() {
 _read_install_dir_value() {
     local root=$1 value=
 
-    value=$(_read_state_value "$root" install_dir 2>/dev/null || true)
-    [ -n "$value" ] || value=$(_path_env_read_path_value_any "$root/.env" CLASH_BASE_DIR CLASHCTL_HOME 2>/dev/null || true)
+    if [ -e "$root/resources/install-state.yaml" ]; then
+        value=$(_read_state_value "$root" install_dir) ||
+            _die "安装状态读取失败：$root/resources/install-state.yaml"
+    else
+        value=$(_path_env_read_path_value_any "$root/.env" CLASH_BASE_DIR CLASHCTL_HOME 2>/dev/null || true)
+    fi
     [ -n "$value" ] || return 1
     printf '%s\n' "$value"
 }
@@ -95,8 +99,10 @@ _read_install_dir_value() {
 _read_target_metadata() {
     local root=$1 key=$2 env_key=$3 value=
 
-    value=$(_read_state_value "$root" "$key" 2>/dev/null || true)
-    if [ -z "$value" ]; then
+    if [ -e "$root/resources/install-state.yaml" ]; then
+        value=$(_read_state_value "$root" "$key") ||
+            _die "安装状态读取失败：$root/resources/install-state.yaml"
+    else
         case "$env_key" in
         KERNEL_NAME)
             value=$(_path_env_read_value_any "$root/.env" KERNEL_NAME CLASHCTL_KERNEL 2>/dev/null || true)
@@ -302,14 +308,16 @@ _validate_existing_install_state() {
     [ ! -L "$target/resources" ] && [ ! -L "$state_path" ] ||
         _die "拒绝读取符号链接安装状态文件：$state_path"
 
-    state_target=$(_read_state_value "$target" install_dir 2>/dev/null || true)
+    state_target=$(_read_state_value "$target" install_dir) ||
+        _die "安装状态读取失败：$state_path"
     [ -n "$state_target" ] || _die "安装状态缺少 install_dir：$state_path"
     state_target=$(_canonical_dir "$state_target" 2>/dev/null || true)
     [ -n "$state_target" ] || _die "安装状态 install_dir 不存在：$state_path"
     [ "$state_target" = "$target" ] ||
         _die "安装状态目录不属于当前目标：$state_target != $target"
 
-    kernel_name=$(_read_state_value "$target" kernel_name 2>/dev/null || true)
+    kernel_name=$(_read_state_value "$target" kernel_name) ||
+        _die "安装状态读取失败：$state_path"
     [ -n "$kernel_name" ] || _die "安装状态缺少 kernel_name：$state_path"
     _install_state_validate_kernel_name "$kernel_name" ||
         _die "内核名称不安全，仅支持 mihomo、clash：$kernel_name"

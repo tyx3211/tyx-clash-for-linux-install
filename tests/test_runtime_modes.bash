@@ -30,6 +30,21 @@ assert_file_contains "$CLASHCTL_SH" 'clashon "\$@"|clashon "\$\{@\}"' \
 assert_file_contains "$FISH_SH" '_clashctl_bash_call clashon \$argv' \
     "fish clashon wrapper should pass runtime mode arguments through a non-interactive helper"
 
+assert_file_contains "$FISH_SH" '_clashctl_watch_proxy' \
+    "fish wrapper should run the automatic proxy refresh hook for interactive shells"
+
+assert_file_contains "$FISH_SH" '_clashctl_import_proxy_env --quiet watch_proxy' \
+    "fish wrapper should import watch_proxy results quietly during interactive shell startup"
+
+assert_file_contains "$FISH_SH" 'bash -c "\$bash_snippet" -- "\$CLASHCTL_CMD_DIR" \$argv >\$env_tmp$' \
+    "fish explicit proxy commands should surface bash-side error messages"
+
+assert_file_contains "$FISH_SH" 'clashproxy "\$@" >/dev/null$' \
+    "fish clashproxy off should suppress duplicate success output"
+
+assert_file_not_contains "$FISH_SH" 'clashproxy "\$@" >/dev/null 2>&1' \
+    "fish clashproxy off should not suppress bash-side error messages"
+
 assert_file_not_contains "$FISH_SH" 'bash -i' \
     "fish wrapper should not load interactive bash rc and trigger watch_proxy side effects"
 
@@ -237,11 +252,16 @@ mode_tmp=$(make_test_tmpdir "clash-runtime-mode")
     [ "$unset_proxy_called" = false ] ||
         fail "clashrestart should not clear current shell proxy variables"
 
+    unset_proxy_called=false
+    tmux_stop_count_before=$(grep -c '^tmux-stop$' "$mode_tmp/calls" || true)
     clashoff
     status=$?
     [ "$status" -eq 0 ] || fail "clashoff should stop active mode"
-    grep -qx 'nohup-stop' "$mode_tmp/calls" ||
+    tmux_stop_count_after=$(grep -c '^tmux-stop$' "$mode_tmp/calls" || true)
+    [ "$tmux_stop_count_after" -gt "$tmux_stop_count_before" ] ||
         fail "clashoff should stop recorded active mode"
+    [ "$unset_proxy_called" = false ] ||
+        fail "clashoff should not clear current shell proxy variables"
 )
 
 restart_ext_tmp=$(make_test_tmpdir "clash-restart-ext")
@@ -249,7 +269,6 @@ restart_ext_tmp=$(make_test_tmpdir "clash-restart-ext")
     set +e
     . "$CLASHCTL_SH"
 
-    _has_current_proxy_env() { return 1; }
     _get_active_mode() { return 1; }
     _get_default_service_mode() { printf '%s\n' tmux; }
     _merge_config() { printf 'merge\n' >>"$restart_ext_tmp/calls"; }
@@ -276,7 +295,6 @@ restart_proxy_env_tmp=$(make_test_tmpdir "clash-restart-proxy-env")
     set +e
     . "$CLASHCTL_SH"
 
-    _has_current_proxy_env() { return 0; }
     _get_active_mode() { printf '%s\n' tmux; return 0; }
     _detect_ext_addr() { EXT_PORT=23571; }
     _merge_config() { printf 'merge\n' >>"$restart_proxy_env_tmp/calls"; }
@@ -301,7 +319,6 @@ restart_proxy_port_conflict_tmp=$(make_test_tmpdir "clash-restart-proxy-port-con
     CLASH_CONFIG_RUNTIME="$restart_proxy_port_conflict_tmp/runtime.yaml"
     printf 'old-runtime\n' >"$CLASH_CONFIG_RUNTIME"
 
-    _has_current_proxy_env() { return 1; }
     _get_active_mode() { printf '%s\n' tmux; return 0; }
     _detect_ext_addr() { EXT_PORT=23571; }
     _merge_config() {
@@ -385,7 +402,6 @@ restart_health_tmp=$(make_test_tmpdir "clash-restart-health")
     set +e
     . "$CLASHCTL_SH"
 
-    _has_current_proxy_env() { return 1; }
     _get_active_mode() { return 1; }
     _get_default_service_mode() { printf '%s\n' tmux; }
     _merge_config() { printf 'merge\n' >>"$restart_health_tmp/calls"; }
@@ -412,7 +428,6 @@ restart_secret_tmp=$(make_test_tmpdir "clash-restart-secret")
     set +e
     . "$CLASHCTL_SH"
 
-    _has_current_proxy_env() { return 1; }
     _get_active_mode() { printf '%s\n' tmux; return 0; }
     _detect_ext_addr() { EXT_PORT=23571; }
     _merge_config() { printf 'merge\n' >>"$restart_secret_tmp/calls"; }

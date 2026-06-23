@@ -46,6 +46,7 @@ assert_file_contains "$PREFLIGHT_SH" '_refresh_install_paths\(\)' \
     "command-line kernel/path overrides should refresh derived install paths"
 
 env_override_tmp=$(make_test_tmpdir "clash-env-override")
+write_test_install_yq "$env_override_tmp/custom-install"
 (
     THIS_SCRIPT_DIR="$TEST_ROOT/scripts/cmd"
     CLASH_BASE_DIR="$env_override_tmp/custom-install"
@@ -58,6 +59,7 @@ tilde_env_tmp=$(make_test_tmpdir "clash-tilde-env")
 tilde_env_repo="$tilde_env_tmp/repo"
 tilde_home="$tilde_env_tmp/home"
 mkdir -p "$tilde_home" "$tilde_env_repo"
+write_test_install_yq "$tilde_home/clashctl"
 cp -a "$TEST_ROOT/scripts" "$tilde_env_repo/scripts"
 cat >"$tilde_env_repo/.env" <<'EOF'
 KERNEL_NAME=mihomo
@@ -238,6 +240,7 @@ uninstall_state_repo="$uninstall_state_tmp/repo"
 cp -a "$TEST_ROOT/." "$uninstall_state_repo"
 rm -f "$uninstall_state_repo/.env"
 mkdir -p "$uninstall_state_repo/resources"
+write_test_install_yq "$uninstall_state_repo"
 printf 'tyx-clash-for-linux-install\n' >"$uninstall_state_repo/.clashctl-install-root"
 cat >"$uninstall_state_repo/resources/install-state.yaml" <<EOF
 install_dir: "$uninstall_state_repo"
@@ -264,6 +267,7 @@ uninstall_bad_kernel_repo="$uninstall_bad_kernel_tmp/repo"
 cp -a "$TEST_ROOT/." "$uninstall_bad_kernel_repo"
 rm -f "$uninstall_bad_kernel_repo/.env"
 mkdir -p "$uninstall_bad_kernel_repo/resources"
+write_test_install_yq "$uninstall_bad_kernel_repo"
 printf 'tyx-clash-for-linux-install\n' >"$uninstall_bad_kernel_repo/.clashctl-install-root"
 cat >"$uninstall_bad_kernel_repo/resources/install-state.yaml" <<EOF
 install_dir: "$uninstall_bad_kernel_repo"
@@ -320,6 +324,7 @@ uninstall_marker_symlink_repo="$uninstall_marker_symlink_tmp/repo"
 cp -a "$TEST_ROOT/." "$uninstall_marker_symlink_repo"
 mkdir -p "$uninstall_marker_symlink_repo/resources"
 rm -f "$uninstall_marker_symlink_repo/.env" "$uninstall_marker_symlink_repo/.clashctl-install-root"
+write_test_install_yq "$uninstall_marker_symlink_repo"
 printf 'tyx-clash-for-linux-install\n' >"$uninstall_marker_symlink_tmp/marker"
 ln -s "$uninstall_marker_symlink_tmp/marker" "$uninstall_marker_symlink_repo/.clashctl-install-root"
 cat >"$uninstall_marker_symlink_repo/resources/install-state.yaml" <<EOF

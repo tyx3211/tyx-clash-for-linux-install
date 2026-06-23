@@ -84,7 +84,7 @@ clashproxy on -g
 clashproxy mode silent
 ```
 
-`clashoff` 会关闭内核并清理当前终端代理变量。如果已经用 `clashproxy on -g` 打开新终端自动代理，关闭内核后建议再执行 `clashproxy off -g`，避免新终端自动写入一个已经不可用的代理地址。
+`clashoff` 只关闭内核，不改当前终端代理变量。需要关闭当前终端代理时，执行 `clashproxy off`。如果已经用 `clashproxy on -g` 打开新终端自动代理，关闭内核后建议再执行 `clashproxy off -g`，避免新终端自动写入一个已经不可用的代理地址。
 
 ## Web 面板
 

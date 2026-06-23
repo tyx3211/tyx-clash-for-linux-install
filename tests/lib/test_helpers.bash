@@ -103,3 +103,98 @@ make_test_tmpdir() {
     mkdir -p "$base"
     mktemp -d "${base}/${name}.XXXXXX"
 }
+
+write_test_install_yq() {
+    local install_root=$1
+
+    mkdir -p "$install_root/bin"
+    cat >"$install_root/bin/yq" <<'EOF'
+#!/usr/bin/env bash
+if [ "${1:-}" = "-n" ]; then
+    if [ -n "${INSTALL_STATE_INSTALL_DIR+x}" ]; then
+        printf 'install_dir: "%s"\n' "$INSTALL_STATE_INSTALL_DIR"
+        printf 'kernel_name: "%s"\n' "$INSTALL_STATE_KERNEL_NAME"
+        printf 'default_mode: "%s"\n' "$INSTALL_STATE_DEFAULT_MODE"
+        printf 'installed_systemd_service: %s\n' "$INSTALL_STATE_SYSTEMD"
+        printf 'versions:\n'
+        printf '  mihomo: "%s"\n' "$INSTALL_STATE_VERSION_MIHOMO"
+        printf '  yq: "%s"\n' "$INSTALL_STATE_VERSION_YQ"
+        printf '  subconverter: "%s"\n' "$INSTALL_STATE_VERSION_SUBCONVERTER"
+        exit 0
+    fi
+
+    if [ -n "${SERVICE_STATE_ACTIVE_MODE+x}" ]; then
+        printf 'active_mode: %s\n' "$SERVICE_STATE_ACTIVE_MODE"
+        if [ -n "${SERVICE_STATE_PID:-}" ]; then
+            printf 'pid: %s\n' "$SERVICE_STATE_PID"
+        fi
+        printf 'started_at: %s\n' "$SERVICE_STATE_STARTED_AT"
+        printf 'bin_kernel: "%s"\n' "$SERVICE_STATE_BIN_KERNEL"
+        printf 'config_runtime: "%s"\n' "$SERVICE_STATE_CONFIG_RUNTIME"
+        exit 0
+    fi
+
+    printf 'system-proxy:\n'
+    printf '  enable: false\n'
+    printf '  mode: silent\n'
+    exit 0
+fi
+
+if [ "${1:-}" = "-i" ]; then
+    exit 0
+fi
+
+if [ "${1:-}" = "-e" ]; then
+    shift
+fi
+
+expr=${1:-}
+file=${2:-}
+case "$expr" in
+'.install_dir // ""')
+    key=install_dir
+    ;;
+'.kernel_name // ""')
+    key=kernel_name
+    ;;
+'.default_mode // ""')
+    key=default_mode
+    ;;
+'.installed_systemd_service // ""')
+    key=installed_systemd_service
+    ;;
+'.active_mode // ""')
+    key=active_mode
+    ;;
+'.["system-proxy"].enable')
+    printf 'false\n'
+    exit 0
+    ;;
+'.["system-proxy"].mode // "silent"')
+    printf 'silent\n'
+    exit 0
+    ;;
+*)
+    exit 7
+    ;;
+esac
+awk -F': *' -v key="$key" '
+    $1 == key {
+        value = $0
+        sub(/^[^:]*:[[:space:]]*/, "", value)
+        gsub(/^"|"$/, "", value)
+        print value
+        found = 1
+        exit
+    }
+    END {
+        if (!found) {
+            print ""
+        }
+    }
+' "$file"
+EOF
+    chmod +x "$install_root/bin/yq"
+}
+
+write_test_install_yq "$TEST_SANDBOX_INSTALL_DIR"

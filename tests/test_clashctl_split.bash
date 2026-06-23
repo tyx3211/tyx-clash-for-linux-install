@@ -98,6 +98,7 @@ grep -q 'install-state.yaml' "$missing_env_tmp/source.err" ||
 env_parse_tmp=$(make_test_tmpdir "clash-env-parse")
 env_parse_repo="$env_parse_tmp/repo"
 cp -a "$TEST_ROOT/." "$env_parse_repo"
+write_test_install_yq "$env_parse_repo"
 cat >"$env_parse_repo/.env" <<EOF
 KERNEL_NAME=mihomo
 CLASH_BASE_DIR=$env_parse_repo
@@ -122,6 +123,7 @@ upstream_env_parse_tmp=$(make_test_tmpdir "clash-upstream-env-parse")
 upstream_env_parse_repo="$upstream_env_parse_tmp/repo"
 cp -a "$TEST_ROOT/." "$upstream_env_parse_repo"
 rm -f "$upstream_env_parse_repo/resources/install-state.yaml"
+write_test_install_yq "$upstream_env_parse_repo"
 cat >"$upstream_env_parse_repo/.env" <<EOF
 CLASHCTL_HOME=$upstream_env_parse_repo
 CLASHCTL_KERNEL=clash
@@ -156,6 +158,7 @@ env_state_repo="$env_state_tmp/repo"
 cp -a "$TEST_ROOT/." "$env_state_repo"
 rm -f "$env_state_repo/.env"
 mkdir -p "$env_state_repo/resources"
+write_test_install_yq "$env_state_repo"
 cat >"$env_state_repo/resources/install-state.yaml" <<EOF
 install_dir: "$env_state_repo"
 kernel_name: "mihomo"
@@ -174,12 +177,34 @@ bash -c '
 ' -- "$env_state_repo" >/dev/null 2>&1 ||
     fail "clashctl should source install-state.yaml without requiring .env"
 
+state_missing_yq_tmp=$(make_test_tmpdir "clash-state-missing-yq")
+state_missing_yq_repo="$state_missing_yq_tmp/repo"
+cp -a "$TEST_ROOT/." "$state_missing_yq_repo"
+rm -f "$state_missing_yq_repo/.env"
+rm -f "$state_missing_yq_repo/bin/yq"
+mkdir -p "$state_missing_yq_repo/resources"
+cat >"$state_missing_yq_repo/resources/install-state.yaml" <<EOF
+install_dir: "$state_missing_yq_repo"
+kernel_name: "mihomo"
+default_mode: "tmux"
+installed_systemd_service: false
+versions:
+  mihomo: "v-state"
+  yq: "v-state"
+  subconverter: "v-state"
+EOF
+bash -c '. "$1/scripts/cmd/clashctl.sh"' -- "$state_missing_yq_repo" >"$state_missing_yq_tmp/out" 2>"$state_missing_yq_tmp/err" &&
+    fail "clashctl should fail when install-state.yaml exists but bin/yq is missing"
+grep -q 'missing executable yq' "$state_missing_yq_tmp/err" ||
+    fail "missing yq error should mention the missing install yq"
+
 state_mismatch_tmp=$(make_test_tmpdir "clash-state-mismatch")
 state_mismatch_repo="$state_mismatch_tmp/repo"
 state_mismatch_other="$state_mismatch_tmp/other"
 cp -a "$TEST_ROOT/." "$state_mismatch_repo"
 mkdir -p "$state_mismatch_repo/resources" "$state_mismatch_other"
 rm -f "$state_mismatch_repo/.env"
+write_test_install_yq "$state_mismatch_repo"
 cat >"$state_mismatch_repo/resources/install-state.yaml" <<EOF
 install_dir: "$state_mismatch_other"
 kernel_name: "mihomo"
@@ -199,6 +224,7 @@ state_precedence_tmp=$(make_test_tmpdir "clash-state-precedence")
 state_precedence_repo="$state_precedence_tmp/repo"
 cp -a "$TEST_ROOT/." "$state_precedence_repo"
 mkdir -p "$state_precedence_repo/resources"
+write_test_install_yq "$state_precedence_repo"
 cat >"$state_precedence_repo/.env" <<EOF
 KERNEL_NAME=clash
 CLASH_BASE_DIR=/stale/path
@@ -228,6 +254,7 @@ state_env_override_repo="$state_env_override_tmp/repo"
 state_env_override_other="$state_env_override_tmp/other"
 cp -a "$TEST_ROOT/." "$state_env_override_repo"
 mkdir -p "$state_env_override_repo/resources" "$state_env_override_other"
+write_test_install_yq "$state_env_override_repo"
 cat >"$state_env_override_repo/resources/install-state.yaml" <<EOF
 install_dir: "$state_env_override_repo"
 kernel_name: "mihomo"

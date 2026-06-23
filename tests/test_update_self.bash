@@ -17,6 +17,7 @@ source_dir="$update_tmp/source"
 install_dir="$update_tmp/install"
 mkdir -p "$source_dir" "$install_dir/resources/profiles" "$install_dir/scripts/cmd"
 cp -a "$TEST_ROOT/." "$source_dir"
+write_test_install_yq "$install_dir"
 
 cat >"$install_dir/.env" <<EOF
 CLASH_BASE_DIR=$install_dir
@@ -79,6 +80,7 @@ grep -q '^CLASH_BASE_DIR=' "$install_dir/.env" ||
 
 bad_subconverter_env_dir="$update_tmp/bad-subconverter-env"
 mkdir -p "$bad_subconverter_env_dir/resources" "$bad_subconverter_env_dir/scripts/cmd"
+write_test_install_yq "$bad_subconverter_env_dir"
 printf 'tyx-clash-for-linux-install\n' >"$bad_subconverter_env_dir/.clashctl-install-root"
 printf 'mixin\n' >"$bad_subconverter_env_dir/resources/mixin.yaml"
 printf 'script\n' >"$bad_subconverter_env_dir/scripts/cmd/clashctl.sh"
@@ -97,6 +99,7 @@ grep -qx 'SUBCONVERTER_REPO=tindy2013/subconverter' "$bad_subconverter_env_dir/.
 
 custom_subconverter_env_dir="$update_tmp/custom-subconverter-env"
 mkdir -p "$custom_subconverter_env_dir/resources" "$custom_subconverter_env_dir/scripts/cmd"
+write_test_install_yq "$custom_subconverter_env_dir"
 printf 'tyx-clash-for-linux-install\n' >"$custom_subconverter_env_dir/.clashctl-install-root"
 printf 'mixin\n' >"$custom_subconverter_env_dir/resources/mixin.yaml"
 printf 'script\n' >"$custom_subconverter_env_dir/scripts/cmd/clashctl.sh"
@@ -115,6 +118,7 @@ grep -qx 'SUBCONVERTER_REPO=example/subconverter' "$custom_subconverter_env_dir/
 
 export_subconverter_env_dir="$update_tmp/export-subconverter-env"
 mkdir -p "$export_subconverter_env_dir/resources" "$export_subconverter_env_dir/scripts/cmd"
+write_test_install_yq "$export_subconverter_env_dir"
 printf 'tyx-clash-for-linux-install\n' >"$export_subconverter_env_dir/.clashctl-install-root"
 printf 'mixin\n' >"$export_subconverter_env_dir/resources/mixin.yaml"
 printf 'script\n' >"$export_subconverter_env_dir/scripts/cmd/clashctl.sh"
@@ -135,6 +139,7 @@ grep -qx 'export SUBCONVERTER_REPO=example/export-subconverter' "$export_subconv
 
 duplicate_subconverter_env_dir="$update_tmp/duplicate-subconverter-env"
 mkdir -p "$duplicate_subconverter_env_dir/resources" "$duplicate_subconverter_env_dir/scripts/cmd"
+write_test_install_yq "$duplicate_subconverter_env_dir"
 printf 'tyx-clash-for-linux-install\n' >"$duplicate_subconverter_env_dir/.clashctl-install-root"
 printf 'mixin\n' >"$duplicate_subconverter_env_dir/resources/mixin.yaml"
 printf 'script\n' >"$duplicate_subconverter_env_dir/scripts/cmd/clashctl.sh"
@@ -158,6 +163,7 @@ grep -qx 'export SUBCONVERTER_REPO=example/export-subconverter' "$duplicate_subc
 
 state_install_dir="$update_tmp/state-install"
 mkdir -p "$state_install_dir/resources" "$state_install_dir/scripts/cmd"
+write_test_install_yq "$state_install_dir"
 printf 'tyx-clash-for-linux-install\n' >"$state_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$state_install_dir/resources/mixin.yaml"
 printf 'script\n' >"$state_install_dir/scripts/cmd/clashctl.sh"
@@ -176,6 +182,7 @@ grep -qx 'install_dir: "'$state_install_dir'"' "$state_install_dir/resources/ins
 state_mismatch_install_dir="$update_tmp/state-mismatch-install"
 state_mismatch_other_dir="$update_tmp/state-mismatch-other"
 mkdir -p "$state_mismatch_install_dir/resources" "$state_mismatch_install_dir/scripts/cmd" "$state_mismatch_other_dir"
+write_test_install_yq "$state_mismatch_install_dir"
 printf 'tyx-clash-for-linux-install\n' >"$state_mismatch_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$state_mismatch_install_dir/resources/mixin.yaml"
 printf 'script\n' >"$state_mismatch_install_dir/scripts/cmd/clashctl.sh"
@@ -198,6 +205,7 @@ grep -qx 'script' "$state_mismatch_install_dir/scripts/cmd/clashctl.sh" ||
 
 state_bad_kernel_install_dir="$update_tmp/state-bad-kernel-install"
 mkdir -p "$state_bad_kernel_install_dir/resources" "$state_bad_kernel_install_dir/scripts/cmd"
+write_test_install_yq "$state_bad_kernel_install_dir"
 printf 'tyx-clash-for-linux-install\n' >"$state_bad_kernel_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$state_bad_kernel_install_dir/resources/mixin.yaml"
 printf 'script\n' >"$state_bad_kernel_install_dir/scripts/cmd/clashctl.sh"
@@ -225,6 +233,7 @@ grep -qx 'script' "$state_bad_kernel_install_dir/scripts/cmd/clashctl.sh" ||
 
 legacy_dir="$update_tmp/legacy"
 mkdir -p "$legacy_dir/resources" "$legacy_dir/scripts/cmd"
+write_test_install_yq "$legacy_dir"
 printf 'legacy-mixin\n' >"$legacy_dir/resources/mixin.yaml"
 printf 'legacy-script\n' >"$legacy_dir/scripts/cmd/clashctl.sh"
 printf 'stale\n' >"$legacy_dir/placeholder_start1"
@@ -268,6 +277,7 @@ env_source_dir="$update_tmp/env-source"
 env_install_dir="$update_tmp/env-install"
 cp -a "$TEST_ROOT/." "$env_source_dir"
 mkdir -p "$env_install_dir/resources" "$env_install_dir/scripts/cmd"
+write_test_install_yq "$env_install_dir"
 printf 'tyx-clash-for-linux-install\n' >"$env_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$env_install_dir/resources/mixin.yaml"
 printf 'script\n' >"$env_install_dir/scripts/cmd/clashctl.sh"
@@ -284,6 +294,7 @@ EOF
 
 legacy_env_dir="$update_tmp/legacy-env"
 mkdir -p "$legacy_env_dir/resources" "$legacy_env_dir/scripts/cmd"
+write_test_install_yq "$legacy_env_dir"
 printf 'legacy-mixin\n' >"$legacy_env_dir/resources/mixin.yaml"
 printf 'legacy-script\n' >"$legacy_env_dir/scripts/cmd/clashctl.sh"
 (
@@ -301,6 +312,7 @@ grep -qx 'default_mode: "tmux"' "$legacy_env_dir/resources/install-state.yaml" |
 
 legacy_config_only_dir="$update_tmp/legacy-config-only"
 mkdir -p "$legacy_config_only_dir/config" "$legacy_config_only_dir/resources" "$legacy_config_only_dir/scripts/cmd"
+write_test_install_yq "$legacy_config_only_dir"
 printf 'config-only-mixin\n' >"$legacy_config_only_dir/config/mixin.yaml"
 printf 'legacy-script\n' >"$legacy_config_only_dir/scripts/cmd/clashctl.sh"
 (
@@ -314,6 +326,7 @@ printf 'legacy-script\n' >"$legacy_config_only_dir/scripts/cmd/clashctl.sh"
 
 legacy_upstream_env_dir="$update_tmp/legacy-upstream-env"
 mkdir -p "$legacy_upstream_env_dir/resources" "$legacy_upstream_env_dir/scripts/cmd"
+write_test_install_yq "$legacy_upstream_env_dir"
 cat >"$legacy_upstream_env_dir/.env" <<EOF
 CLASHCTL_HOME=$legacy_upstream_env_dir
 CLASHCTL_KERNEL=clash
@@ -333,6 +346,7 @@ grep -qx 'default_mode: "nohup"' "$legacy_upstream_env_dir/resources/install-sta
 legacy_fail_dir="$update_tmp/legacy-fail"
 legacy_other_dir="$update_tmp/legacy-other"
 mkdir -p "$legacy_fail_dir/resources" "$legacy_fail_dir/scripts/cmd" "$legacy_other_dir"
+write_test_install_yq "$legacy_fail_dir"
 printf 'legacy-mixin\n' >"$legacy_fail_dir/resources/mixin.yaml"
 printf 'legacy-script\n' >"$legacy_fail_dir/scripts/cmd/clashctl.sh"
 printf 'CLASH_BASE_DIR=%s\n' "$legacy_other_dir" >"$legacy_fail_dir/.env"
@@ -346,6 +360,7 @@ printf 'CLASH_BASE_DIR=%s\n' "$legacy_other_dir" >"$legacy_fail_dir/.env"
 legacy_alias_fail_dir="$update_tmp/legacy-alias-fail"
 legacy_alias_other_dir="$update_tmp/legacy-alias-other"
 mkdir -p "$legacy_alias_fail_dir/resources" "$legacy_alias_fail_dir/scripts/cmd" "$legacy_alias_other_dir"
+write_test_install_yq "$legacy_alias_fail_dir"
 printf 'legacy-mixin\n' >"$legacy_alias_fail_dir/resources/mixin.yaml"
 printf 'legacy-script\n' >"$legacy_alias_fail_dir/scripts/cmd/clashctl.sh"
 printf 'CLASHCTL_HOME=%s\n' "$legacy_alias_other_dir" >"$legacy_alias_fail_dir/.env"
@@ -359,6 +374,7 @@ printf 'CLASHCTL_HOME=%s\n' "$legacy_alias_other_dir" >"$legacy_alias_fail_dir/.
 legacy_no_newline_fail_dir="$update_tmp/legacy-no-newline-fail"
 legacy_no_newline_other_dir="$update_tmp/legacy-no-newline-other"
 mkdir -p "$legacy_no_newline_fail_dir/resources" "$legacy_no_newline_fail_dir/scripts/cmd" "$legacy_no_newline_other_dir"
+write_test_install_yq "$legacy_no_newline_fail_dir"
 printf 'legacy-mixin\n' >"$legacy_no_newline_fail_dir/resources/mixin.yaml"
 printf 'legacy-script\n' >"$legacy_no_newline_fail_dir/scripts/cmd/clashctl.sh"
 printf 'export CLASH_BASE_DIR=%s' "$legacy_no_newline_other_dir" >"$legacy_no_newline_fail_dir/.env"
@@ -373,6 +389,7 @@ explicit_source_dir="$update_tmp/explicit-source"
 explicit_install_dir="$update_tmp/explicit-install"
 cp -a "$TEST_ROOT/." "$explicit_source_dir"
 mkdir -p "$explicit_install_dir/resources" "$explicit_install_dir/scripts/cmd"
+write_test_install_yq "$explicit_install_dir"
 printf 'tyx-clash-for-linux-install\n' >"$explicit_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$explicit_install_dir/resources/mixin.yaml"
 cp "$TEST_ROOT/update.sh" "$explicit_install_dir/update.sh"
@@ -392,6 +409,7 @@ explicit_home_source_home="$update_tmp/explicit-home-source-home"
 explicit_home_source_dir="$explicit_home_source_home/source"
 explicit_home_install_dir="$update_tmp/explicit-home-install"
 mkdir -p "$explicit_home_source_home" "$explicit_home_install_dir/resources" "$explicit_home_install_dir/scripts/cmd"
+write_test_install_yq "$explicit_home_install_dir"
 cp -a "$TEST_ROOT/." "$explicit_home_source_dir"
 printf 'tyx-clash-for-linux-install\n' >"$explicit_home_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$explicit_home_install_dir/resources/mixin.yaml"
@@ -413,6 +431,8 @@ implicit_current_install_dir="$update_tmp/implicit-current-install"
 implicit_other_install_dir="$update_tmp/implicit-other-install"
 cp -a "$TEST_ROOT/." "$implicit_installed_source_dir"
 mkdir -p "$implicit_current_install_dir/resources" "$implicit_current_install_dir/scripts/cmd" "$implicit_other_install_dir/resources" "$implicit_other_install_dir/scripts/cmd"
+write_test_install_yq "$implicit_current_install_dir"
+write_test_install_yq "$implicit_other_install_dir"
 printf 'tyx-clash-for-linux-install\n' >"$implicit_current_install_dir/.clashctl-install-root"
 printf 'tyx-clash-for-linux-install\n' >"$implicit_other_install_dir/.clashctl-install-root"
 printf 'current-script\n' >"$implicit_current_install_dir/scripts/cmd/clashctl.sh"
@@ -452,6 +472,7 @@ backup_fail_source_dir="$update_tmp/backup-fail-source"
 backup_fail_install_dir="$update_tmp/backup-fail-install"
 cp -a "$TEST_ROOT/." "$backup_fail_source_dir"
 cp -a "$TEST_ROOT/." "$backup_fail_install_dir"
+write_test_install_yq "$backup_fail_install_dir"
 cat >"$backup_fail_install_dir/.env" <<EOF
 CLASH_BASE_DIR=$backup_fail_install_dir
 KERNEL_NAME=mihomo
@@ -471,6 +492,7 @@ source_symlink_install_dir="$update_tmp/source-symlink-install"
 source_symlink_outside="$update_tmp/source-symlink-outside"
 cp -a "$TEST_ROOT/." "$source_symlink_dir"
 mkdir -p "$source_symlink_install_dir/resources" "$source_symlink_install_dir/scripts/cmd" "$source_symlink_outside"
+write_test_install_yq "$source_symlink_install_dir"
 printf 'tyx-clash-for-linux-install\n' >"$source_symlink_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$source_symlink_install_dir/resources/mixin.yaml"
 printf 'script\n' >"$source_symlink_install_dir/scripts/cmd/clashctl.sh"
@@ -488,6 +510,7 @@ source_missing_env_dir="$update_tmp/source-missing-env"
 source_missing_env_install_dir="$update_tmp/source-missing-env-install"
 cp -a "$TEST_ROOT/." "$source_missing_env_dir"
 mkdir -p "$source_missing_env_install_dir/resources" "$source_missing_env_install_dir/scripts/cmd"
+write_test_install_yq "$source_missing_env_install_dir"
 printf 'tyx-clash-for-linux-install\n' >"$source_missing_env_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$source_missing_env_install_dir/resources/mixin.yaml"
 printf 'script\n' >"$source_missing_env_install_dir/scripts/cmd/clashctl.sh"
@@ -501,6 +524,7 @@ source_missing_required_dir="$update_tmp/source-missing-required"
 source_missing_required_install_dir="$update_tmp/source-missing-required-install"
 cp -a "$TEST_ROOT/." "$source_missing_required_dir"
 mkdir -p "$source_missing_required_install_dir/resources" "$source_missing_required_install_dir/scripts/cmd"
+write_test_install_yq "$source_missing_required_install_dir"
 printf 'tyx-clash-for-linux-install\n' >"$source_missing_required_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$source_missing_required_install_dir/resources/mixin.yaml"
 printf 'installed-script\n' >"$source_missing_required_install_dir/scripts/cmd/clashctl.sh"
@@ -517,6 +541,7 @@ git_preserve_source_dir="$update_tmp/git-preserve-source"
 git_preserve_install_dir="$update_tmp/git-preserve-install"
 cp -a "$TEST_ROOT/." "$git_preserve_source_dir"
 mkdir -p "$git_preserve_install_dir/resources" "$git_preserve_install_dir/scripts/cmd" "$git_preserve_install_dir/.git"
+write_test_install_yq "$git_preserve_install_dir"
 printf 'tyx-clash-for-linux-install\n' >"$git_preserve_install_dir/.clashctl-install-root"
 printf 'mixin\n' >"$git_preserve_install_dir/resources/mixin.yaml"
 printf 'script\n' >"$git_preserve_install_dir/scripts/cmd/clashctl.sh"
@@ -537,6 +562,7 @@ cp -a "$TEST_ROOT/." "$remote_source_dir"
 printf '\n# remote-source-marker\n' >>"$remote_source_dir/scripts/cmd/clashctl.sh"
 tar -C "$remote_source_parent" -czf "$remote_archive" "$(basename "$remote_source_dir")"
 cp -a "$TEST_ROOT/." "$remote_install_dir"
+write_test_install_yq "$remote_install_dir"
 cat >"$remote_install_dir/.env" <<EOF
 CLASH_BASE_DIR=$remote_install_dir
 KERNEL_NAME=mihomo
@@ -595,6 +621,7 @@ grep -qx 'https://gh-proxy.org/https://github.com/example-owner/example-repo/arc
 
 wrapper_install_dir="$update_tmp/wrapper-install"
 cp -a "$TEST_ROOT/." "$wrapper_install_dir"
+write_test_install_yq "$wrapper_install_dir"
 cat >"$wrapper_install_dir/.env" <<EOF
 CLASH_BASE_DIR=$wrapper_install_dir
 KERNEL_NAME=mihomo

@@ -28,6 +28,45 @@ function _clashctl_bash_call
     ' -- "$CLASHCTL_CMD_DIR" "$fn" $argv
 end
 
+function _clashctl_import_proxy_env
+    set -l quiet false
+    if test (count $argv) -gt 0; and test "$argv[1]" = "--quiet"
+        set quiet true
+        set -e argv[1]
+    end
+
+    set -l env_tmp (mktemp)
+    set -l bash_snippet '
+        cmd_dir=$1
+        shift
+        . "$cmd_dir/clashctl.sh" || exit $?
+        "$@" >/dev/null && env
+    '
+    if test "$quiet" = true
+        bash -c "$bash_snippet" -- "$CLASHCTL_CMD_DIR" $argv >$env_tmp 2>/dev/null
+    else
+        bash -c "$bash_snippet" -- "$CLASHCTL_CMD_DIR" $argv >$env_tmp
+    end
+
+    set -l bash_status $status
+    if test $bash_status -ne 0
+        rm -f $env_tmp
+        return $bash_status
+    end
+
+    set -l proxy_env (grep -i -E '^(http|https|all|no)_proxy=' $env_tmp)
+    rm -f $env_tmp
+    for line in $proxy_env
+        set -l kv (string split -m1 '=' $line)
+        set -gx $kv[1] $kv[2]
+    end
+end
+
+function _clashctl_watch_proxy
+    status is-interactive; or return 0
+    _clashctl_import_proxy_env --quiet watch_proxy
+end
+
 function clashui
     _clashctl_bash_call clashui $argv
 end
@@ -100,21 +139,6 @@ end
 
 function clashoff
     _clashctl_bash_call clashoff $argv
-    set -l bash_status $status
-
-    if test $bash_status -eq 0
-        set -e \
-        http_proxy \
-        https_proxy \
-        HTTP_PROXY \
-        HTTPS_PROXY \
-        all_proxy \
-        ALL_PROXY \
-        no_proxy \
-        NO_PROXY
-    end
-
-    return $bash_status
 end
 
 function clashrestart
@@ -136,23 +160,10 @@ function clashproxy
 
     switch $action
         case on
-            set -l env_tmp (mktemp)
-            bash -c '
-                cmd_dir=$1
-                shift
-                . "$cmd_dir/clashctl.sh" || exit $?
-                clashproxy "$@" >/dev/null && env
-            ' -- "$CLASHCTL_CMD_DIR" $argv >$env_tmp 2>/dev/null
+            _clashctl_import_proxy_env clashproxy $argv
             set -l bash_status $status
             if test $bash_status -ne 0
-                rm -f $env_tmp
                 return $bash_status
-            end
-            set -l proxy_env (grep -i -E '^(http|https|all|no)_proxy=' $env_tmp)
-            rm -f $env_tmp
-            for line in $proxy_env
-                set -l kv (string split -m1 '=' $line)
-                set -gx $kv[1] $kv[2]
             end
             if test "$global" = true
                 echo "😼 已为当前终端开启代理，并开启全局自动代理"
@@ -165,7 +176,7 @@ function clashproxy
                 shift
                 . "$cmd_dir/clashctl.sh" || exit $?
                 clashproxy "$@" >/dev/null
-            ' -- "$CLASHCTL_CMD_DIR" $argv >/dev/null 2>&1
+            ' -- "$CLASHCTL_CMD_DIR" $argv >/dev/null
             set -l bash_status $status
             if test $bash_status -ne 0
                 return $bash_status
@@ -185,20 +196,12 @@ function clashproxy
                 echo "😼 已为当前终端关闭代理"
             end
         case '' status
-            if test "$global" = true
-                _clashctl_bash_call clashproxy $argv
-            else
-                set -l proxy_env (env | grep -i -E '^(http|https|all|no)_proxy=')
-                if test -n "$proxy_env"
-                    echo "😼 当前终端代理：开启"
-                    printf '%s\n' $proxy_env
-                else
-                    echo "😾 当前终端代理：关闭"
-                end
-            end
+            _clashctl_bash_call clashproxy $argv
         case mode
             _clashctl_bash_call clashproxy $argv
         case '*'
             _clashctl_bash_call clashproxy $argv
     end
 end
+
+_clashctl_watch_proxy

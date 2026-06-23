@@ -2,19 +2,18 @@ _ensure_sidecar_config() {
     [ -s "$CLASH_CONFIG_SIDECAR" ] && return 0
 
     mkdir -p "$(dirname "$CLASH_CONFIG_SIDECAR")"
-    cat >"$CLASH_CONFIG_SIDECAR" <<'EOF'
-# clashctl 自身的附加行为配置，不会传给 mihomo / clash 内核。
-system-proxy:
-  enable: false
-  # none: shell 启动时不自动写入代理变量
-  # silent: shell 启动时静默写入代理变量
-  # verbose: shell 启动时写入代理变量并打印提示
-  mode: silent
-EOF
+    [ -x "$BIN_YQ" ] || {
+        _failcat "缺少 yq：$BIN_YQ"
+        return 1
+    }
+    "$BIN_YQ" -n '
+        .["system-proxy"].enable = false |
+        .["system-proxy"].mode = "silent"
+    ' >"$CLASH_CONFIG_SIDECAR"
 }
 
 _get_system_proxy_enable() {
-    _ensure_sidecar_config
+    _ensure_sidecar_config || return 1
 
     local enable
     enable=$("$BIN_YQ" '.["system-proxy"].enable' "$CLASH_CONFIG_SIDECAR" 2>/dev/null)
@@ -40,7 +39,7 @@ _is_valid_system_proxy_mode() {
 }
 
 _get_system_proxy_mode() {
-    _ensure_sidecar_config
+    _ensure_sidecar_config || return 1
 
     local mode
     mode=$("$BIN_YQ" '.["system-proxy"].mode // "silent"' "$CLASH_CONFIG_SIDECAR" 2>/dev/null)
@@ -53,21 +52,17 @@ _get_system_proxy_mode() {
 }
 
 _set_system_proxy_enable() {
-    _ensure_sidecar_config
+    _ensure_sidecar_config || return 1
     "$BIN_YQ" -i ".\"system-proxy\".enable = $1" "$CLASH_CONFIG_SIDECAR"
 }
 
 _set_system_proxy_mode() {
-    _ensure_sidecar_config
+    _ensure_sidecar_config || return 1
     "$BIN_YQ" -i ".\"system-proxy\".mode = \"$1\"" "$CLASH_CONFIG_SIDECAR"
 }
 
 _get_current_proxy_env() {
     env | grep -i -E '^(http|https|all|no)_proxy=' || true
-}
-
-_has_current_proxy_env() {
-    [ -n "$(_get_current_proxy_env)" ]
 }
 
 _show_current_proxy_status() {
@@ -76,9 +71,16 @@ _show_current_proxy_status() {
     if [ -n "$proxy_env" ]; then
         _okcat "当前终端代理：开启
 $proxy_env"
+        _warn_proxy_env_mismatch
     else
         _failcat "当前终端代理：关闭"
     fi
+}
+
+_warn_proxy_env_mismatch() {
+    _current_proxy_matches_system_proxy && return 0
+    _failcat "当前终端代理与当前运行配置不一致；如需使用本项目代理，请执行 clashproxy off && clashproxy on 刷新" || true
+    return 0
 }
 
 _show_system_proxy_mode_status() {
@@ -107,23 +109,43 @@ _get_runtime_proxy_ports() {
     printf '%s %s\n' "$http_port" "$socks_port"
 }
 
-_set_system_proxy() {
-    local ports http_port socks_port
+_get_system_proxy_addrs() {
+    local ports http_port socks_port auth bind_addr
     ports=$(_get_runtime_proxy_ports) || return 1
     read -r http_port socks_port <<<"$ports"
 
-    local auth
     auth=$("$BIN_YQ" '.authentication[0] // ""' "$CLASH_CONFIG_RUNTIME") || {
         _failcat "authentication 读取失败：$CLASH_CONFIG_RUNTIME"
         return 1
     }
     [ -n "$auth" ] && auth=$auth@
 
-    local bind_addr
     bind_addr=$(_get_bind_addr) || return 1
-    local http_proxy_addr="http://${auth}${bind_addr}:${http_port}"
-    local socks_proxy_addr="socks5h://${auth}${bind_addr}:${socks_port}"
-    local no_proxy_addr="localhost,127.0.0.1,::1"
+    printf '%s %s %s\n' \
+        "http://${auth}${bind_addr}:${http_port}" \
+        "socks5h://${auth}${bind_addr}:${socks_port}" \
+        "localhost,127.0.0.1,::1"
+}
+
+_current_proxy_matches_system_proxy() {
+    local addrs http_proxy_addr socks_proxy_addr no_proxy_addr
+    addrs=$(_get_system_proxy_addrs) || return 1
+    read -r http_proxy_addr socks_proxy_addr no_proxy_addr <<<"$addrs"
+
+    [ "${http_proxy-}" = "$http_proxy_addr" ] &&
+        [ "${HTTP_PROXY-}" = "$http_proxy_addr" ] &&
+        [ "${https_proxy-}" = "$http_proxy_addr" ] &&
+        [ "${HTTPS_PROXY-}" = "$http_proxy_addr" ] &&
+        [ "${all_proxy-}" = "$socks_proxy_addr" ] &&
+        [ "${ALL_PROXY-}" = "$socks_proxy_addr" ] &&
+        [ "${no_proxy-}" = "$no_proxy_addr" ] &&
+        [ "${NO_PROXY-}" = "$no_proxy_addr" ]
+}
+
+_set_system_proxy() {
+    local addrs http_proxy_addr socks_proxy_addr no_proxy_addr
+    addrs=$(_get_system_proxy_addrs) || return 1
+    read -r http_proxy_addr socks_proxy_addr no_proxy_addr <<<"$addrs"
 
     export http_proxy=$http_proxy_addr
     export HTTP_PROXY=$http_proxy
@@ -137,6 +159,7 @@ _set_system_proxy() {
     export no_proxy=$no_proxy_addr
     export NO_PROXY=$no_proxy
 }
+
 _unset_system_proxy() {
     unset http_proxy
     unset https_proxy
@@ -149,7 +172,6 @@ _unset_system_proxy() {
 }
 watch_proxy() {
     [[ $- == *i* ]] || return 0
-    _has_current_proxy_env && return 0
     [ "$(_get_system_proxy_enable)" = true ] || return 0
     _clash_service_is_active >/dev/null 2>&1 || return 0
 

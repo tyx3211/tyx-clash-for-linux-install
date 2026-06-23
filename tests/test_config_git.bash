@@ -55,6 +55,7 @@ new_layout="$config_git_tmp/new-layout"
 mkdir -p "$new_layout"
 cp -a "$TEST_ROOT/scripts" "$new_layout/scripts"
 mkdir -p "$new_layout/config" "$new_layout/resources"
+write_test_install_yq "$new_layout"
 cat >"$new_layout/.env" <<EOF
 KERNEL_NAME=mihomo
 CLASH_BASE_DIR=$new_layout
@@ -85,6 +86,7 @@ legacy_layout="$config_git_tmp/legacy-layout"
 mkdir -p "$legacy_layout"
 cp -a "$TEST_ROOT/scripts" "$legacy_layout/scripts"
 mkdir -p "$legacy_layout/resources"
+write_test_install_yq "$legacy_layout"
 cat >"$legacy_layout/.env" <<EOF
 KERNEL_NAME=mihomo
 CLASH_BASE_DIR=$legacy_layout
@@ -112,6 +114,7 @@ env_override_layout="$config_git_tmp/env-override"
 mkdir -p "$env_override_layout"
 cp -a "$TEST_ROOT/scripts" "$env_override_layout/scripts"
 mkdir -p "$env_override_layout/config"
+write_test_install_yq "$env_override_layout"
 cat >"$env_override_layout/.env" <<EOF
 KERNEL_NAME=mihomo
 CLASH_BASE_DIR=$env_override_layout
@@ -212,6 +215,7 @@ install_state_tmp="$config_git_tmp/install-state"
     VERSION_SUBCONVERTER=v0.9.0
     _refresh_install_paths
     mkdir -p "$CLASH_BASE_DIR" "$CLASH_RESOURCES_DIR"
+    write_test_install_yq "$CLASH_BASE_DIR"
     cp "$TEST_ROOT/.env" "$CLASH_BASE_DIR/.env"
 
     _set_envs
@@ -231,6 +235,7 @@ update_source="$config_git_tmp/update-source"
 update_target="$config_git_tmp/update-target"
 cp -a "$TEST_ROOT/." "$update_source"
 mkdir -p "$update_target/resources" "$update_target/scripts/cmd" "$update_target/config/.git"
+write_test_install_yq "$update_target"
 printf 'tyx-clash-for-linux-install\n' >"$update_target/.clashctl-install-root"
 cat >"$update_target/.env" <<EOF
 KERNEL_NAME=mihomo

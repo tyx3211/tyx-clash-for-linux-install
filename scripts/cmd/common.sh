@@ -173,6 +173,11 @@ _clashctl_validate_runtime_paths() {
         }
     done
 
+    [ -x "$BIN_YQ" ] || {
+        printf 'clashctl: missing executable yq: %s\n' "$BIN_YQ" >&2
+        return 1
+    }
+
     case "$CLASH_BASE_DIR" in
     /*)
         [ "$CLASH_BASE_DIR" != "/" ] || {

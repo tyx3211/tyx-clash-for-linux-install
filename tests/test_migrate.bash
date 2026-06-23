@@ -10,6 +10,7 @@ MIGRATE_SH="$TEST_ROOT/migrate.sh"
 migrate_tmp=$(make_test_tmpdir "clash-migrate")
 legacy_dir="$migrate_tmp/legacy"
 mkdir -p "$legacy_dir/resources/profiles" "$legacy_dir/scripts/cmd" "$legacy_dir/.github"
+write_test_install_yq "$legacy_dir"
 
 cat >"$legacy_dir/.env" <<EOF
 CLASH_BASE_DIR=$legacy_dir
@@ -65,6 +66,7 @@ installed_migrate_target="$migrate_tmp/installed-migrate-target"
 installed_migrate_source_home="$migrate_tmp/installed-migrate-source-home"
 installed_migrate_source="$installed_migrate_source_home/source"
 mkdir -p "$installed_migrate_tmp" "$installed_migrate_source_home" "$installed_migrate_target/resources" "$installed_migrate_target/scripts/cmd"
+write_test_install_yq "$installed_migrate_target"
 cp -a "$TEST_ROOT/." "$installed_migrate_source"
 cp "$TEST_ROOT/migrate.sh" "$installed_migrate_tmp/migrate.sh"
 cat >"$installed_migrate_target/.env" <<EOF
@@ -82,6 +84,7 @@ grep -q 'function clashctl' "$installed_migrate_target/scripts/cmd/clashctl.sh" 
 auto_target_source="$migrate_tmp/auto-target-source"
 auto_target_install="$migrate_tmp/auto-target-install"
 mkdir -p "$auto_target_source" "$auto_target_install/resources" "$auto_target_install/scripts/cmd"
+write_test_install_yq "$auto_target_install"
 cp "$TEST_ROOT/migrate.sh" "$auto_target_source/migrate.sh"
 cat >"$auto_target_source/.env" <<EOF
 CLASHCTL_HOME=$auto_target_install
@@ -101,6 +104,7 @@ grep -qx 'kernel_name: "clash"' "$auto_target_install/resources/install-state.ya
 legacy_home_source="$migrate_tmp/legacy-home-source"
 legacy_home_target="$migrate_tmp/legacy-home-target"
 mkdir -p "$legacy_home_source" "$legacy_home_target/resources" "$legacy_home_target/scripts/cmd"
+write_test_install_yq "$legacy_home_target"
 cat >"$legacy_home_source/.env" <<EOF
 CLASHCTL_HOME=$legacy_home_target
 EOF
@@ -117,6 +121,7 @@ grep -qx 'kernel_name: "clash"' "$legacy_home_target/resources/install-state.yam
 
 legacy_move_dir="$migrate_tmp/legacy-move"
 mkdir -p "$legacy_move_dir/resources/profiles" "$legacy_move_dir/scripts/cmd"
+write_test_install_yq "$legacy_move_dir"
 cat >"$legacy_move_dir/.env" <<EOF
 CLASH_BASE_DIR=$legacy_move_dir
 KERNEL_NAME=mihomo
@@ -144,6 +149,7 @@ CLASHCTL_MIGRATE_SKIP_STATUS=1 bash "$MIGRATE_SH" --target "$legacy_move_dir" --
 
 legacy_conflict_dir="$migrate_tmp/legacy-conflict"
 mkdir -p "$legacy_conflict_dir/resources" "$legacy_conflict_dir/config" "$legacy_conflict_dir/scripts/cmd"
+write_test_install_yq "$legacy_conflict_dir"
 cat >"$legacy_conflict_dir/.env" <<EOF
 CLASH_BASE_DIR=$legacy_conflict_dir
 KERNEL_NAME=mihomo
@@ -165,6 +171,7 @@ CLASHCTL_MIGRATE_SKIP_STATUS=1 bash "$MIGRATE_SH" --target "$legacy_conflict_dir
 
 legacy_default_conflict_dir="$migrate_tmp/legacy-default-conflict"
 mkdir -p "$legacy_default_conflict_dir/resources" "$legacy_default_conflict_dir/config" "$legacy_default_conflict_dir/scripts/cmd"
+write_test_install_yq "$legacy_default_conflict_dir"
 cat >"$legacy_default_conflict_dir/.env" <<EOF
 CLASH_BASE_DIR=$legacy_default_conflict_dir
 KERNEL_NAME=mihomo
@@ -181,6 +188,7 @@ CLASHCTL_MIGRATE_SKIP_STATUS=1 bash "$MIGRATE_SH" --target "$legacy_default_conf
 
 legacy_bad_dest_dir="$migrate_tmp/legacy-bad-dest"
 mkdir -p "$legacy_bad_dest_dir/resources" "$legacy_bad_dest_dir/config/mixin.yaml" "$legacy_bad_dest_dir/scripts/cmd"
+write_test_install_yq "$legacy_bad_dest_dir"
 cat >"$legacy_bad_dest_dir/.env" <<EOF
 CLASH_BASE_DIR=$legacy_bad_dest_dir
 KERNEL_NAME=mihomo
@@ -194,6 +202,7 @@ CLASHCTL_MIGRATE_SKIP_STATUS=1 bash "$MIGRATE_SH" --target "$legacy_bad_dest_dir
 legacy_config_symlink_dir="$migrate_tmp/legacy-config-symlink"
 legacy_config_symlink_external="$migrate_tmp/legacy-config-symlink-external"
 mkdir -p "$legacy_config_symlink_dir/resources" "$legacy_config_symlink_dir/scripts/cmd" "$legacy_config_symlink_external"
+write_test_install_yq "$legacy_config_symlink_dir"
 cat >"$legacy_config_symlink_dir/.env" <<EOF
 CLASH_BASE_DIR=$legacy_config_symlink_dir
 KERNEL_NAME=mihomo

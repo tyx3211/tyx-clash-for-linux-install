@@ -9,6 +9,36 @@ RUNTIME_CONFIG_SH="$TEST_ROOT/scripts/lib/runtime-config.sh"
 [ -f "$RUNTIME_CONFIG_SH" ] || fail "runtime-config helper should exist"
 
 runtime_config_tmp=$(make_test_tmpdir "clash-runtime-config")
+
+write_runtime_proxy_yq() {
+    local yq_path=$1
+
+    cat >"$yq_path" <<'EOF'
+#!/usr/bin/env bash
+case "$1" in
+'.mixed-port // ""')
+    printf '\n'
+    ;;
+'.port // ""')
+    printf '25329\n'
+    ;;
+'.socks-port // ""')
+    printf '25330\n'
+    ;;
+'.authentication[0] // ""')
+    printf '\n'
+    ;;
+'.bind-address // "*"')
+    printf '127.0.0.1\n'
+    ;;
+*)
+    printf '\n'
+    ;;
+esac
+EOF
+    chmod +x "$yq_path"
+}
+
 (
     set +e
     . "$CLASHCTL_SH"
@@ -225,6 +255,112 @@ EOF
         fail "clashproxy on should fail when bind-address cannot be read"
     [ -z "${http_proxy+x}" ] && [ -z "${all_proxy+x}" ] ||
         fail "clashproxy on should not export proxy variables after bind-address read failures"
+)
+
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    BIN_YQ="$runtime_config_tmp/yq-auto-refresh-local"
+    CLASH_CONFIG_RUNTIME="$runtime_config_tmp/runtime.yaml"
+    write_runtime_proxy_yq "$BIN_YQ"
+    printf '{}\n' >"$CLASH_CONFIG_RUNTIME"
+    export http_proxy=http://127.0.0.1:7890
+    export HTTP_PROXY=http://127.0.0.1:7890
+    export https_proxy=http://127.0.0.1:7890
+    export HTTPS_PROXY=http://127.0.0.1:7890
+    export all_proxy=socks5h://127.0.0.1:7891
+    export ALL_PROXY=socks5h://127.0.0.1:7891
+
+    _set_system_proxy || fail "proxy setup should refresh stale local proxy ports"
+    [ "$http_proxy" = "http://127.0.0.1:25329" ] ||
+        fail "auto proxy should refresh stale local HTTP proxy port"
+    [ "$all_proxy" = "socks5h://127.0.0.1:25330" ] ||
+        fail "auto proxy should refresh stale local SOCKS proxy port"
+)
+
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    BIN_YQ="$runtime_config_tmp/yq-auto-refresh-existing"
+    CLASH_CONFIG_RUNTIME="$runtime_config_tmp/runtime.yaml"
+    write_runtime_proxy_yq "$BIN_YQ"
+    printf '{}\n' >"$CLASH_CONFIG_RUNTIME"
+    export http_proxy=http://proxy.internal:8080
+    export HTTP_PROXY=http://proxy.internal:8080
+    export https_proxy=http://proxy.internal:8080
+    export HTTPS_PROXY=http://proxy.internal:8080
+    unset all_proxy ALL_PROXY
+
+    _set_system_proxy || fail "proxy setup should refresh existing proxy env from runtime config"
+    [ "$http_proxy" = "http://127.0.0.1:25329" ] ||
+        fail "auto proxy should replace stale HTTP proxy env with runtime config"
+    [ "$all_proxy" = "socks5h://127.0.0.1:25330" ] ||
+        fail "auto proxy should replace stale SOCKS proxy env with runtime config"
+)
+
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    BIN_YQ="$runtime_config_tmp/yq-auto-no-proxy-only"
+    CLASH_CONFIG_RUNTIME="$runtime_config_tmp/runtime.yaml"
+    write_runtime_proxy_yq "$BIN_YQ"
+    printf '{}\n' >"$CLASH_CONFIG_RUNTIME"
+    unset http_proxy HTTP_PROXY https_proxy HTTPS_PROXY all_proxy ALL_PROXY
+    export no_proxy=localhost,127.0.0.1,::1
+    export NO_PROXY=localhost,127.0.0.1,::1
+
+    _set_system_proxy || fail "proxy setup should treat no_proxy alone as proxy disabled"
+    [ "$http_proxy" = "http://127.0.0.1:25329" ] ||
+        fail "auto proxy should set HTTP proxy when only no_proxy exists"
+)
+
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    BIN_YQ="$runtime_config_tmp/yq-status-mismatch"
+    CLASH_CONFIG_RUNTIME="$runtime_config_tmp/runtime.yaml"
+    write_runtime_proxy_yq "$BIN_YQ"
+    printf '{}\n' >"$CLASH_CONFIG_RUNTIME"
+    export http_proxy=http://127.0.0.1:7890
+    export HTTP_PROXY=http://127.0.0.1:7890
+    export https_proxy=http://127.0.0.1:7890
+    export HTTPS_PROXY=http://127.0.0.1:7890
+    export all_proxy=socks5h://127.0.0.1:7891
+    export ALL_PROXY=socks5h://127.0.0.1:7891
+    _okcat() { printf '%s\n' "$*" >>"$runtime_config_tmp/status-ok.log"; }
+    _failcat() { printf '%s\n' "$*" >>"$runtime_config_tmp/status-warn.log"; }
+
+    clashproxy status
+    grep -q '当前终端代理与当前运行配置不一致' "$runtime_config_tmp/status-warn.log" ||
+        fail "clashproxy status should warn when current proxy env differs from runtime config"
+)
+
+(
+    set +e
+    . "$CLASHCTL_SH"
+
+    BIN_YQ="$runtime_config_tmp/yq-status-no-proxy-mismatch"
+    CLASH_CONFIG_RUNTIME="$runtime_config_tmp/runtime.yaml"
+    write_runtime_proxy_yq "$BIN_YQ"
+    printf '{}\n' >"$CLASH_CONFIG_RUNTIME"
+    export http_proxy=http://127.0.0.1:25329
+    export HTTP_PROXY=http://127.0.0.1:25329
+    export https_proxy=http://127.0.0.1:25329
+    export HTTPS_PROXY=http://127.0.0.1:25329
+    export all_proxy=socks5h://127.0.0.1:25330
+    export ALL_PROXY=socks5h://127.0.0.1:25330
+    export no_proxy=localhost
+    export NO_PROXY=localhost
+    _okcat() { printf '%s\n' "$*" >>"$runtime_config_tmp/status-no-proxy-ok.log"; }
+    _failcat() { printf '%s\n' "$*" >>"$runtime_config_tmp/status-no-proxy-warn.log"; }
+
+    clashproxy status
+    grep -q '当前终端代理与当前运行配置不一致' "$runtime_config_tmp/status-no-proxy-warn.log" ||
+        fail "clashproxy status should warn when no_proxy differs from runtime config"
 )
 
 (

@@ -56,19 +56,41 @@ _parse_mode_args() {
 
 _service_state_active_mode() {
     [ -f "$CLASH_SERVICE_STATE" ] || return 1
-    awk -F': *' '$1 == "active_mode" { print $2; found=1; exit } END { exit found ? 0 : 1 }' "$CLASH_SERVICE_STATE"
+    [ -x "$BIN_YQ" ] || {
+        _failcat "缺少 yq：$BIN_YQ"
+        return 1
+    }
+    "$BIN_YQ" -e '.active_mode // ""' "$CLASH_SERVICE_STATE"
 }
 
 _write_service_state() {
-    local mode=$1 pid=${2:-}
+    local mode=$1 pid=${2:-} tmp
     mkdir -p "$CLASH_RESOURCES_DIR"
-    {
-        printf 'active_mode: %s\n' "$mode"
-        [ -n "$pid" ] && printf 'pid: %s\n' "$pid"
-        printf 'started_at: %s\n' "$(date +%s)"
-        printf 'bin_kernel: %s\n' "$BIN_KERNEL"
-        printf 'config_runtime: %s\n' "$CLASH_CONFIG_RUNTIME"
-    } >"$CLASH_SERVICE_STATE"
+    [ -x "$BIN_YQ" ] || {
+        _failcat "缺少 yq：$BIN_YQ"
+        return 1
+    }
+    tmp=$(mktemp "${CLASH_RESOURCES_DIR}/.service-state.XXXXXX") || return 1
+    SERVICE_STATE_ACTIVE_MODE=$mode \
+        SERVICE_STATE_PID=$pid \
+        SERVICE_STATE_STARTED_AT=$(date +%s) \
+        SERVICE_STATE_BIN_KERNEL=$BIN_KERNEL \
+        SERVICE_STATE_CONFIG_RUNTIME=$CLASH_CONFIG_RUNTIME \
+        "$BIN_YQ" -n '
+            .active_mode = strenv(SERVICE_STATE_ACTIVE_MODE) |
+            .started_at = (strenv(SERVICE_STATE_STARTED_AT) | tonumber) |
+            .bin_kernel = strenv(SERVICE_STATE_BIN_KERNEL) |
+            .config_runtime = strenv(SERVICE_STATE_CONFIG_RUNTIME) |
+            if strenv(SERVICE_STATE_PID) != "" then
+                .pid = (strenv(SERVICE_STATE_PID) | tonumber)
+            else
+                .
+            end
+        ' >"$tmp" || {
+        /usr/bin/rm -f "$tmp"
+        return 1
+    }
+    /bin/mv -f "$tmp" "$CLASH_SERVICE_STATE"
 }
 
 _with_service_lock() {
@@ -601,8 +623,7 @@ EOF
         active=$(_get_active_mode 2>/dev/null)
         active_status=$?
         [ "$active_status" -eq 1 ] && {
-            _unset_system_proxy
-            _okcat '内核未运行；已清理当前终端代理变量'
+            _okcat '内核未运行；当前终端代理变量未改动'
             _warn_global_auto_proxy_still_enabled
             return 0
         }
@@ -620,8 +641,7 @@ EOF
             return 1
         }
     }
-    _unset_system_proxy
-    _okcat '内核已关闭；已清理当前终端代理变量'
+    _okcat '内核已关闭；当前终端代理变量未改动，如需关闭请执行 clashproxy off'
     _warn_global_auto_proxy_still_enabled
 }
 
