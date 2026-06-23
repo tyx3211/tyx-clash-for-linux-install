@@ -122,6 +122,8 @@ ls -la "$HOME/clashctl/config"
 clashctl update-self
 ```
 
+该命令默认从 GitHub 获取当前 fork 的 `main`，不会使用本机源码目录里的未提交改动。迁移后如果正在本地调试修复，使用下面的 `--source` 路线。
+
 指定分支或 tag：
 
 ```bash

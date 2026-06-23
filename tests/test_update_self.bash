@@ -77,6 +77,85 @@ grep -q 'function clashctl' "$install_dir/scripts/cmd/clashctl.sh" ||
 grep -q '^CLASH_BASE_DIR=' "$install_dir/.env" ||
     fail "update should preserve installed .env"
 
+bad_subconverter_env_dir="$update_tmp/bad-subconverter-env"
+mkdir -p "$bad_subconverter_env_dir/resources" "$bad_subconverter_env_dir/scripts/cmd"
+printf 'tyx-clash-for-linux-install\n' >"$bad_subconverter_env_dir/.clashctl-install-root"
+printf 'mixin\n' >"$bad_subconverter_env_dir/resources/mixin.yaml"
+printf 'script\n' >"$bad_subconverter_env_dir/scripts/cmd/clashctl.sh"
+cat >"$bad_subconverter_env_dir/.env" <<EOF
+CLASH_BASE_DIR=$bad_subconverter_env_dir
+KERNEL_NAME=mihomo
+INIT_TYPE=tmux
+SUBCONVERTER_REPO=asdlokj1qpi233/subconverter
+EOF
+(
+    cd "$source_dir"
+    CLASHCTL_NO_RC=1 bash update.sh --target "$bad_subconverter_env_dir" >/dev/null
+)
+grep -qx 'SUBCONVERTER_REPO=tindy2013/subconverter' "$bad_subconverter_env_dir/.env" ||
+    fail "update should migrate the known broken default subconverter repo"
+
+custom_subconverter_env_dir="$update_tmp/custom-subconverter-env"
+mkdir -p "$custom_subconverter_env_dir/resources" "$custom_subconverter_env_dir/scripts/cmd"
+printf 'tyx-clash-for-linux-install\n' >"$custom_subconverter_env_dir/.clashctl-install-root"
+printf 'mixin\n' >"$custom_subconverter_env_dir/resources/mixin.yaml"
+printf 'script\n' >"$custom_subconverter_env_dir/scripts/cmd/clashctl.sh"
+cat >"$custom_subconverter_env_dir/.env" <<EOF
+CLASH_BASE_DIR=$custom_subconverter_env_dir
+KERNEL_NAME=mihomo
+INIT_TYPE=tmux
+SUBCONVERTER_REPO=example/subconverter
+EOF
+(
+    cd "$source_dir"
+    CLASHCTL_NO_RC=1 bash update.sh --target "$custom_subconverter_env_dir" >/dev/null
+)
+grep -qx 'SUBCONVERTER_REPO=example/subconverter' "$custom_subconverter_env_dir/.env" ||
+    fail "update should preserve a custom subconverter repo"
+
+export_subconverter_env_dir="$update_tmp/export-subconverter-env"
+mkdir -p "$export_subconverter_env_dir/resources" "$export_subconverter_env_dir/scripts/cmd"
+printf 'tyx-clash-for-linux-install\n' >"$export_subconverter_env_dir/.clashctl-install-root"
+printf 'mixin\n' >"$export_subconverter_env_dir/resources/mixin.yaml"
+printf 'script\n' >"$export_subconverter_env_dir/scripts/cmd/clashctl.sh"
+cat >"$export_subconverter_env_dir/.env" <<EOF
+export CLASH_BASE_DIR=$export_subconverter_env_dir
+export KERNEL_NAME=mihomo
+export INIT_TYPE=tmux
+export SUBCONVERTER_REPO=example/export-subconverter
+EOF
+(
+    cd "$source_dir"
+    CLASHCTL_NO_RC=1 bash update.sh --target "$export_subconverter_env_dir" >/dev/null
+)
+grep -qx 'export SUBCONVERTER_REPO=example/export-subconverter' "$export_subconverter_env_dir/.env" ||
+    fail "update should preserve a custom exported subconverter repo"
+[ "$(grep -Ec '^(export[[:space:]]+)?SUBCONVERTER_REPO=' "$export_subconverter_env_dir/.env")" -eq 1 ] ||
+    fail "update should not append a duplicate default after an exported custom subconverter repo"
+
+duplicate_subconverter_env_dir="$update_tmp/duplicate-subconverter-env"
+mkdir -p "$duplicate_subconverter_env_dir/resources" "$duplicate_subconverter_env_dir/scripts/cmd"
+printf 'tyx-clash-for-linux-install\n' >"$duplicate_subconverter_env_dir/.clashctl-install-root"
+printf 'mixin\n' >"$duplicate_subconverter_env_dir/resources/mixin.yaml"
+printf 'script\n' >"$duplicate_subconverter_env_dir/scripts/cmd/clashctl.sh"
+cat >"$duplicate_subconverter_env_dir/.env" <<EOF
+CLASH_BASE_DIR=$duplicate_subconverter_env_dir
+KERNEL_NAME=mihomo
+INIT_TYPE=tmux
+export SUBCONVERTER_REPO=example/export-subconverter
+SUBCONVERTER_REPO=asdlokj1qpi233/subconverter
+EOF
+(
+    cd "$source_dir"
+    CLASHCTL_NO_RC=1 bash update.sh --target "$duplicate_subconverter_env_dir" >/dev/null
+)
+grep -qx 'export SUBCONVERTER_REPO=example/export-subconverter' "$duplicate_subconverter_env_dir/.env" ||
+    fail "update should preserve an exported custom subconverter repo when a broken duplicate default exists"
+! grep -qx 'SUBCONVERTER_REPO=asdlokj1qpi233/subconverter' "$duplicate_subconverter_env_dir/.env" ||
+    fail "update should remove a broken duplicate subconverter default"
+! grep -qx 'SUBCONVERTER_REPO=tindy2013/subconverter' "$duplicate_subconverter_env_dir/.env" ||
+    fail "update should not replace a custom subconverter repo with the official default"
+
 state_install_dir="$update_tmp/state-install"
 mkdir -p "$state_install_dir/resources" "$state_install_dir/scripts/cmd"
 printf 'tyx-clash-for-linux-install\n' >"$state_install_dir/.clashctl-install-root"

@@ -453,6 +453,8 @@ $ clashtun off
 clashctl update-self
 ```
 
+注意：这个命令默认拉取 GitHub 上当前 fork 的 `main`，不会使用本机源码目录里的未提交改动。
+
 也可以指定分支或 tag：
 
 ```bash

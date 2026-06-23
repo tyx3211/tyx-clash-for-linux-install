@@ -318,11 +318,88 @@ _validate_existing_install_state() {
 _set_env_value() {
     local file=$1 key=$2 value=$3 escaped
     escaped=$(printf '%s' "$value" | sed -e 's/[#&\\]/\\&/g')
-    if grep -qE "^${key}=" "$file"; then
-        sed -i -e "s#^${key}=.*#${key}=${escaped}#g" "$file"
+    if _env_has_any_key "$file" "$key"; then
+        sed -i -E -e "s#^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*=.*#${key}=${escaped}#g" "$file"
     else
         printf '%s=%s\n' "$key" "$value" >>"$file"
     fi
+}
+
+_env_has_any_key() {
+    local file=$1 key
+    shift
+
+    [ -f "$file" ] || return 1
+    for key in "$@"; do
+        [[ $key =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
+        grep -qE "^[[:space:]]*(export[[:space:]]+)?${key}[[:space:]]*=" "$file" && return 0
+    done
+    return 1
+}
+
+_env_assignment_payload() {
+    local line=$1
+
+    case "$line" in
+    "" | "#"*)
+        return 1
+        ;;
+    export[[:space:]]*)
+        line=${line#export}
+        line=${line#"${line%%[![:space:]]*}"}
+        ;;
+    esac
+
+    case "$line" in
+    *=*)
+        printf '%s\n' "$line"
+        ;;
+    *)
+        return 1
+        ;;
+    esac
+}
+
+_migrate_known_env_defaults() {
+    local env_file=$1 line payload key value
+    local has_bad_subconverter=false has_custom_subconverter=false
+    local wrote_default=false tmp_file=
+
+    [ -f "$env_file" ] || return 0
+    while IFS= read -r line || [ -n "$line" ]; do
+        payload=$(_env_assignment_payload "$line" 2>/dev/null || true)
+        [ -n "$payload" ] || continue
+        key=${payload%%=*}
+        key=$(_path_env_trim "$key")
+        [ "$key" = SUBCONVERTER_REPO ] || continue
+        value=$(_path_env_unquote "${payload#*=}")
+        if [ "$value" = asdlokj1qpi233/subconverter ]; then
+            has_bad_subconverter=true
+        else
+            has_custom_subconverter=true
+        fi
+    done <"$env_file"
+
+    [ "$has_bad_subconverter" = true ] || return 0
+
+    tmp_file=$(mktemp "${env_file}.migrate.XXXXXX") || _die "无法创建 .env 迁移临时文件：$env_file"
+    while IFS= read -r line || [ -n "$line" ]; do
+        payload=$(_env_assignment_payload "$line" 2>/dev/null || true)
+        if [ -n "$payload" ]; then
+            key=${payload%%=*}
+            key=$(_path_env_trim "$key")
+            value=$(_path_env_unquote "${payload#*=}")
+            if [ "$key" = SUBCONVERTER_REPO ] && [ "$value" = asdlokj1qpi233/subconverter ]; then
+                if [ "$has_custom_subconverter" = false ] && [ "$wrote_default" = false ]; then
+                    printf '%s\n' 'SUBCONVERTER_REPO=tindy2013/subconverter' >>"$tmp_file"
+                    wrote_default=true
+                fi
+                continue
+            fi
+        fi
+        printf '%s\n' "$line" >>"$tmp_file"
+    done <"$env_file"
+    mv "$tmp_file" "$env_file"
 }
 
 while (($#)); do
@@ -500,22 +577,23 @@ if [ -f "$env_path" ] && [ -f "$SOURCE_DIR/.env" ]; then
             [[ $key =~ ^[A-Za-z_][A-Za-z0-9_]*$ ]] || continue
             case "$key" in
             CLASH_BASE_DIR)
-                grep -qE '^(CLASH_BASE_DIR|CLASHCTL_HOME)=' "$env_path" || printf '%s\n' "$line" >>"$env_path"
+                _env_has_any_key "$env_path" CLASH_BASE_DIR CLASHCTL_HOME || printf '%s\n' "$line" >>"$env_path"
                 ;;
             KERNEL_NAME)
-                grep -qE '^(KERNEL_NAME|CLASHCTL_KERNEL)=' "$env_path" || printf '%s\n' "$line" >>"$env_path"
+                _env_has_any_key "$env_path" KERNEL_NAME CLASHCTL_KERNEL || printf '%s\n' "$line" >>"$env_path"
                 ;;
             CLASH_SUB_UA)
-                grep -qE '^(CLASH_SUB_UA|CLASHCTL_SUB_UA)=' "$env_path" || printf '%s\n' "$line" >>"$env_path"
+                _env_has_any_key "$env_path" CLASH_SUB_UA CLASHCTL_SUB_UA || printf '%s\n' "$line" >>"$env_path"
                 ;;
             *)
-                grep -qE "^${key}=" "$env_path" || printf '%s\n' "$line" >>"$env_path"
+                _env_has_any_key "$env_path" "$key" || printf '%s\n' "$line" >>"$env_path"
                 ;;
             esac
             ;;
         esac
     done <"$SOURCE_DIR/.env"
 fi
+_migrate_known_env_defaults "$env_path"
 
 state_path="$target/resources/install-state.yaml"
 if [ -L "$target/resources" ] || [ -L "$state_path" ]; then
